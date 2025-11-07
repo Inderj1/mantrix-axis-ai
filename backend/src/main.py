@@ -6,6 +6,7 @@ from src.config import settings
 from src.api.routes import router
 from src.api.margen_routes import router as margen_router
 from src.api.conversation_routes import router as conversation_router
+from src.api.project_routes import router as project_router
 from src.api.vision_routes import router as vision_router
 from src.api.pulse_routes import router as pulse_router
 from src.api.process_mining_routes import router as process_mining_router
@@ -41,6 +42,11 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting NLP to SQL BigQuery service...")
+
+    # Connect to MongoDB
+    from src.db.mongodb_client import mongodb_client
+    await mongodb_client.connect()
+    logger.info("MongoDB connected")
 
     # Start Enterprise Pulse scheduler in background
     from src.core.pulse_scheduler import get_scheduler
@@ -92,6 +98,8 @@ allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5176",
     "http://localhost:8000",
     "https://accounts.dev.clerk",
     "https://*.clerk.accounts.dev",
@@ -119,6 +127,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1")
 app.include_router(margen_router)
 app.include_router(conversation_router)
+app.include_router(project_router)
 app.include_router(vision_router)
 app.include_router(pulse_router)
 app.include_router(process_mining_router)

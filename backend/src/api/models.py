@@ -46,6 +46,7 @@ class QueryResponse(BaseModel):
     error_details: Optional[Dict[str, Any]] = None  # Enhanced error information
     confidence_score: Optional[float] = None
     suggestions: Optional[List[Dict[str, Any]]] = None
+    follow_up_suggestions: Optional[List[str]] = None  # Copilot follow-up suggestions
     from_cache: bool = False
 
 

@@ -163,10 +163,20 @@ Apply `CONCAT('$', FORMAT('%,.2f', column_name))` to:
 - Commission, Wage, Salary, Tax (when not rate)
 - SAP value fields: VV001, VV002, VV003, etc.
 
+**CRITICAL**: The FORMAT function syntax MUST be exactly:
+- `FORMAT('%,.2f', value)` for currency with 2 decimals
+- `FORMAT('%,d', value)` for whole numbers
+- DO NOT use `FORMAT('%\'d', ...)` - this is INVALID
+- DO NOT use complex FLOOR/ROUND combinations - use FORMAT directly
+
 **Example**:
 ```sql
+-- ✅ CORRECT:
 CONCAT('$', FORMAT('%,.2f', Gross_Revenue)) as revenue,
 CONCAT('$', FORMAT('%,.2f', Total_COGS)) as cost
+
+-- ❌ WRONG (DO NOT USE):
+CONCAT('$', FORMAT('%\'d', CAST(FLOOR(Gross_Revenue) AS INT64))) -- INVALID SYNTAX
 ```
 
 ### 2. Percentage Columns (Add %):

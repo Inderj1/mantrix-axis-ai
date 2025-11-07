@@ -49,6 +49,8 @@ from src.core.research_planner import ResearchPlanner, ResearchDepth
 from src.core.research_executor import ResearchExecutor, ExecutionStatus
 from src.core.research_synthesizer import ResearchSynthesizer
 from src.core.gl_accounting_advisor import GLAccountingAdvisor
+from src.core.copilot_suggestions import get_suggestion_engine
+import asyncio
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -290,6 +292,37 @@ async def process_query(
                 max_tables=max_tables
             )
         
+        # Generate follow-up suggestions asynchronously (non-blocking)
+        suggestions = []
+
+        # Debug logging
+        logger.info(f"Checking suggestion eligibility: execute={execute}, has_results={bool(result.get('execution', {}).get('results'))}")
+        logger.info(f"Result keys: {result.keys()}")
+
+        if execute and result.get("execution", {}).get("results"):
+            logger.info(f"Generating suggestions for query: {request.question[:50]}...")
+
+            async def generate_suggestions_async():
+                try:
+                    logger.info("Starting suggestion generation")
+                    suggestion_engine = get_suggestion_engine()
+                    suggestions = suggestion_engine.generate_suggestions(
+                        query=request.question,
+                        sql=result.get("sql", ""),
+                        results=result.get("execution", {}).get("results", []),
+                        max_suggestions=5
+                    )
+                    logger.info(f"Generated {len(suggestions)} suggestions")
+                    return suggestions
+                except Exception as e:
+                    logger.error(f"Failed to generate suggestions: {e}", exc_info=True)
+                    return []
+
+            # Start suggestion generation in background (non-blocking)
+            suggestion_task = asyncio.create_task(generate_suggestions_async())
+        else:
+            logger.info("Skipping suggestions - no results available")
+
         # Save assistant response to conversation if conversationId provided
         if request.conversationId:
             assistant_message = Message(
@@ -310,6 +343,17 @@ async def process_query(
             # Convert any datetime.date objects to datetime for MongoDB compatibility
             message_data = convert_dates_to_datetime(assistant_message.model_dump())
             await mongodb.add_message(request.conversationId, message_data)
+
+        # Wait for suggestions to complete (should be fast due to caching)
+        if execute and result.get("execution", {}).get("results"):
+            try:
+                suggestions = await asyncio.wait_for(suggestion_task, timeout=0.5)
+            except asyncio.TimeoutError:
+                logger.warning("Suggestion generation timed out, returning without suggestions")
+                suggestions = []
+            except Exception as e:
+                logger.error(f"Error getting suggestions: {e}")
+                suggestions = []
         
         # Log successful execution
         log_query_execution(
@@ -323,8 +367,13 @@ async def process_query(
             end_time=datetime.utcnow(),
             result_summary=f"{result.get('execution', {}).get('row_count', 0)} rows returned" if execute else "SQL generated"
         )
-        
-        return QueryResponse(**result)
+
+        # Add suggestions to response
+        response_data = result.copy()
+        if suggestions:
+            response_data["follow_up_suggestions"] = suggestions
+
+        return QueryResponse(**response_data)
         
     except Exception as e:
         logger.error(f"Query processing failed: {e}")

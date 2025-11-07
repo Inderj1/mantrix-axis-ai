@@ -29,14 +29,15 @@ class ConversationMetadata(BaseModel):
 
 class Conversation(BaseModel):
     """Complete conversation model"""
-    model_config = ConfigDict(populate_by_name=True)
-    
-    conversation_id: str = Field(..., alias="conversationId")
-    user_id: str = Field(default="default", alias="userId")
+    model_config = ConfigDict(populate_by_name=True, by_alias=True)
+
+    conversation_id: str = Field(..., alias="conversationId", serialization_alias="conversation_id")
+    user_id: str = Field(default="default", alias="userId", serialization_alias="user_id")
     title: str = "New Conversation"
+    project_id: Optional[str] = Field(None, alias="projectId", serialization_alias="project_id", description="Project ID this conversation belongs to")
     messages: List[Message] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, alias="updatedAt")
+    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt", serialization_alias="created_at")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, alias="updatedAt", serialization_alias="updated_at")
     metadata: ConversationMetadata = Field(default_factory=ConversationMetadata)
 
 
@@ -45,6 +46,7 @@ class CreateConversationRequest(BaseModel):
     conversation_id: Optional[str] = None
     user_id: Optional[str] = "default"
     title: Optional[str] = "New Conversation"
+    project_id: Optional[str] = None
 
 
 class CreateConversationResponse(BaseModel):
@@ -61,6 +63,7 @@ class AddMessageRequest(BaseModel):
 class UpdateConversationRequest(BaseModel):
     """Request to update conversation metadata"""
     title: Optional[str] = None
+    project_id: Optional[str] = None
     starred: Optional[bool] = None
     tags: Optional[List[str]] = None
 
