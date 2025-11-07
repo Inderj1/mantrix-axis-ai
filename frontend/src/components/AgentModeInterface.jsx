@@ -4,6 +4,7 @@ import {
   Box,
   Paper,
   TextField,
+  Autocomplete,
   Button,
   Typography,
   Avatar,
@@ -28,6 +29,12 @@ import {
   Tabs,
   Card,
   CardContent,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -163,6 +170,60 @@ const SAMPLE_QUERIES = [
   }
 ];
 
+// Smart completion patterns - complete questions based on what user types
+const SMART_COMPLETIONS = {
+  'show': [
+    'profitability by customer segment',
+    'revenue trends over time',
+    'top performing products this quarter',
+    'margin analysis by product line',
+    'cost breakdown by department'
+  ],
+  'analyze': [
+    'customer lifetime value trends',
+    'product mix profitability',
+    'seasonal sales patterns',
+    'margin compression factors',
+    'inventory turnover rates'
+  ],
+  'compare': [
+    'this quarter vs last quarter performance',
+    'regional sales effectiveness',
+    'product line margins',
+    'customer acquisition costs across channels'
+  ],
+  'what': [
+    'are the fastest growing customer segments?',
+    'is driving margin erosion?',
+    'products have the highest contribution margin?',
+    'are the sales trends by region?'
+  ],
+  'customer': [
+    'profitability segmentation analysis',
+    'lifetime value distribution',
+    'churn risk indicators',
+    'acquisition cost efficiency'
+  ],
+  'product': [
+    'performance across all channels',
+    'margin contribution analysis',
+    'inventory health metrics',
+    'cannibalization impact'
+  ],
+  'revenue': [
+    'growth drivers and detractors',
+    'mix variance analysis',
+    'forecasted vs actual performance',
+    'concentration risk by customer'
+  ],
+  'profit': [
+    'margin trends by segment',
+    'waterfall from gross to net',
+    'improvement opportunities',
+    'variance from plan analysis'
+  ],
+};
+
 const AgentModeInterface = forwardRef((props, ref) => {
   const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch } = props;
   // Get authenticated user from Clerk
@@ -180,6 +241,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
   }]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState([]);
   // No conversation history for Agent Mode - removed conversationId, conversations, loadingConversations
   const [openAnalysisDialog, setOpenAnalysisDialog] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState(null);
@@ -245,67 +307,77 @@ const AgentModeInterface = forwardRef((props, ref) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const queryText = inputMessage;
     setInputMessage('');
     setLoading(true);
-    
+
+    // Immediately show progress message
+    const progressMessageId = (Date.now() + 1).toString();
+    const progressMessage = {
+      id: progressMessageId,
+      type: 'assistant',
+      content: '🔄 **Analyzing your query...**\n\n⏳ Setting up agents and planning execution...',
+      isProgress: true,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, progressMessage]);
+
     // Immediately scroll when user sends message
     setTimeout(scrollToBottom, 50);
 
-    // Don't save user message here - the backend will save it when processing the query
-
     try {
-      // No conversation ID needed - Agent Mode has no persistence
-      console.log('Sending query:', inputMessage);
-      const response = await apiService.executeQuery(inputMessage, {});
-      const { data } = response;
+      // Call agent analysis endpoint
+      console.log('Sending query to agent system:', queryText);
+      const response = await fetch('http://localhost:8000/api/v1/agents/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: queryText,
+          context: {}
+        })
+      });
+      const data = await response.json();
       
-      console.log('API Response:', data);
+      console.log('Agent Analysis Response:', data);
 
       // Check if we have an error in the response
-      if (data.error) {
+      if (data.status === 'error' || data.error) {
         const errorMessage = {
           id: (Date.now() + 1).toString(),
           type: 'assistant',
-          content: data.error_details?.user_friendly_message || 'Sorry, I encountered an error processing your query.',
-          error: data.error,
+          content: data.error || 'Sorry, I encountered an error processing your query.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, errorMessage]);
-        
-        // Scroll to show the error
         setTimeout(scrollToBottom, 100);
-        
-        // Don't save error message here - backend already saved it
-        
         return;
       }
 
-      // Create assistant message with results
+      // Create assistant message with agent analysis results
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: data.explanation || 'Query executed successfully.',
-        sql: data.sql,
-        results: data.results || data.execution?.results || [],
-        resultCount: data.row_count || data.execution?.row_count || 0,
-        followUpSuggestions: data.follow_up_suggestions || [],
-        metadata: {
-          cost: data.validation?.estimated_cost_usd,
-          bytesProcessed: data.validation?.total_bytes_processed,
-          tablesUsed: data.tables_used,
-        },
+        content: data.analysis || 'Agent analysis completed.',
+        agentsUsed: data.agents_used || [],
+        routing: data.routing || {},
+        results: data.execution?.results || [],
+        resultCount: data.execution?.row_count || 0,
+        sql: data.execution?.sql || null,
+        allSqlQueries: data.execution?.all_sql_queries || null,
+        executionPlan: data.execution_plan || null,
+        executionLogs: data.execution_logs || null,
         timestamp: new Date(),
       };
 
-      console.log('Assistant message with results:', assistantMessage.results);
-      console.log('Results type:', typeof assistantMessage.results);
-      console.log('Results length:', assistantMessage.results?.length);
-      setMessages(prev => [...prev, assistantMessage]);
+      console.log('Agent analysis:', assistantMessage);
+
+      // Replace progress message with actual results
+      setMessages(prev => prev.filter(m => m.id !== progressMessageId).concat(assistantMessage));
 
       // Scroll to show the response
       setTimeout(scrollToBottom, 100);
-
-      // No conversation saving - Agent Mode has no persistence
 
     } catch (error) {
       console.error('Query error:', error);
@@ -1083,7 +1155,8 @@ const AgentModeInterface = forwardRef((props, ref) => {
     return (
       <Box sx={{ mb: 3 }}>
         <Box sx={{ flex: 1, maxWidth: '100%' }}>
-            {/* Main message - Enhanced Summary */}
+            {/* Main message - AI Response shown first */}
+            {message.content && !message.isProgress && (
             <Card
               elevation={2}
               sx={{
@@ -1106,75 +1179,355 @@ const AgentModeInterface = forwardRef((props, ref) => {
                         letterSpacing: '0.5px'
                       }}
                     >
-                      Query Summary
+                      AI Assistant
                     </Typography>
-                    <Typography
-                      variant="body2"
-                      component="div"
+                    <Box
                       sx={{
-                        lineHeight: 1.7,
+                        lineHeight: 1.8,
                         color: 'text.primary',
+                        fontSize: '0.95rem',
                       }}
                     >
                       {(() => {
-                        // Split content into main text and numbered list items
-                        const parts = message.content.split(/(\d+\.\s+)/);
+                        // Helper function to format text with markdown-style bold
+                        const formatText = (text) => {
+                          if (!text) return null;
+
+                          // Split by **bold** or *bold* patterns
+                          const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+
+                          return parts.map((part, idx) => {
+                            // Check if this is bold text
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                              return (
+                                <Box key={idx} component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                  {part.slice(2, -2)}
+                                </Box>
+                              );
+                            } else if (part.startsWith('*') && part.endsWith('*')) {
+                              return (
+                                <Box key={idx} component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                  {part.slice(1, -1)}
+                                </Box>
+                              );
+                            }
+                            return part;
+                          });
+                        };
+
+                        // Split content into sections: headings, paragraphs, and lists
+                        const lines = message.content.split('\n');
                         const elements = [];
-                        let currentText = '';
+                        let currentParagraph = '';
+                        let inList = false;
 
-                        for (let i = 0; i < parts.length; i++) {
-                          const part = parts[i];
+                        lines.forEach((line, lineIdx) => {
+                          const trimmedLine = line.trim();
 
-                          // Check if this is a number followed by period (like "1. ")
-                          if (/^\d+\.\s+$/.test(part)) {
-                            // Add accumulated text before the list
-                            if (currentText.trim()) {
+                          // Check for markdown headings (#### H4, ### H3, ## H2, # H1)
+                          const h4Match = trimmedLine.match(/^####\s+(.+)$/);
+                          const h3Match = trimmedLine.match(/^###\s+(.+)$/);
+                          const h2Match = trimmedLine.match(/^##\s+(.+)$/);
+                          const h1Match = trimmedLine.match(/^#\s+(.+)$/);
+
+                          // Check if this is a list item (numbered, dashed, or bulleted)
+                          // Matches: "1. text", "1) text", "- text", "* text", "• text"
+                          const listMatch = trimmedLine.match(/^(?:\d+[\.\)]\s+|[-*•]\s+)(.+)$/);
+
+                          if (h4Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
                               elements.push(
-                                <Typography key={`text-${i}`} variant="body2" component="div" sx={{ mb: 1.5 }}>
-                                  {currentText.trim()}
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 4 }}>
+                                  {formatText(currentParagraph.trim())}
                                 </Typography>
                               );
-                              currentText = '';
+                              currentParagraph = '';
                             }
-
-                            // Get the next part which is the list item content
-                            const nextPart = parts[i + 1] || '';
-                            const listItemText = nextPart.trim();
+                            inList = false;
 
                             elements.push(
-                              <Box key={`list-${i}`} component="div" sx={{ ml: 2, mb: 0.5, display: 'flex', alignItems: 'flex-start' }}>
-                                <Typography variant="body2" component="span" sx={{ mr: 1, fontWeight: 600, color: 'primary.main' }}>
-                                  •
-                                </Typography>
-                                <Typography variant="body2" component="span" sx={{ flex: 1 }}>
-                                  {listItemText}
-                                </Typography>
-                              </Box>
+                              <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', pl: 3, borderLeft: '3px solid', borderColor: 'grey.300' }}>
+                                {formatText(h4Match[1])}
+                              </Typography>
                             );
+                          } else if (h3Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
 
-                            i++; // Skip the next part as we've already used it
-                          } else if (!/^\d+\.\s+$/.test(parts[i - 1] || '')) {
-                            // Only accumulate if the previous part wasn't a number
-                            currentText += part;
+                            elements.push(
+                              <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', pl: 1.5, position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
+                                {formatText(h3Match[1])}
+                              </Typography>
+                            );
+                          } else if (h2Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+
+                            elements.push(
+                              <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 700, mt: 4, mb: 1.5, color: 'primary.main', fontSize: '1.125rem', borderBottom: '2px solid', borderColor: 'primary.main', pb: 0.75, display: 'inline-block', width: '100%' }}>
+                                {formatText(h2Match[1])}
+                              </Typography>
+                            );
+                          } else if (h1Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+
+                            elements.push(
+                              <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 800, mt: 3, mb: 2.5, color: 'primary.dark', fontSize: '1.35rem', letterSpacing: '-0.5px', pb: 1, borderBottom: '3px solid', borderColor: 'primary.dark' }}>
+                                {formatText(h1Match[1])}
+                              </Typography>
+                            );
+                          } else if (listMatch) {
+                            // Add accumulated paragraph before starting list
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+
+                            inList = true;
+                            // Extract text after the list marker (number, dash, asterisk, bullet)
+                            const listItemText = listMatch[1];
+
+                            elements.push(
+                              <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem', pl: 2 }}>
+                                {formatText(listItemText)}
+                              </Typography>
+                            );
+                          } else if (trimmedLine === '') {
+                            // Empty line - end current paragraph
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+                          } else {
+                            // Regular text line
+                            if (inList) {
+                              // If we were in a list and now we have regular text, close the list
+                              inList = false;
+                            }
+                            currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
                           }
-                        }
+                        });
 
-                        // Add any remaining text
-                        if (currentText.trim()) {
+                        // Add any remaining paragraph
+                        if (currentParagraph.trim()) {
                           elements.push(
-                            <Typography key="text-final" variant="body2" component="div">
-                              {currentText.trim()}
+                            <Typography key="para-final" variant="body2" component="div" sx={{ mb: 2 }}>
+                              {formatText(currentParagraph.trim())}
                             </Typography>
                           );
                         }
 
-                        return elements;
+                        return elements.length > 0 ? elements : formatText(message.content);
                       })()}
-                    </Typography>
+                    </Box>
                     {message.error && (
                       <Alert severity="error" sx={{ mt: 2 }}>
                         {message.error}
                       </Alert>
+                    )}
+
+                    {/* Agent Collaboration Info */}
+                    {message.agentsUsed && message.agentsUsed.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.7rem' }}>
+                          Agents Involved:
+                        </Typography>
+                        <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {message.agentsUsed.map((agent, idx) => (
+                            <Chip
+                              key={idx}
+                              label={agent}
+                              size="small"
+                              sx={{
+                                bgcolor: 'primary.50',
+                                color: 'primary.700',
+                                fontWeight: 500,
+                                fontSize: '0.75rem'
+                              }}
+                            />
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+
+                    {/* Execution Plan */}
+                    {message.executionPlan && (
+                      <Accordion sx={{ mt: 2, bgcolor: 'primary.50', border: '1px solid', borderColor: 'primary.200' }} elevation={0}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <PlayArrowIcon fontSize="small" color="primary" />
+                            <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', color: 'primary.main' }}>
+                              Execution Plan
+                            </Typography>
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <Grid container spacing={2}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Agent</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>{message.executionPlan.agent}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Mode</Typography>
+                              <Chip label={message.executionPlan.mode} size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Expected Queries</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>{message.executionPlan.expected_queries}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Executed Queries</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 500, color: message.executionPlan.actual_queries_executed >= message.executionPlan.expected_queries ? 'success.main' : 'warning.main' }}>
+                                {message.executionPlan.actual_queries_executed}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Total Duration</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>{message.executionPlan.total_duration}</Typography>
+                            </Grid>
+                            {message.executionPlan.sub_tasks && message.executionPlan.sub_tasks.length > 0 && (
+                              <Grid item xs={12}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mb: 1, display: 'block' }}>
+                                  Sub-Tasks Identified ({message.executionPlan.sub_tasks.length})
+                                </Typography>
+                                {message.executionPlan.sub_tasks.map((task, idx) => (
+                                  <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+                                    <Chip label={idx + 1} size="small" sx={{ minWidth: '24px', height: '20px', fontSize: '0.7rem' }} />
+                                    <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>{task}</Typography>
+                                  </Box>
+                                ))}
+                              </Grid>
+                            )}
+                          </Grid>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+
+                    {/* Execution Logs */}
+                    {message.executionLogs && message.executionLogs.length > 0 && (
+                      <Accordion defaultExpanded sx={{ mt: 2 }} elevation={0}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <HistoryIcon fontSize="small" />
+                            <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                              Execution Timeline ({message.executionLogs.length} steps)
+                            </Typography>
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <Box sx={{ position: 'relative', pl: 3 }}>
+                            {/* Timeline line */}
+                            <Box sx={{
+                              position: 'absolute',
+                              left: '8px',
+                              top: '8px',
+                              bottom: '8px',
+                              width: '2px',
+                              bgcolor: 'divider'
+                            }} />
+
+                            {message.executionLogs.map((log, idx) => (
+                              <Box key={idx} sx={{ position: 'relative', mb: 2 }}>
+                                {/* Timeline dot */}
+                                <Box sx={{
+                                  position: 'absolute',
+                                  left: '-19px',
+                                  top: '4px',
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  bgcolor: log.status === 'completed' ? 'success.main' : log.status === 'started' ? 'info.main' : 'grey.400',
+                                  border: '2px solid white'
+                                }} />
+
+                                <Box>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                      {log.step}
+                                    </Typography>
+                                    {log.duration && (
+                                      <Chip label={log.duration} size="small" sx={{ fontSize: '0.65rem', height: '18px' }} />
+                                    )}
+                                  </Box>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {log.details}
+                                  </Typography>
+                                  {log.sql && (
+                                    <Box sx={{ mt: 0.5, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                                      {log.sql}...
+                                    </Box>
+                                  )}
+                                </Box>
+                              </Box>
+                            ))}
+                          </Box>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+
+                    {/* Agent Routing Info */}
+                    {message.routing && message.routing.orchestrator && (
+                      <Accordion sx={{ mt: 2 }} elevation={0}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                            View Agent Collaboration Details
+                          </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            <strong>Orchestrator:</strong> {message.routing.orchestrator}
+                          </Typography>
+                          {message.routing.domains && message.routing.domains.map((domain, idx) => (
+                            <Box key={idx} sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'primary.200' }}>
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {domain.expert}
+                              </Typography>
+                              <Box sx={{ mt: 0.5, pl: 2 }}>
+                                {domain.sub_agents.map((subAgent, subIdx) => (
+                                  <Typography key={subIdx} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                    • {subAgent}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            </Box>
+                          ))}
+                        </AccordionDetails>
+                      </Accordion>
                     )}
                     <Typography
                       variant="caption"
@@ -1187,127 +1540,303 @@ const AgentModeInterface = forwardRef((props, ref) => {
                 </Stack>
               </CardContent>
             </Card>
+            )}
 
-            {/* SQL Query Display - Collapsible with Edit Mode */}
-            {message.sql && (
-              <Accordion sx={{ mb: 2, bgcolor: 'grey.100' }}>
-                <AccordionSummary
-                  expandIcon={<ExpandMoreIcon />}
-                  aria-controls="sql-content"
-                  id="sql-header"
-                  sx={{
-                    '& .MuiAccordionSummary-content': {
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }
-                  }}
-                >
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CodeIcon fontSize="small" color="action" />
-                    <Typography variant="subtitle2">
-                      {editMode[message.id] ? 'Edit SQL Query' : 'View Generated SQL'}
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" spacing={1} sx={{ mr: 2 }} onClick={(e) => e.stopPropagation()}>
-                    <ToggleButton
-                      value="edit"
-                      selected={editMode[message.id] || false}
-                      onChange={() => {
-                        setEditMode(prev => ({ ...prev, [message.id]: !prev[message.id] }));
-                        if (!editedSql[message.id]) {
-                          setEditedSql(prev => ({ ...prev, [message.id]: message.sql }));
-                        }
-                      }}
-                      size="small"
-                      sx={{ height: 28 }}
+            {/* SQL Queries and Results - Multiple if available */}
+            {message.allSqlQueries && message.allSqlQueries.length > 0 ? (
+              // Multiple queries - show each with its own results
+              message.allSqlQueries.map((queryData, idx) => (
+                <Box key={idx} sx={{ mb: 3 }}>
+                  {/* SQL Query Accordion */}
+                  <Accordion sx={{ mb: 2, bgcolor: 'grey.100' }}>
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon />}
+                      aria-controls={`sql-content-${idx}`}
+                      id={`sql-header-${idx}`}
                     >
-                      <EditIcon fontSize="small" sx={{ mr: 0.5 }} />
-                      {editMode[message.id] ? 'View' : 'Edit'}
-                    </ToggleButton>
-                  </Stack>
-                </AccordionSummary>
-                <AccordionDetails sx={{ bgcolor: editMode[message.id] ? 'background.paper' : 'grey.900', p: 2 }}>
-                  {editMode[message.id] ? (
-                    <Box>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                        <Stack direction="row" spacing={1}>
-                          <ToggleButtonGroup
-                            value={sqlTheme}
-                            exclusive
-                            onChange={(e, v) => v && setSqlTheme(v)}
-                            size="small"
-                          >
-                            <ToggleButton value="github">Light</ToggleButton>
-                            <ToggleButton value="monokai">Dark</ToggleButton>
-                          </ToggleButtonGroup>
-                          <IconButton 
-                            size="small" 
-                            onClick={() => copyToClipboard(editedSql[message.id] || message.sql)}
-                          >
-                            <CopyIcon />
-                          </IconButton>
-                        </Stack>
-                        <Button
-                          variant="contained"
-                          size="small"
-                          startIcon={<PlayArrowIcon />}
-                          onClick={() => handleRunModifiedSql(message.id, editedSql[message.id] || message.sql)}
-                          disabled={loading}
-                        >
-                          Run Modified SQL
-                        </Button>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <CodeIcon fontSize="small" color="action" />
+                        <Typography variant="subtitle2">
+                          SQL Query #{idx + 1} - {queryData.query || 'View Generated SQL'}
+                        </Typography>
+                        <Chip label={`${queryData.row_count || 0} rows`} size="small" color="primary" sx={{ ml: 1 }} />
                       </Stack>
-                      <AceEditor
-                        mode="sql"
-                        theme={sqlTheme}
-                        value={editedSql[message.id] || message.sql}
-                        onChange={(value) => setEditedSql(prev => ({ ...prev, [message.id]: value }))}
-                        name={`sql-editor-${message.id}`}
-                        editorProps={{ $blockScrolling: true }}
-                        width="100%"
-                        height="200px"
-                        fontSize={14}
-                        showPrintMargin={false}
-                        showGutter={true}
-                        highlightActiveLine={true}
-                        setOptions={{
-                          enableBasicAutocompletion: true,
-                          enableLiveAutocompletion: true,
-                          enableSnippets: true,
-                          showLineNumbers: true,
-                          tabSize: 2,
-                        }}
-                      />
-                    </Box>
-                  ) : (
-                    <>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ bgcolor: 'grey.900', p: 2 }}>
                       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                         <Typography variant="caption" color="white">SQL Query</Typography>
-                        <IconButton size="small" onClick={() => copyToClipboard(message.sql)}>
+                        <IconButton size="small" onClick={() => copyToClipboard(queryData.sql)}>
                           <CopyIcon sx={{ color: 'white', fontSize: 18 }} />
                         </IconButton>
                       </Stack>
-                      <Box sx={{ 
-                        fontFamily: 'monospace', 
+                      <Box sx={{
+                        fontFamily: 'monospace',
                         fontSize: '0.875rem',
                         color: 'white',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
                       }}>
-                        {message.sql}
+                        {queryData.sql}
                       </Box>
-                    </>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            )}
+                    </AccordionDetails>
+                  </Accordion>
 
-            {/* Results Table */}
-            {message.results && message.results.length > 0 && (
-              <Paper elevation={1} sx={{ p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                  <Typography variant="h6">
-                    Results ({message.results.length} rows)
+                  {/* AI Insights for this query */}
+                  {queryData.insights && (
+                    <Card elevation={2} sx={{ mb: 2, bgcolor: 'background.paper' }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                          <InfoIcon sx={{ color: 'primary.main', mt: 0.3, fontSize: 20 }} />
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'primary.main', mb: 1, textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                              Query Insights #{idx + 1}
+                            </Typography>
+                            <Box sx={{ color: 'text.primary', fontSize: '0.95rem', lineHeight: 1.8 }}>
+                              {(() => {
+                                // Helper function to format text with markdown-style bold
+                                const formatText = (text) => {
+                                  if (!text) return null;
+                                  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+                                  return parts.map((part, partIdx) => {
+                                    if (part.startsWith('**') && part.endsWith('**')) {
+                                      return (
+                                        <Box key={partIdx} component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                          {part.slice(2, -2)}
+                                        </Box>
+                                      );
+                                    } else if (part.startsWith('*') && part.endsWith('*')) {
+                                      return (
+                                        <Box key={partIdx} component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                          {part.slice(1, -1)}
+                                        </Box>
+                                      );
+                                    }
+                                    return part;
+                                  });
+                                };
+
+                                const lines = queryData.insights.split('\n');
+                                const elements = [];
+                                let currentParagraph = '';
+                                let inList = false;
+
+                                lines.forEach((line, lineIdx) => {
+                                  const trimmedLine = line.trim();
+
+                                  // Check for markdown headings (#### H4, ### H3, ## H2, # H1)
+                                  const h4Match = trimmedLine.match(/^####\s+(.+)$/);
+                                  const h3Match = trimmedLine.match(/^###\s+(.+)$/);
+                                  const h2Match = trimmedLine.match(/^##\s+(.+)$/);
+                                  const h1Match = trimmedLine.match(/^#\s+(.+)$/);
+                                  const listMatch = trimmedLine.match(/^(?:\d+[\.\)]\s+|[-*•]\s+)(.+)$/);
+
+                                  if (h4Match) {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 4 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = false;
+                                    elements.push(
+                                      <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', pl: 3, borderLeft: '3px solid', borderColor: 'grey.300' }}>
+                                        {formatText(h4Match[1])}
+                                      </Typography>
+                                    );
+                                  } else if (h3Match) {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 2 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = false;
+                                    elements.push(
+                                      <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', pl: 1.5, position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
+                                        {formatText(h3Match[1])}
+                                      </Typography>
+                                    );
+                                  } else if (h2Match) {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = false;
+                                    elements.push(
+                                      <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 700, mt: 4, mb: 1.5, color: 'primary.main', fontSize: '1.125rem', borderBottom: '2px solid', borderColor: 'primary.main', pb: 0.75, display: 'inline-block', width: '100%' }}>
+                                        {formatText(h2Match[1])}
+                                      </Typography>
+                                    );
+                                  } else if (h1Match) {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = false;
+                                    elements.push(
+                                      <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 800, mt: 3, mb: 2.5, color: 'primary.dark', fontSize: '1.35rem', letterSpacing: '-0.5px', pb: 1, borderBottom: '3px solid', borderColor: 'primary.dark' }}>
+                                        {formatText(h1Match[1])}
+                                      </Typography>
+                                    );
+                                  } else if (listMatch) {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = true;
+                                    const listItemText = listMatch[1];
+                                    elements.push(
+                                      <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem', pl: 2 }}>
+                                        {formatText(listItemText)}
+                                      </Typography>
+                                    );
+                                  } else if (trimmedLine === '') {
+                                    if (currentParagraph.trim()) {
+                                      elements.push(
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                          {formatText(currentParagraph.trim())}
+                                        </Typography>
+                                      );
+                                      currentParagraph = '';
+                                    }
+                                    inList = false;
+                                  } else {
+                                    if (inList) {
+                                      inList = false;
+                                    }
+                                    currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
+                                  }
+                                });
+
+                                // Add any remaining paragraph
+                                if (currentParagraph.trim()) {
+                                  elements.push(
+                                    <Typography key="para-final" variant="body2" component="div" sx={{ mb: 2 }}>
+                                      {formatText(currentParagraph.trim())}
+                                    </Typography>
+                                  );
+                                }
+
+                                return elements.length > 0 ? elements : formatText(queryData.insights);
+                              })()}
+                            </Box>
+                          </Box>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Results Table for this query */}
+                  {queryData.results && queryData.results.length > 0 && (
+                    <Paper elevation={1} sx={{ p: 2 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                        <Typography variant="h6">
+                          Results ({queryData.results.length} rows)
+                        </Typography>
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            size="small"
+                            startIcon={<DownloadIcon />}
+                            onClick={() => downloadCSV(queryData.results)}
+                          >
+                            Export CSV
+                          </Button>
+                        </Stack>
+                      </Stack>
+                      <TableContainer sx={{ maxHeight: 400 }}>
+                        <Table size="small" stickyHeader>
+                          <TableHead>
+                            <TableRow>
+                              {Object.keys(queryData.results[0]).map((col) => (
+                                <TableCell key={col} sx={{ fontWeight: 600, bgcolor: 'grey.100' }}>
+                                  {col}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {queryData.results.slice(0, 100).map((row, rowIdx) => (
+                              <TableRow key={rowIdx} hover>
+                                {Object.keys(queryData.results[0]).map((col) => (
+                                  <TableCell key={col}>
+                                    {typeof row[col] === 'number' ? row[col].toLocaleString() : row[col]}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                      {queryData.results.length > 100 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                          Showing first 100 rows of {queryData.results.length}
+                        </Typography>
+                      )}
+                    </Paper>
+                  )}
+                </Box>
+              ))
+            ) : null}
+
+
+            {/* Single query fallback */}
+            {!message.allSqlQueries && message.sql && (
+              // Single query - original display
+              <>
+                <Accordion sx={{ mb: 2, bgcolor: 'grey.100' }}>
+                  <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    aria-controls="sql-content"
+                    id="sql-header"
+                  >
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CodeIcon fontSize="small" color="action" />
+                      <Typography variant="subtitle2">
+                        View Generated SQL
+                      </Typography>
+                    </Stack>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ bgcolor: 'grey.900', p: 2 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                      <Typography variant="caption" color="white">SQL Query</Typography>
+                      <IconButton size="small" onClick={() => copyToClipboard(message.sql)}>
+                        <CopyIcon sx={{ color: 'white', fontSize: 18 }} />
+                      </IconButton>
+                    </Stack>
+                    <Box sx={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.875rem',
+                      color: 'white',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}>
+                      {message.sql}
+                    </Box>
+                  </AccordionDetails>
+                </Accordion>
+
+                {/* Results Table */}
+                {message.results && message.results.length > 0 && (
+                  <Paper elevation={1} sx={{ p: 2 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                      <Typography variant="h6">
+                        Results ({message.results.length} rows)
                   </Typography>
                   <Stack direction="row" spacing={1}>
                     <Button
@@ -1539,33 +2068,37 @@ const AgentModeInterface = forwardRef((props, ref) => {
                         </Alert>
                       );
                     }
-                  })()
-                  )}
-                </Box>
+                      })()
+                      )}
+                    </Box>
+                  </Paper>
+                )}
+              </>
+            )}
 
-                {/* Metadata and Actions - Compact */}
-                <Stack direction="row" spacing={1} sx={{ mt: 1, alignItems: 'center' }}>
-                  {message.metadata && (message.metadata.cost || message.metadata.bytesProcessed) && (
-                    <>
-                      {message.metadata.cost && (
-                        <Chip
-                          size="small"
-                          label={`Cost: $${message.metadata.cost.toFixed(6)}`}
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: '0.75rem' }}
-                        />
-                      )}
-                      {message.metadata.bytesProcessed && (
-                        <Chip
-                          size="small"
-                          label={`${(message.metadata.bytesProcessed / 1024 / 1024).toFixed(1)} MB`}
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: '0.75rem' }}
-                        />
-                      )}
-                    </>
+            {/* Metadata and Actions - Compact */}
+            <Stack direction="row" spacing={1} sx={{ mt: 1, alignItems: 'center' }}>
+              {message.metadata && (message.metadata.cost || message.metadata.bytesProcessed) && (
+                <>
+                  {message.metadata.cost && (
+                    <Chip
+                      size="small"
+                      label={`Cost: $${message.metadata.cost.toFixed(6)}`}
+                      variant="outlined"
+                      sx={{ height: 24, fontSize: '0.75rem' }}
+                    />
                   )}
-                  {message.results && message.results.length > 0 && (
+                  {message.metadata.bytesProcessed && (
+                    <Chip
+                      size="small"
+                      label={`${(message.metadata.bytesProcessed / 1024 / 1024).toFixed(1)} MB`}
+                      variant="outlined"
+                      sx={{ height: 24, fontSize: '0.75rem' }}
+                    />
+                  )}
+                </>
+              )}
+              {message.results && message.results.length > 0 && (
                     <Button
                       size="small"
                       variant="outlined"
@@ -1580,20 +2113,8 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     >
                       View detailed results
                     </Button>
-                  )}
-                </Stack>
-              </Paper>
-            )}
-
-
-            {/* No results message */}
-            {message.results && message.results.length === 0 && message.sql && (
-              <Paper elevation={1} sx={{ p: 2, bgcolor: 'warning.light' }}>
-                <Typography variant="body2">
-                  The query executed successfully but returned no results.
-                </Typography>
-              </Paper>
-            )}
+              )}
+            </Stack>
         </Box>
       </Box>
     );
@@ -1817,26 +2338,66 @@ const AgentModeInterface = forwardRef((props, ref) => {
         <Paper elevation={3} sx={{ p: 2, borderRadius: 0, flexShrink: 0 }}>
           <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
             <Stack direction="row" spacing={2}>
-              <TextField
+              <Autocomplete
                 fullWidth
+                freeSolo
                 value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask a question about your data..."
-                disabled={loading}
-                variant="outlined"
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
+                onChange={(event, newValue) => {
+                  setInputMessage(typeof newValue === 'string' ? newValue : '');
+                }}
+                onInputChange={(event, newInputValue) => {
+                  setInputMessage(newInputValue);
+
+                  // Generate smart suggestions based on input
+                  if (newInputValue && newInputValue.trim().length >= 2) {
+                    const input = newInputValue.toLowerCase().trim();
+                    const suggestions = [];
+
+                    // Check if input starts with any of our smart completion triggers
+                    Object.keys(SMART_COMPLETIONS).forEach(trigger => {
+                      if (input.startsWith(trigger)) {
+                        // Add completions for this trigger
+                        SMART_COMPLETIONS[trigger].forEach(completion => {
+                          suggestions.push(`${trigger} ${completion}`);
+                        });
+                      } else if (trigger.startsWith(input)) {
+                        // Show trigger options if user is typing a trigger word
+                        SMART_COMPLETIONS[trigger].slice(0, 2).forEach(completion => {
+                          suggestions.push(`${trigger} ${completion}`);
+                        });
+                      }
+                    });
+
+                    // Remove duplicates and limit
+                    const uniqueSuggestions = [...new Set(suggestions)].slice(0, 6);
+                    setAutocompleteSuggestions(uniqueSuggestions);
+                  } else {
+                    setAutocompleteSuggestions([]);
                   }
                 }}
+                options={autocompleteSuggestions}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Ask a question about your data..."
+                    disabled={loading}
+                    variant="outlined"
+                    onKeyDown={handleKeyDown}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                      }
+                    }}
+                  />
+                )}
+                sx={{ flex: 1 }}
               />
               <Button
                 variant="contained"
                 onClick={handleSendMessage}
                 disabled={!inputMessage.trim() || loading}
-                sx={{ 
-                  borderRadius: 2, 
+                sx={{
+                  borderRadius: 2,
                   px: 3,
                   minWidth: 100
                 }}
