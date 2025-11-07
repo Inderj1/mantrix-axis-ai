@@ -6,17 +6,13 @@ exec > >(tee /var/log/startup-script.log)
 exec 2>&1
 
 echo "========================================="
-echo "Mantrix Madison Reed - GCP Startup Script"
+echo "Mantrix Madison Reed - EC2 Startup Script"
 echo "Started at: $(date)"
 echo "========================================="
-
-# Wait for network
-sleep 10
 
 # Update system
 echo "Updating system packages..."
 apt-get update
-export DEBIAN_FRONTEND=noninteractive
 apt-get upgrade -y
 
 # Install Docker
@@ -73,9 +69,6 @@ apt-get install -y nginx
 echo "Installing certbot..."
 apt-get install -y certbot python3-certbot-nginx
 
-# Install additional utilities
-apt-get install -y htop vim wget unzip
-
 # Create application directory
 echo "Creating application directory..."
 mkdir -p /opt/mantrix
@@ -96,7 +89,7 @@ ufw allow https
 ufw allow 3000/tcp  # Frontend
 ufw allow 5001/tcp  # Backend API
 
-# Create systemd service for application
+# Create systemd service for application (optional)
 cat > /etc/systemd/system/mantrix.service <<'EOF'
 [Unit]
 Description=Mantrix Madison Reed Application
@@ -135,11 +128,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
     }
 
     # Backend API
@@ -153,11 +141,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Timeouts
-        proxy_connect_timeout 120s;
-        proxy_send_timeout 120s;
-        proxy_read_timeout 120s;
     }
 }
 EOF
@@ -189,11 +172,12 @@ docker-compose down
 docker-compose up -d --build
 
 echo "Deployment complete!"
-echo "Frontend: http://$(hostname -I | awk '{print $1}'):3000"
-echo "Backend: http://$(hostname -I | awk '{print $1}'):5001"
 DEPLOY_EOF
 
 chmod +x /opt/mantrix/deploy.sh
+
+# Set ownership
+chown -R ubuntu:ubuntu /opt/mantrix
 
 # Create helpful aliases
 cat >> /home/ubuntu/.bashrc <<'ALIAS_EOF'
@@ -203,40 +187,7 @@ alias mantrix-logs='docker-compose -f /opt/mantrix/docker-compose.yml logs -f'
 alias mantrix-status='docker-compose -f /opt/mantrix/docker-compose.yml ps'
 alias mantrix-restart='docker-compose -f /opt/mantrix/docker-compose.yml restart'
 alias mantrix-deploy='cd /opt/mantrix && ./deploy.sh'
-alias mantrix-logs-backend='docker-compose -f /opt/mantrix/docker-compose.yml logs -f backend'
-alias mantrix-logs-frontend='docker-compose -f /opt/mantrix/docker-compose.yml logs -f frontend'
 ALIAS_EOF
-
-# Set ownership
-chown -R ubuntu:ubuntu /opt/mantrix
-
-# Create environment file template
-cat > /opt/mantrix/.env.example <<'ENV_EOF'
-# Database Configuration
-MONGODB_URI=mongodb://localhost:27017/mantrix
-REDIS_URL=redis://localhost:6379/0
-
-# Application
-NODE_ENV=production
-FLASK_ENV=production
-FLASK_APP=app.py
-
-# Security
-SECRET_KEY=your-secret-key-here
-JWT_SECRET=your-jwt-secret-here
-
-# AI Services
-OPENAI_API_KEY=your-openai-api-key
-ANTHROPIC_API_KEY=your-anthropic-api-key
-
-# Clerk Authentication
-REACT_APP_CLERK_PUBLISHABLE_KEY=your-clerk-key
-CLERK_SECRET_KEY=your-clerk-secret
-
-# Domain
-DOMAIN=madisonreed.cloudmantra.ai
-REACT_APP_API_URL=https://madisonreed.cloudmantra.ai/api
-ENV_EOF
 
 echo "========================================="
 echo "Startup script completed at: $(date)"
@@ -244,10 +195,7 @@ echo "========================================="
 echo ""
 echo "Next steps:"
 echo "1. Clone the repository to /opt/mantrix"
-echo "   git clone https://github.com/cloudmantra-ai/mantrix.unified-madison.git /opt/mantrix"
-echo "2. Create .env file from .env.example"
+echo "2. Configure environment variables"
 echo "3. Run docker-compose up -d"
-echo "4. Configure SSL: sudo certbot --nginx -d madisonreed.cloudmantra.ai"
-echo ""
-echo "Logs: sudo tail -f /var/log/startup-script.log"
+echo "4. Configure SSL with: sudo certbot --nginx -d madisonreed.cloudmantra.ai"
 echo "========================================="

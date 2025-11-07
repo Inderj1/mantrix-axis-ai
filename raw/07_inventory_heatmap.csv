@@ -1,7 +1,0 @@
-location_id,location_name,location_type,region,sku,product_name,on_hand_qty,safety_stock,max_stock,turnover_rate,days_on_hand,utilization_pct,status,replenishment_priority,last_movement_date,abc_classification
-LOC001,DC-Minneapolis,Distribution Center,Midwest,SKU-7891,Madison Reed Premium Color Kit,1250,2500,8000,12.5,29,15.6,Understock,High,2024-02-05,A
-LOC002,DC-Phoenix,Distribution Center,Southwest,SKU-7891,Madison Reed Premium Color Kit,980,2200,7500,14.2,26,13.1,Understock,High,2024-02-05,A
-LOC003,DC-Bentonville,Distribution Center,South,SKU-7891,Madison Reed Premium Color Kit,1120,2300,7800,11.8,31,14.4,Understock,Medium,2024-02-05,A
-LOC004,Store-Chicago-001,Retail Store,Midwest,SKU-7891,Madison Reed Premium Color Kit,45,80,250,15.2,24,18.0,OK,Low,2024-02-04,A
-LOC005,Store-Dallas-001,Retail Store,South,SKU-7891,Madison Reed Premium Color Kit,38,75,240,16.1,23,15.8,Understock,Medium,2024-02-04,A
-LOC006,WH-Raw-Materials,Warehouse,Central,COMP-P205,Color Pigment Base,8200,8000,25000,8.5,43,32.8,Critical,Critical,2024-02-03,A

@@ -1,5 +1,0 @@
-id,po_number,supplier,component_id,component_name,order_qty,received_qty,pending_qty,original_delivery_date,current_delivery_date,days_delayed,risk_level,impact_score,affected_fg_skus,production_impact_qty,mitigation_action,status,buyer,creation_date
-IRM001,PO-45123,ChemSupply Inc.,COMP-C401,Color Developer 60ml,5000,0,5000,2024-02-18,2024-02-20,2,Low,25,SKU-7891,0,Monitor,On Track,John Smith,2024-01-25
-IRM002,PO-45156,PackPro Solutions,PKG-B120,Premium Box Packaging,3000,1200,1800,2024-02-12,2024-02-15,3,Medium,48,SKU-7891,1800,Expedite Shipment,Delayed,Mike Chen,2024-01-28
-IRM003,PR-78945,PigmentCo Ltd,COMP-P205,Color Pigment Base,15000,0,15000,2024-02-25,2024-03-05,8,Critical,92,SKU-7891,8540,Emergency Air Freight,Critical Delay,Sarah Johnson,2024-01-20
-IRM004,PR-78947,ChemSupply Inc.,COMP-A401,Ammonia-Free Activator,8000,0,8000,2024-02-22,2024-02-28,6,Critical,88,SKU-9021,2550,Alternative BOM,Critical Delay,Sarah Johnson,2024-01-22

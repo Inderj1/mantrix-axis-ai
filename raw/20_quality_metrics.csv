@@ -1,9 +1,0 @@
-id,material,material_description,batch_number,inspection_date,lot_size,sample_size,defects_found,defect_ppm,inspection_result,inspector,defect_category,corrective_action,quarantine_qty
-QM001,SKU-7891,Madison Reed Premium Color Kit,BATCH-240201-A,2024-02-05,8370,100,2,239,Pass,QC-Inspector-01,Minor Packaging,None,0
-QM002,SKU-4523,Color Reviving Gloss,BATCH-240202-A,2024-02-05,7400,100,1,135,Pass,QC-Inspector-02,Minor Packaging,None,0
-QM003,SKU-9021,Root Retouch Kit,BATCH-240203-A,2024-02-05,6750,100,3,444,Pass,QC-Inspector-01,Minor Packaging,None,0
-QM004,COMP-P205,Color Pigment Base,LOT-P205-0125,2024-01-25,5000,50,8,1600,Conditional,QC-Inspector-03,Color Variance,Supplier Notice,500
-QM005,COMP-C401,Color Developer 60ml,LOT-C401-0128,2024-01-28,3500,50,1,286,Pass,QC-Inspector-02,None,None,0
-QM006,PKG-B120,Premium Box Packaging,LOT-PKG-0130,2024-01-30,1200,30,0,0,Pass,QC-Inspector-03,None,None,0
-QM007,SKU-3312,Shine Therapy Conditioner,BATCH-240202-B,2024-02-05,6130,100,4,652,Pass,QC-Inspector-04,Minor Viscosity,None,0
-QM008,COMP-A401,Ammonia-Free Activator,LOT-A401-0115,2024-01-15,2000,50,12,6000,Rejected,QC-Inspector-03,pH Out of Spec,Return to Vendor,2000

@@ -52,10 +52,10 @@ fi
 # Start Backend
 echo -e "\n${YELLOW}Starting Backend (FastAPI)...${NC}"
 cd "$(dirname "$0")/backend"
-./venv/bin/python -m uvicorn src.main:app --reload > ../logs/backend.log 2>&1 &
+./venv/bin/python -m uvicorn src.main:app --reload --host 127.0.0.1 --port 8000 > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
-sleep 3
+sleep 5
 
 if ps -p $BACKEND_PID > /dev/null; then
     echo -e "${GREEN}✓ Backend started on http://localhost:8000${NC}"
@@ -63,6 +63,7 @@ if ps -p $BACKEND_PID > /dev/null; then
     echo -e "  Logs: logs/backend.log"
 else
     echo -e "${RED}✗ Failed to start backend${NC}"
+    echo -e "${YELLOW}Check logs/backend.log for details${NC}"
     exit 1
 fi
 
@@ -75,7 +76,7 @@ cd ..
 sleep 3
 
 if ps -p $FRONTEND_PID > /dev/null; then
-    echo -e "${GREEN}✓ Frontend started on http://localhost:3001${NC}"
+    echo -e "${GREEN}✓ Frontend started on http://localhost:5174${NC}"
     echo -e "  PID: $FRONTEND_PID"
     echo -e "  Logs: logs/frontend.log"
 else
@@ -101,7 +102,7 @@ fi
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}  All services running!${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Frontend:${NC}  http://localhost:3001"
+echo -e "${GREEN}Frontend:${NC}  http://localhost:5174"
 echo -e "${GREEN}Backend:${NC}   http://localhost:8000"
 echo -e "${GREEN}API Docs:${NC}  http://localhost:8000/docs"
 echo -e "${GREEN}Redis:${NC}     localhost:6379"

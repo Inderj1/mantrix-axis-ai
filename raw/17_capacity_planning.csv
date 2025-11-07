@@ -1,7 +1,0 @@
-id,plant,line_number,product_family,available_capacity_hrs,planned_capacity_hrs,actual_capacity_hrs,utilization_pct,bottleneck_flag,constraint_type,week,shift_pattern,overtime_hrs
-CP001,Plant-NJ-01,Line-01,Hair Color Kits,168,155,148,88.1,N,None,2024-W06,2-Shift,8
-CP002,Plant-NJ-01,Line-02,Hair Care Products,168,142,138,82.1,N,None,2024-W06,2-Shift,6
-CP003,Plant-CA-02,Line-03,Hair Care Products,168,138,132,78.6,N,None,2024-W06,2-Shift,4
-CP004,Plant-NJ-01,Line-01,Hair Color Kits,168,162,0,96.4,Y,Labor Shortage,2024-W07,2-Shift,12
-CP005,Plant-NJ-01,Line-02,Hair Care Products,168,148,0,88.1,N,None,2024-W07,2-Shift,8
-CP006,Plant-CA-02,Line-03,Hair Care Products,168,145,0,86.3,Y,Equipment Maintenance,2024-W07,2-Shift,10

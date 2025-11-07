@@ -125,23 +125,7 @@ const getDateGroup = (dateString) => {
   return 'Older';
 };
 
-// Helper function: Group conversations
-const groupConversations = (conversations) => {
-  const groups = {
-    'Today': [],
-    'Yesterday': [],
-    'This Week': [],
-    'This Month': [],
-    'Older': []
-  };
-
-  conversations.forEach(conv => {
-    const group = getDateGroup(conv.updated_at || conv.updatedAt);
-    groups[group].push(conv);
-  });
-
-  return groups;
-};
+// No conversation grouping needed - Agent Mode has no history
 
 // Sample queries for quick access
 const SAMPLE_QUERIES = [
@@ -179,7 +163,7 @@ const SAMPLE_QUERIES = [
   }
 ];
 
-const SimpleChatInterface = forwardRef((props, ref) => {
+const AgentModeInterface = forwardRef((props, ref) => {
   const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch } = props;
   // Get authenticated user from Clerk
   const { user, isLoaded: isUserLoaded } = useUser();
@@ -191,23 +175,19 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [messages, setMessages] = useState([{
     id: Date.now(),
     type: 'assistant',
-    content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
+    content: 'Welcome to Agent Mode! I\'m your autonomous AI agent capable of multi-step reasoning, planning, and execution. Describe complex tasks and I\'ll break them down into steps, execute them, and provide comprehensive insights.',
     timestamp: new Date(),
   }]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [conversationId, setConversationId] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [loadingConversations, setLoadingConversations] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  // No conversation history for Agent Mode - removed conversationId, conversations, loadingConversations
   const [openAnalysisDialog, setOpenAnalysisDialog] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState(null);
   const [activeMessageId, setActiveMessageId] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [showSampleQueries, setShowSampleQueries] = useState(true);
   const [mode, setMode] = useState('chat'); // 'chat' or 'research'
-  const [viewMode, setViewMode] = useState('chat'); // 'chat' or 'history' within chat mode
+  // No viewMode needed - removed history view
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [detailedResultsData, setDetailedResultsData] = useState(null);
   const [editMode, setEditMode] = useState({});
@@ -221,78 +201,15 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [deepResearchQuestion, setDeepResearchQuestion] = useState('');
   const initializationRef = useRef(false);
 
-  console.log('SimpleChatInterface rendering, mode:', mode, 'userId:', userId);
+  console.log('AgentModeInterface rendering, mode:', mode, 'userId:', userId);
 
 
-  // Initialize on mount - wait for user to be loaded
-  useEffect(() => {
-    let isMounted = true;
-
-    const initializeChat = async () => {
-      if (!isMounted || !isUserLoaded) return;
-
-      try {
-        console.log('=== Initializing chat for user:', userId, '===');
-
-        // First check localStorage for existing conversation (scoped to user)
-        const savedConversationId = localStorage.getItem(`currentConversationId_${userId}`);
-        console.log('Saved conversation ID from localStorage:', savedConversationId);
-
-        // Load all conversations for this user from database
-        console.log('Fetching conversations from database for user:', userId);
-        const response = await apiService.listConversations(userId);
-        const loadedConversations = response.data.conversations || [];
-        console.log(`Loaded ${loadedConversations.length} conversations from database`);
-
-        // Sort conversations by updated_at (should already be sorted by backend, but ensure it)
-        const sortedConversations = loadedConversations.sort((a, b) => {
-          const dateA = new Date(a.updated_at || a.updatedAt);
-          const dateB = new Date(b.updated_at || b.updatedAt);
-          return dateB - dateA;
-        });
-
-        setConversations(sortedConversations);
-
-        // If we have a saved conversation ID, try to load it (if it exists in DB)
-        if (savedConversationId && sortedConversations.some(c => (c.conversation_id || c.conversationId) === savedConversationId)) {
-          console.log('Loading saved conversation:', savedConversationId);
-          await loadConversation(savedConversationId);
-        } else if (sortedConversations.length > 0) {
-          // Load the most recent conversation
-          const mostRecentId = sortedConversations[0].conversation_id || sortedConversations[0].conversationId;
-          console.log('Loading most recent conversation:', mostRecentId);
-          await loadConversation(mostRecentId);
-        } else {
-          // No conversations exist, create a new one
-          console.log('No conversations found in database, creating new one');
-          await createNewConversation(false);
-        }
-
-        console.log('=== Chat initialization complete ===');
-      } catch (error) {
-        console.error('Initialization error:', error);
-        // If all else fails, create a new conversation
-        if (isMounted && !conversationId) {
-          await createNewConversation(false);
-        }
-      }
-    };
-
-    // Only initialize if we haven't already and user is loaded
-    if (!conversationId && isUserLoaded) {
-      initializeChat();
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isUserLoaded, userId]); // Re-run when user loads or changes
+  // No initialization needed - Agent Mode has no conversation persistence
+  // Messages are kept only in current session memory
 
   // Auto-scroll to latest message
   useEffect(() => {
-    // Small delay to ensure DOM is updated with new message
     const scrollTimeout = setTimeout(() => {
-      // Scroll messages container to bottom to show latest message
       const messagesContainer = document.querySelector('[data-messages-container="true"]');
       if (messagesContainer) {
         messagesContainer.scrollTo({
@@ -301,122 +218,11 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         });
       }
     }, 100);
-    
-    // Keep conversations list at top when switching conversations
-    if (conversationId) {
-      const conversationsList = document.querySelector('[data-conversations-list="true"]');
-      if (conversationsList) {
-        conversationsList.scrollTop = 0;
-      }
-    }
-    
+
     return () => clearTimeout(scrollTimeout);
-  }, [messages, conversationId, loading]); // Scroll when messages change, conversation changes, or loading state changes
+  }, [messages, loading]); // Scroll when messages change or loading state changes
 
-  // Load conversations from MongoDB
-  const loadConversations = async () => {
-    setLoadingConversations(true);
-    try {
-      const response = await apiService.listConversations(userId);
-      const loadedConversations = response.data.conversations || [];
-
-      // Sort by updated_at (most recent first)
-      const sortedConversations = loadedConversations.sort((a, b) => {
-        const dateA = new Date(a.updated_at || a.updatedAt);
-        const dateB = new Date(b.updated_at || b.updatedAt);
-        return dateB - dateA; // Descending order
-      });
-
-      setConversations(sortedConversations);
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-    } finally {
-      setLoadingConversations(false);
-    }
-  };
-
-  // Create a new conversation (locally only - backend creation happens on first message)
-  const createNewConversation = async (shouldReloadList = true) => {
-    try {
-      console.log('Creating new local conversation (will be saved on first message)...');
-
-      // Clear messages FIRST to ensure UI is clean
-      const welcomeMessage = {
-        id: Date.now().toString(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
-
-      // Create a temporary local conversation ID
-      // The actual backend conversation will be created when the first user message is sent
-      const tempConvId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      console.log('Created temporary conversation ID:', tempConvId);
-      setConversationId(tempConvId);
-
-      // Save to localStorage (scoped to user)
-      localStorage.setItem(`currentConversationId_${userId}`, tempConvId);
-
-      // Don't add to conversations list yet - will be added when first message is sent
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-      // Fallback to local conversation ID
-      const fallbackId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      setConversationId(fallbackId);
-      localStorage.setItem(`currentConversationId_${userId}`, fallbackId);
-
-      // Still set welcome message even on error
-      const welcomeMessage = {
-        id: Date.now().toString(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
-    }
-  };
-
-  // Load a specific conversation
-  const loadConversation = async (convId) => {
-    try {
-      const response = await apiService.getConversation(convId);
-      const conversation = response.data;
-      
-      // Convert messages to the format expected by the UI
-      const formattedMessages = conversation.messages.map(msg => ({
-        id: msg.id,
-        type: msg.type,
-        content: msg.content,
-        sql: msg.sql,
-        results: msg.results,
-        resultCount: msg.result_count,
-        error: msg.error,
-        metadata: msg.metadata,
-        timestamp: new Date(msg.timestamp),
-      }));
-      
-      // If no messages, add the welcome message
-      if (formattedMessages.length === 0) {
-        formattedMessages.push({
-          id: Date.now(),
-          type: 'assistant',
-          content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-          timestamp: new Date(),
-        });
-      }
-      
-      setMessages(formattedMessages);
-      setConversationId(convId);
-
-      // Save to localStorage for persistence (scoped to user)
-      localStorage.setItem(`currentConversationId_${userId}`, convId);
-      
-      // Don't close the sidebar when selecting a conversation
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-    }
-  };
+  // No conversation management functions - Agent Mode has no persistence
 
   const scrollToBottom = () => {
     const messagesContainer = document.querySelector('[data-messages-container="true"]');
@@ -448,20 +254,9 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     // Don't save user message here - the backend will save it when processing the query
 
     try {
-      // If this is a temporary conversation (starts with "temp-"), create the actual conversation on backend first
-      let actualConversationId = conversationId;
-      if (conversationId?.startsWith('temp-')) {
-        console.log('Creating conversation on backend for first message...');
-        const createResponse = await apiService.createConversation(userId);
-        actualConversationId = createResponse.data.conversation_id;
-        console.log('Created conversation:', actualConversationId);
-        setConversationId(actualConversationId);
-        localStorage.setItem(`currentConversationId_${userId}`, actualConversationId);
-      }
-
-      // Call API with conversation ID
-      console.log('Sending query:', inputMessage, 'with conversation ID:', actualConversationId);
-      const response = await apiService.executeQuery(inputMessage, { conversationId: actualConversationId });
+      // No conversation ID needed - Agent Mode has no persistence
+      console.log('Sending query:', inputMessage);
+      const response = await apiService.executeQuery(inputMessage, {});
       const { data } = response;
       
       console.log('API Response:', data);
@@ -506,14 +301,11 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       console.log('Results type:', typeof assistantMessage.results);
       console.log('Results length:', assistantMessage.results?.length);
       setMessages(prev => [...prev, assistantMessage]);
-      
+
       // Scroll to show the response
       setTimeout(scrollToBottom, 100);
-      
-      // Don't save assistant message here - backend already saved it
 
-      // Reload conversations to update the list
-      await loadConversations();
+      // No conversation saving - Agent Mode has no persistence
 
     } catch (error) {
       console.error('Query error:', error);
@@ -545,7 +337,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const handleRunModifiedSql = async (messageId, sql) => {
     setLoading(true);
     try {
-      const response = await apiService.executeQuery(sql, { conversationId, isModifiedSql: true });
+      const response = await apiService.executeQuery(sql, { isModifiedSql: true });
       const { data } = response;
       
       if (data.error) {
@@ -700,92 +492,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     setShowDetailedResults(true);
   };
 
-  const handleNewChat = async () => {
-    setInputMessage('');
-    // Clear messages and set welcome message
-    setMessages([{
-      id: Date.now(),
-      type: 'assistant',
-      content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-      timestamp: new Date(),
-    }]);
-    await createNewConversation();
-    setHistoryOpen(false);
-  };
-
-  // Delete a conversation
-  const handleDeleteConversation = async (convId) => {
-    try {
-      await apiService.deleteConversation(convId);
-      await loadConversations();
-      
-      // If we deleted the current conversation, create a new one
-      if (convId === conversationId) {
-        await createNewConversation();
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
-    }
-  };
-
-  // Clear all conversations
-  const handleClearAllConversations = async () => {
-    if (!window.confirm('Are you sure you want to clear all conversations? This cannot be undone.')) {
-      return;
-    }
-
-    setLoadingConversations(true);
-
-    try {
-      console.log('Starting to delete all conversations for user:', userId);
-
-      // Use bulk delete endpoint
-      const response = await apiService.deleteAllConversations(userId);
-      console.log('Delete all response:', response.data);
-
-      const deletedCount = response.data.deleted_count || 0;
-      console.log(`Successfully deleted ${deletedCount} conversations from database`);
-
-      // Clear local state immediately
-      setConversations([]);
-      setConversationId(null);
-      localStorage.removeItem(`currentConversationId_${userId}`);
-
-      // Set welcome message for new conversation
-      setMessages([{
-        id: Date.now(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      }]);
-
-      // Create new conversation
-      await createNewConversation(false); // Don't reload list since we already cleared it
-
-      // Verify deletion by reloading conversations
-      setTimeout(async () => {
-        const verifyResponse = await apiService.listConversations(userId);
-        const remainingConvs = verifyResponse.data.conversations || [];
-        console.log(`Verification: ${remainingConvs.length} conversations remaining after delete`);
-
-        if (remainingConvs.length > 1) {
-          // Should only have the newly created conversation
-          console.warn('Warning: More conversations than expected after delete');
-        }
-      }, 1000);
-
-      console.log('Successfully cleared all conversations and created new one');
-    } catch (error) {
-      console.error('Failed to clear conversations:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      alert(`Failed to clear conversations: ${error.response?.data?.detail || error.message}`);
-
-      // Reload conversations to sync state
-      await loadConversations();
-    } finally {
-      setLoadingConversations(false);
-    }
-  };
+  // No conversation management functions - Agent Mode has no persistence
 
   // Helper to parse formatted numbers (handles $, commas, etc.)
   const parseFormattedNumber = (value) => {
@@ -942,36 +649,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     return { data, labelKey, valueKey, numericColumns };
   };
 
-  // Expose methods to parent component via ref
-  useImperativeHandle(ref, () => ({
-    loadConversation,
-    handleDeleteConversation,
-    handleNewConversation: () => createNewConversation(false), // Don't reload list to avoid race conditions
-  }));
-
-  // Notify parent component when conversations change
-  useEffect(() => {
-    if (onConversationsChange) {
-      onConversationsChange(conversations);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations]);
-
-  // Notify parent component when conversationId changes
-  useEffect(() => {
-    if (onConversationIdChange) {
-      onConversationIdChange(conversationId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
-
-  // Notify parent component when loading state changes
-  useEffect(() => {
-    if (onLoadingChange) {
-      onLoadingChange(loadingConversations);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingConversations]);
+  // No methods exposed to parent - Agent Mode has no conversation management
 
   // Render visualization based on type
   const renderVisualization = (messageId, results) => {
@@ -1921,21 +1599,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     );
   };
 
-  // Memoized filtered and grouped conversations
-  const groupedConversations = useMemo(() => {
-    // Filter conversations based on debounced search query
-    const filtered = conversations.filter(conv => {
-      if (!debouncedSearchQuery) return true;
-      const query = debouncedSearchQuery.toLowerCase();
-      return (
-        conv.title.toLowerCase().includes(query) ||
-        (conv.messages && conv.messages.some(msg => msg.content.toLowerCase().includes(query)))
-      );
-    });
-
-    // Group the filtered conversations
-    return groupConversations(filtered);
-  }, [conversations, debouncedSearchQuery]);
+  // No conversation grouping needed - Agent Mode has no history
 
 
   return (
@@ -1972,12 +1636,12 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               )}
               <Box>
                 <Typography variant="h5" fontWeight={600}>
-                  AXIS AI
+                  Agent Mode
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {mode === 'chat'
-                    ? 'Ask Anything'
-                    : 'Conduct comprehensive analysis with AI'}
+                    ? 'Autonomous AI Agent with Multi-Step Reasoning'
+                    : 'Conduct comprehensive analysis with AI Agent'}
                 </Typography>
               </Box>
             </Box>
@@ -2021,38 +1685,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         {console.log('Current mode:', mode)}
         {mode === 'chat' ? (
           <>
-            {/* Sub-tabs for Chat Mode */}
-            <Paper sx={{ mx: 2, mt: 1 }}>
-              <Tabs 
-                value={viewMode} 
-                onChange={(e, v) => setViewMode(v)}
-                sx={{ 
-                  borderBottom: 1, 
-                  borderColor: 'divider',
-                  '& .MuiTab-root': {
-                    textTransform: 'none',
-                    minHeight: 48,
-                  }
-                }}
-              >
-                <Tab 
-                  value="chat" 
-                  label="Chat" 
-                  icon={<ChatIcon sx={{ fontSize: 18 }} />} 
-                  iconPosition="start"
-                />
-                <Tab 
-                  value="history" 
-                  label="Execution History" 
-                  icon={<HistoryIcon sx={{ fontSize: 18 }} />} 
-                  iconPosition="start"
-                />
-              </Tabs>
-            </Paper>
+            {/* No tabs needed - Agent Mode has no history view */}
 
             {/* Chat View */}
-            {viewMode === 'chat' ? (
-              <>
+            <>
                 {/* Sample Queries Panel */}
                 {showSampleQueries && messages.length === 0 && (
               <Accordion 
@@ -2212,12 +1848,6 @@ const SimpleChatInterface = forwardRef((props, ref) => {
           </Box>
         </Paper>
               </>
-            ) : (
-              /* History View */
-              <Box sx={{ flex: 1, p: 2, overflow: 'auto' }}>
-                <QueryLogger />
-              </Box>
-            )}
           </>
         ) : (
           /* Research Mode */
@@ -2399,7 +2029,6 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         initialQuery={analyticsModalData?.query || ''}
         initialData={analyticsModalData?.results || null}
         mode={analyticsModalMode}
-        conversationId={conversationId}
         onQueryExecute={(newResults) => {
           // Optional: Update the chat with new results if needed
           console.log('New results from analytics modal:', newResults);
@@ -2435,4 +2064,4 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   );
 });
 
-export default SimpleChatInterface;
+export default AgentModeInterface;

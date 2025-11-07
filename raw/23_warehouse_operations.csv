@@ -1,9 +1,0 @@
-id,warehouse,operation_type,material,material_description,transaction_date,quantity,uom,bin_location,operator,shift,transaction_type,movement_type,document_number
-WO001,WH-Raw-Materials,Goods Receipt,COMP-C401,Color Developer 60ml,2024-02-04,3500,EA,BIN-A-125,OP-WH-001,Day,GR,101,PO-45334
-WO002,WH-Packaging,Goods Receipt,PKG-B120,Premium Box Packaging,2024-02-04,1200,EA,BIN-P-045,OP-WH-002,Day,GR,101,PO-45156
-WO003,DC-Minneapolis,Goods Issue,SKU-7891,Madison Reed Premium Color Kit,2024-02-05,5500,EA,BIN-FG-201,OP-DC-001,Day,GI,601,SO-45890
-WO004,DC-Phoenix,Goods Issue,SKU-7891,Madison Reed Premium Color Kit,2024-02-05,7500,EA,BIN-FG-105,OP-DC-002,Day,GI,601,SO-45891
-WO005,WH-Raw-Materials,Stock Transfer,COMP-P205,Color Pigment Base,2024-02-03,2000,EA,BIN-A-180,OP-WH-003,Night,ST,311,TO-12345
-WO006,DC-Bentonville,Goods Receipt,SKU-4523,Color Reviving Gloss,2024-02-05,4900,EA,BIN-FG-320,OP-DC-003,Day,GR,101,TO-67890
-WO007,WH-Packaging,Cycle Count,PKG-T085,Tube 150ml,2024-02-04,4200,EA,BIN-P-068,OP-WH-004,Night,CC,701,CC-240204
-WO008,DC-Minneapolis,Physical Inventory,SKU-9021,Root Retouch Kit,2024-02-03,650,EA,BIN-FG-215,OP-DC-001,Night,PI,701,PI-240203

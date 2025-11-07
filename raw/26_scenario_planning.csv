@@ -1,9 +1,0 @@
-id,scenario_name,scenario_type,created_by,created_date,status,assumption_category,assumption_parameter,baseline_value,scenario_value,variance_pct,impact_area,projected_impact,confidence_level
-SC001,Valentine Promo 2024,Promotion,Jane Doe,2024-01-15,Active,Demand,Sales Lift %,0,30,3000,Revenue,+450K USD,High
-SC002,Valentine Promo 2024,Promotion,Jane Doe,2024-01-15,Active,Inventory,Safety Stock Increase %,100,150,50,Working Capital,+125K USD,High
-SC003,Valentine Promo 2024,Promotion,Jane Doe,2024-01-15,Active,Supply,Production Increase %,0,25,2500,Capacity,85% Utilization,Medium
-SC004,Supplier Disruption - PigmentCo,Risk,Sarah Johnson,2024-02-01,Active,Supply,Lead Time Days,21,35,66.7,Production,-8540 Units,Critical
-SC005,Supplier Disruption - PigmentCo,Risk,Sarah Johnson,2024-02-01,Active,Financial,Additional Cost,0,15K,0,Procurement,+15K USD,High
-SC006,New Product Launch Q2,Growth,Marketing Team,2024-01-20,Planning,Demand,New SKU Forecast,0,5000,0,Capacity,Need +10% Capacity,Medium
-SC007,Sustainability Initiative,Strategic,Operations,2024-01-10,Active,Procurement,Sustainable Materials %,15,50,233,Cost,+8% Material Cost,Medium
-SC008,Amazon Prime Day,Promotion,Rep-Online-01,2024-01-25,Planning,Demand,Online Channel Lift %,0,75,7500,Fulfillment,Need +2 Shifts,High

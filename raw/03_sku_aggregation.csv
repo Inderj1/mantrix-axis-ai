@@ -1,6 +1,0 @@
-id,product_sku,product_name,week,month,store_forecast,online_forecast,b2b_forecast,total_demand,store_mix_pct,online_mix_pct,b2b_mix_pct,pir_status,pir_number,mrp_run_date,previous_week_total,yoy_growth_pct
-SKA001,SKU-7891,Madison Reed Premium Color Kit,2024-W06,2024-02,850,920,6200,7970,10.7,11.5,77.8,Created,PIR-240207-001,2024-02-07 03:00:00,7450,7.0
-SKA002,SKU-4523,Color Reviving Gloss,2024-W06,2024-02,750,850,5800,7400,10.1,11.5,78.4,Created,PIR-240207-002,2024-02-07 03:00:00,6920,6.9
-SKA003,SKU-9021,Root Retouch Kit,2024-W06,2024-02,650,750,5350,6750,9.6,11.1,79.3,Created,PIR-240207-003,2024-02-07 03:00:00,6320,6.8
-SKA004,SKU-3312,Shine Therapy Conditioner,2024-W06,2024-02,550,680,4900,6130,9.0,11.1,79.9,Created,PIR-240207-004,2024-02-07 03:00:00,5740,6.8
-SKA005,SKU-5641,Volume Boost Shampoo,2024-W06,2024-02,600,720,5100,6420,9.3,11.2,79.4,Created,PIR-240207-005,2024-02-07 03:00:00,6010,6.8

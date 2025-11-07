@@ -1,8 +1,0 @@
-id,component_id,component_name,total_requirement,available_stock,on_order,shortage,pr_number,po_number,vendor,lead_time_days,status,unit_of_measure,unit_cost,extended_value,expected_arrival_date,buyer
-CC001,COMP-C401,Color Developer 60ml,8370,12500,5000,0,,PO-45123,ChemSupply Inc.,14,OK,EA,2.45,20506.50,2024-02-20,John Smith
-CC002,COMP-P205,Color Pigment Base,16740,8200,0,8540,PR-78945,,PigmentCo Ltd,21,Critical,EA,5.80,97092.00,,Sarah Johnson
-CC003,PKG-B120,Premium Box Packaging,8370,6500,3000,0,,PO-45156,PackPro Solutions,10,Warning,EA,1.25,10462.50,2024-02-15,Mike Chen
-CC004,COMP-G301,Gloss Base Formula,6430,15200,0,0,,,BeautyIngredients Corp,12,OK,EA,3.20,20576.00,,John Smith
-CC005,PKG-T085,Tube 150ml,6430,4200,5000,0,,PO-45178,PackPro Solutions,8,Warning,EA,0.85,5465.50,2024-02-12,Mike Chen
-CC006,PKG-P018,Pump Dispenser,12550,7200,8000,0,,PO-45189,PackPro Solutions,9,Warning,EA,0.95,11922.50,2024-02-18,Mike Chen
-CC007,COMP-A401,Ammonia-Free Activator,6750,4200,0,2550,PR-78947,,ChemSupply Inc.,18,Critical,EA,4.20,28350.00,,Sarah Johnson

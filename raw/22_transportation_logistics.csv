@@ -1,9 +1,0 @@
-id,shipment_number,carrier,tracking_number,origin,destination,ship_date,estimated_arrival,actual_arrival,weight_lbs,volume_cuft,freight_cost,delivery_status,temperature_controlled,special_handling
-TL001,SHIP-240205-001,FedEx,FX-8845921234,DC-Minneapolis,Target DC - Minneapolis,2024-02-05,2024-02-08,2024-02-08,1250,185,245.50,Delivered,N,None
-TL002,SHIP-240205-002,UPS,1Z-9982341567,DC-Phoenix,Amazon FC - Phoenix,2024-02-05,2024-02-07,2024-02-07,1580,225,385.00,Delivered,N,None
-TL003,SHIP-240206-001,FedEx,FX-8845921235,DC-Bentonville,Walmart DC - Bentonville,2024-02-06,2024-02-09,,1420,195,265.00,In Transit,N,None
-TL004,SHIP-240204-001,UPS,1Z-9982341568,DC-Minneapolis,Target DC - Minneapolis,2024-02-04,2024-02-07,2024-02-07,980,145,195.50,Delivered,N,None
-TL005,SHIP-240205-003,XPO Logistics,XPO-445821234,DC-Phoenix,Amazon FC - Phoenix,2024-02-05,2024-02-08,2024-02-10,1280,175,325.00,Delayed,N,None
-TL006,SHIP-240205-004,FedEx,FX-8845921236,DC-Bentonville,Walmart DC - Bentonville,2024-02-05,2024-02-08,2024-02-08,1150,165,235.00,Delivered,N,None
-TL007,SHIP-240206-002,UPS,1Z-9982341569,DC-Minneapolis,Store-Chicago-001,2024-02-06,2024-02-07,,285,42,115.00,In Transit,N,Fragile
-TL008,SHIP-240205-005,FedEx,FX-8845921237,DC-Phoenix,Store-Phoenix-001,2024-02-05,2024-02-06,2024-02-06,320,48,125.00,Delivered,N,Fragile

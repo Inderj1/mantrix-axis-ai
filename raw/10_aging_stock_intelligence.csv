@@ -1,5 +1,0 @@
-id,sku,product_name,location,location_type,on_hand_qty,unit_cost,extended_value,days_on_hand,aging_category,last_movement_date,movement_velocity,markdown_recommendation_pct,disposal_risk,recommended_action,reason_code,buyer,supplier
-AS001,SKU-7891,Madison Reed Premium Color Kit,DC-Minneapolis,Distribution Center,1250,15.50,19375.00,29,Fresh,2024-02-05,High,0,Low,None,Normal Turnover,John Smith,MFG-Plant-01
-AS002,SKU-9021,Root Retouch Kit,Store-Seattle-005,Retail Store,8,18.20,145.60,45,Slow Moving,2024-01-22,Low,15,Medium,Markdown,Slow Turnover,John Smith,MFG-Plant-01
-AS003,SKU-7891-V1,Madison Reed Color Kit V1 (Obsolete),DC-Minneapolis,Distribution Center,145,15.50,2247.50,120,Obsolete,2023-10-08,None,50,High,Liquidate,Product Discontinued,John Smith,MFG-Plant-01
-AS004,SKU-PROMO-001,Holiday Gift Set 2023,Store-Chicago-001,Retail Store,25,28.50,712.50,62,Slow Moving,2023-12-06,None,40,High,Clearance,Seasonal Item,John Smith,MFG-Plant-01

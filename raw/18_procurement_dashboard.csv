@@ -1,8 +1,0 @@
-id,pr_number,po_number,material,material_description,vendor,order_qty,received_qty,open_qty,unit_price,total_value,pr_date,po_date,delivery_date,status,buyer
-PD001,PR-78945,Pending,COMP-P205,Color Pigment Base,PigmentCo Ltd,15000,0,15000,5.80,87000.00,2024-01-20,,2024-02-25,Pending Approval,Sarah Johnson
-PD002,PR-78947,Pending,COMP-A401,Ammonia-Free Activator,ChemSupply Inc.,8000,0,8000,4.20,33600.00,2024-01-22,,2024-02-22,Pending Approval,Sarah Johnson
-PD003,PR-78946,Pending,COMP-K201,Keratin Complex,ProteinSupply Ltd,4000,0,4000,8.50,34000.00,2024-01-24,,2024-02-20,Pending Approval,Sarah Johnson
-PD004,,PO-45123,COMP-C401,Color Developer 60ml,ChemSupply Inc.,5000,0,5000,2.45,12250.00,,2024-01-25,2024-02-20,Ordered,John Smith
-PD005,,PO-45156,PKG-B120,Premium Box Packaging,PackPro Solutions,3000,1200,1800,1.25,3750.00,,2024-01-28,2024-02-15,Partial Receipt,Mike Chen
-PD006,,PO-45178,PKG-T085,Tube 150ml,PackPro Solutions,5000,0,5000,0.85,4250.00,,2024-01-30,2024-02-12,Ordered,Mike Chen
-PD007,,PO-45189,PKG-P018,Pump Dispenser,PackPro Solutions,8000,3500,4500,0.95,7600.00,,2024-01-29,2024-02-18,Partial Receipt,Mike Chen

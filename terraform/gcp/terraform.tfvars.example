@@ -1,18 +1,23 @@
 # GCP Configuration
-project_id = "your-gcp-project-id"
-region     = "us-central1"
-zone       = "us-central1-a"
+project_id   = "your-gcp-project-id"
+region       = "us-central1"
+zone         = "us-central1-a"
+project_name = "mantrix-madison"
+domain_name  = "madisonreed.cloudmantra.ai"
 
 # Machine Type
-# e2-medium  = 2 vCPU, 4GB RAM (~$30/month) - Recommended
-# e2-small   = 2 vCPU, 2GB RAM (~$15/month) - Minimal
+# e2-medium     = 2 vCPU, 4GB RAM (~$30/month) - Recommended for production
+# e2-small      = 2 vCPU, 2GB RAM (~$15/month) - Minimal setup
 # e2-standard-2 = 2 vCPU, 8GB RAM (~$60/month) - More headroom
 machine_type = "e2-medium"
 
-# SSH Configuration
-ssh_user             = "ubuntu"
-ssh_public_key_path  = "~/.ssh/id_rsa.pub"
+# Disk Configuration
+disk_size_gb = 30  # GB
 
-# DNS Configuration (optional)
+# SSH Configuration
+ssh_user            = "ubuntu"
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+
+# DNS Configuration (optional - use Cloud DNS if managing DNS in GCP)
 use_cloud_dns = false
-dns_zone_name = ""
+dns_zone_name = ""  # If using Cloud DNS, provide the managed zone name

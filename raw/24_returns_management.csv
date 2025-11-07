@@ -1,6 +1,0 @@
-id,return_number,customer_id,customer_name,original_order,return_date,sku,product_name,return_qty,return_reason,condition,disposition,credit_amount,processing_status,inspector
-RM001,RET-240201-001,CUST-TARGET-001,Target Corporation,SO-45850,2024-02-01,SKU-7891,Madison Reed Premium Color Kit,25,Damaged in Transit,Damaged,Scrap,387.50,Completed,QC-Inspector-05
-RM002,RET-240202-001,CUST-AMAZON-001,Amazon,SO-45825,2024-02-02,SKU-4523,Color Reviving Gloss,18,Customer Return,Good,Restock,230.40,Completed,QC-Inspector-05
-RM003,RET-240203-001,CUST-WALMART-001,Walmart,SO-45830,2024-02-03,SKU-9021,Root Retouch Kit,12,Expired Product,Expired,Dispose,218.40,Pending,QC-Inspector-06
-RM004,RET-240204-001,CUST-TARGET-001,Target Corporation,SO-45845,2024-02-04,SKU-3312,Shine Therapy Conditioner,8,Wrong Product Shipped,Good,Restock,116.00,Completed,QC-Inspector-05
-RM005,RET-240205-001,CUST-AMAZON-001,Amazon,SO-45860,2024-02-05,SKU-5641,Volume Boost Shampoo,15,Quality Issue,Defective,Return to Vendor,208.50,In Process,QC-Inspector-06

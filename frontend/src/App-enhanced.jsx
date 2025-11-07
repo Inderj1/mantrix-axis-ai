@@ -60,7 +60,13 @@ import DataSourcesTab from './components/DataSourcesTab';
 import AIChatInterface from './components/AIChatInterface';
 import ControlCenter from './components/ControlCenter';
 import SimpleChatInterface from './components/SimpleChatInterface';
+import AgentModeInterface from './components/AgentModeInterface';
 import EnhancedSidebar from './components/EnhancedSidebar';
+import TopNavBar from './components/TopNavBar';
+import ContentHub from './components/ContentHub';
+import ProjectsHub from './components/ProjectsHub';
+import ChatSearchPage from './components/ChatSearchPage';
+import AdminHub from './components/AdminHub';
 import MarketsAIDashboard from './components/MarketsAIDashboard';
 import CoreAILanding from './components/CoreAILanding';
 import MargenAIDashboard from './components/margenai/MargenAIDashboard';
@@ -125,6 +131,7 @@ import DeliveryTracking from './components/routeai/DeliveryTracking';
 import PerformanceAnalytics from './components/routeai/PerformanceAnalytics';
 import FuelManagement from './components/routeai/FuelManagement';
 import MaintenanceScheduler from './components/routeai/MaintenanceScheduler';
+import { apiService } from './services/api';
 import { sapFioriTheme, sapChartColors } from './themes/sapFioriTheme';
 import { defaultTheme } from './themes/defaultTheme';
 import {
@@ -190,6 +197,9 @@ const formatBytes = (bytes) => {
 };
 
 function App() {
+  // Get authenticated user
+  const { user } = useUser();
+
   // Removed navigate and location - using tab-based navigation
   // Theme state - SAP theme is now default
   const useSapTheme = true;
@@ -197,8 +207,8 @@ function App() {
   
   // State management
   const [loading, setLoading] = useState(false);
-  const [selectedTab, setSelectedTab] = usePersistedState('mantrix-selectedTab', 0);
-  const [drawerOpen, setDrawerOpen] = usePersistedState('mantrix-drawerOpen', false);
+  const [selectedTab, setSelectedTab] = usePersistedState('mantrix-selectedTab', 'chat');
+  const [drawerOpen, setDrawerOpen] = usePersistedState('mantrix-drawerOpen', true);
   const [coreAIView, setCoreAIView] = useState('landing'); // 'landing', 'margen', 'stox', 'route'
   const [stoxView, setStoxView] = usePersistedState('mantrix-stoxView', 'landing'); // 'landing', 'stoxshift'
   const [margenView, setMargenView] = usePersistedState('mantrix-margenView', 'landing'); // 'landing', 'revenue-sales', 'cost-operations', etc.
@@ -213,6 +223,37 @@ function App() {
   const [tableDetailsOpen, setTableDetailsOpen] = useState(false);
   const [selectedTable, setSelectedTable] = useState(null);
   const [queryHistory, setQueryHistory] = useState([]);
+
+  // Conversation state (shared between sidebar and chat interface)
+  const [conversations, setConversations] = useState([]);
+  const [conversationId, setConversationId] = useState(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [starredConversations, setStarredConversations] = useState([]);
+  const [chatView, setChatView] = useState('chat'); // 'search' or 'chat' - default to 'chat' to show recent conversation
+
+  // Projects state
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  // Toggle star for a conversation
+  const handleToggleStar = (convId) => {
+    const conversation = conversations.find(c => (c.conversation_id || c.conversationId) === convId);
+    if (!conversation) return;
+
+    setStarredConversations(prev => {
+      const isStarred = prev.some(c => (c.conversation_id || c.conversationId) === convId);
+      if (isStarred) {
+        // Unstar - remove from starred list
+        return prev.filter(c => (c.conversation_id || c.conversationId) !== convId);
+      } else {
+        // Star - add to starred list
+        return [...prev, conversation];
+      }
+    });
+  };
+
+  // Refs to SimpleChatInterface functions
+  const chatInterfaceRef = React.useRef(null);
   const [schemaData, setSchemaData] = useState({
     summary: {
       totalTables: 0,
@@ -285,6 +326,38 @@ function App() {
     }
   }, [selectedTab]);
 
+  // Load projects when user is authenticated
+  useEffect(() => {
+    if (user) {
+      loadProjects();
+      loadConversations();
+    }
+  }, [user?.id]);
+
+  // Load conversations from API
+  const loadConversations = async () => {
+    if (!user) return;
+
+    try {
+      setLoadingConversations(true);
+      const response = await apiService.get(`/api/v1/conversations?user_id=${user.id}&limit=50&skip=0`);
+      const loadedConversations = response.data?.conversations || [];
+
+      // Sort by updated_at (most recent first)
+      const sortedConversations = loadedConversations.sort((a, b) => {
+        const dateA = new Date(a.updated_at || a.updatedAt);
+        const dateB = new Date(b.updated_at || b.updatedAt);
+        return dateB - dateA;
+      });
+
+      setConversations(sortedConversations);
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
   // API Functions
   const checkApiHealth = async () => {
     try {
@@ -311,6 +384,20 @@ function App() {
       { name: 'Redis', status: 'connected', icon: '🔴', color: '#DC382D' },
       { name: 'Anthropic API', status: 'connected', icon: '🤖', color: '#7C3AED' },
     ]);
+  };
+
+  const loadProjects = async () => {
+    if (!user) return;
+
+    try {
+      setLoadingProjects(true);
+      const response = await apiService.get(`/api/v1/projects?user_id=${user.id}`);
+      setProjects(response.data || []);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    } finally {
+      setLoadingProjects(false);
+    }
   };
 
   const loadSchemaData = async () => {
@@ -516,6 +603,42 @@ function App() {
         setSelectedTab={setSelectedTab}
         apiHealth={apiHealth}
         useSapTheme={useSapTheme}
+        conversations={conversations}
+        conversationId={conversationId}
+        loadingConversations={loadingConversations}
+        starredConversations={starredConversations}
+        onToggleStar={handleToggleStar}
+        onOpenChatHistory={() => {
+          setChatView('search');
+        }}
+        onLoadConversation={(convId) => {
+          console.log('Loading conversation:', convId);
+          setConversationId(convId);
+          setChatView('chat');
+          setSelectedTab('chat');
+          // Load the conversation in the chat interface
+          setTimeout(() => {
+            if (chatInterfaceRef.current?.loadConversation) {
+              chatInterfaceRef.current.loadConversation(convId);
+            }
+          }, 100);
+        }}
+        onDeleteConversation={(convId) => {
+          if (chatInterfaceRef.current?.handleDeleteConversation) {
+            chatInterfaceRef.current.handleDeleteConversation(convId);
+          }
+        }}
+        onNewChat={() => {
+          // Switch to chat view first
+          setChatView('chat');
+          setSelectedTab('chat');
+          // Then call handleNewConversation after a brief delay to ensure component is mounted
+          setTimeout(() => {
+            if (chatInterfaceRef.current?.handleNewConversation) {
+              chatInterfaceRef.current.handleNewConversation();
+            }
+          }, 100);
+        }}
       />
 
       {/* Main Content */}
@@ -524,21 +647,16 @@ function App() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        width: '100%'
+        width: '100%',
+        bgcolor: '#f7f7f7'
       }}>
-        <AppBar position="static" elevation={0} sx={{ bgcolor: 'white', color: 'text.primary' }}>
-          <Toolbar>
-            {/* Global Search */}
-            <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center' }}>
-              <GlobalSearch onNavigate={handleSearchNavigation} />
-            </Box>
-            
-            {/* Authentication Button */}
-            <Box sx={{ ml: 2 }}>
-              <AuthButton />
-            </Box>
-          </Toolbar>
-        </AppBar>
+        {/* Top Navigation Bar with Global Search */}
+        <TopNavBar
+          useSapTheme={useSapTheme}
+          setSelectedTab={setSelectedTab}
+          drawerOpen={drawerOpen}
+          setDrawerOpen={setDrawerOpen}
+        />
 
         <Container maxWidth="xl" sx={{
           mt: 3,
@@ -548,687 +666,79 @@ function App() {
           width: '100%',
           px: { xs: 2, sm: 3 }
         }}>
-          {/* Unified Chat Interface */}
-          {selectedTab === 0 && <SimpleChatInterface />}
-
-          {/* CORE.AI Tab - Operational AI */}
-          {selectedTab === 1 && (
+          {/* Chat - Natural Language Interface */}
+          {selectedTab === 'chat' && (
             <Box sx={{
-              height: 'calc(100vh - 180px)',
+              height: 'calc(100vh - 100px)',
+              display: 'flex',
+              flexDirection: 'column',
               overflow: 'hidden',
-              width: '100%'
+              pb: 0
             }}>
-              <Fade in={coreAIView === 'landing'} timeout={300}>
-                <Box sx={{ display: coreAIView === 'landing' ? 'block' : 'none', height: '100%' }}>
-                  <CoreAILanding onTileClick={(moduleId) => {
-                    if (moduleId === 'margen') {
-                      setCoreAIView('margen');
-                    } else if (moduleId === 'stox') {
-                      setCoreAIView('stox');
-                      setStoxView('landing');
-                    } else if (moduleId === 'route') {
-                      setCoreAIView('route');
-                      setRouteView('landing');
+              {chatView === 'search' ? (
+                <ChatSearchPage
+                  userId={user?.id || 'default'}
+                  onOpenConversation={(convId) => {
+                    if (chatInterfaceRef.current?.loadConversation) {
+                      chatInterfaceRef.current.loadConversation(convId);
+                      setChatView('chat');
                     }
-                  }} />
-                </Box>
-              </Fade>
-              <Fade in={coreAIView === 'margen'} timeout={300}>
-                <Box sx={{ display: coreAIView === 'margen' ? 'block' : 'none', height: '100%', overflow: 'auto' }}>
-                  {margenView === 'landing' && (
-                    <MargenAILanding
-                      onBack={() => setCoreAIView('landing')}
-                      onTileClick={(moduleId) => {
-                        console.log('MargenAI tile clicked:', moduleId);
-                        setMargenView(moduleId);
-                      }}
-                    />
-                  )}
-                  {margenView === 'revenue-growth' && (
-                    <RevenueGrowthAnalytics onBack={() => setMargenView('landing')} />
-                  )}
-                  {margenView === 'cost-cogs' && (
-                    <CostCOGSAnalytics onBack={() => setMargenView('landing')} />
-                  )}
-                  {margenView === 'margin-profitability' && (
-                    <MarginProfitabilityAnalytics onBack={() => setMargenView('landing')} />
-                  )}
-                  {margenView === 'pl-gl-explorer' && (
-                    <PLGLExplorerAnalytics onBack={() => setMargenView('landing')} />
-                  )}
-                  {margenView === 'drivers-whatif' && (
-                    <FinancialDriversAnalytics onBack={() => setMargenView('landing')} />
-                  )}
-                </Box>
-              </Fade>
-              <Fade in={coreAIView === 'stox'} timeout={300}>
-                <Box sx={{
-                  display: coreAIView === 'stox' ? 'block' : 'none',
-                  height: '100%',
-                  overflow: 'auto',
-                  width: '100%'
-                }}>
-                  {(stoxView === 'landing' || stoxView === 'store-modules' || stoxView === 'dc-modules') && (
-                    <StoxAILanding
-                      onBack={() => {
-                        if (stoxView === 'store-modules' || stoxView === 'dc-modules') {
-                          setStoxView('landing');
-                        } else {
-                          setCoreAIView('landing');
-                        }
-                      }}
-                      onCategorySelect={(category) => {
-                        if (category === 'store') {
-                          setStoxView('store-modules');
-                        } else if (category === 'dc') {
-                          setStoxView('dc-modules');
-                        }
-                      }}
-                      initialView={stoxView === 'store-modules' ? 'store' : stoxView === 'dc-modules' ? 'dc' : null}
-                      onTileClick={(moduleId) => {
-                        console.log('STOX tile clicked in App-enhanced, moduleId:', moduleId);
-                        console.log('Current stoxView:', stoxView);
-                        if (moduleId === 'stoxshift') {
-                          console.log('Setting stoxView to: stoxshift');
-                          setStoxView('stoxshift');
-                        } else if (moduleId === 'shortage-detector') {
-                          console.log('Setting stoxView to: shortage-detector');
-                          setStoxView('shortage-detector');
-                        } else if (moduleId === 'inventory-heatmap') {
-                          console.log('Setting stoxView to: inventory-heatmap');
-                          setStoxView('inventory-heatmap');
-                        } else if (moduleId === 'reallocation-optimizer') {
-                          console.log('Setting stoxView to: reallocation-optimizer');
-                          setStoxView('reallocation-optimizer');
-                        } else if (moduleId === 'inbound-risk-monitor') {
-                          console.log('Setting stoxView to: inbound-risk-monitor');
-                          setStoxView('inbound-risk-monitor');
-                        } else if (moduleId === 'aging-stock-intelligence') {
-                          console.log('Setting stoxView to: aging-stock-intelligence');
-                          setStoxView('aging-stock-intelligence');
-                        } else if (moduleId === 'sop-planning' || moduleId === 'demand-workbench') {
-                          console.log('Setting stoxView to: demand-workbench');
-                          setStoxView('demand-workbench');
-                        } else if (moduleId === 'sell-through-analytics') {
-                          console.log('Setting stoxView to: sell-through-analytics');
-                          setStoxView('sell-through-analytics');
-                        } else if (moduleId === 'sell-in-forecast') {
-                          console.log('Setting stoxView to: sell-in-forecast');
-                          setStoxView('sell-in-forecast');
-                        } else if (moduleId === 'sku-aggregation') {
-                          console.log('Setting stoxView to: sku-aggregation');
-                          setStoxView('sku-aggregation');
-                        } else if (moduleId === 'bom-explorer') {
-                          console.log('Setting stoxView to: bom-explorer');
-                          setStoxView('bom-explorer');
-                        } else if (moduleId === 'store-deployment') {
-                          console.log('Setting stoxView to: store-deployment');
-                          setStoxView('store-deployment');
-                        } else if (moduleId === 'executive-command') {
-                          console.log('Setting stoxView to: executive-command');
-                          setStoxView('executive-command');
-                        } else if (['demand-flow', 'demand-forecasting', 'outbound-replenishment', 'dc-inventory', 'supply-planning', 'bom-explosion', 'component-consolidation', 'analytics-whatif', 'tile0-forecast-simulation', 'store-forecasting', 'store-health-monitor', 'store-optimization', 'store-replenishment', 'store-financial-impact', 'dc-demand-aggregation', 'dc-health-monitor', 'dc-optimization', 'dc-bom', 'dc-lot-size', 'dc-supplier-exec', 'dc-financial-impact'].includes(moduleId)) {
-                          console.log('Setting stoxView to module tiles:', moduleId);
-                          setStoxView(moduleId);
-                        }
-                      }}
-                    />
-                  )}
-                  {/* {stoxView === 'stoxshift' && (
-                    <StoxShiftAI onBack={() => setStoxView('landing')} />
-                  )} */}
-                  {stoxView === 'shortage-detector' && (
-                    <ShortageDetector onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'inventory-heatmap' && (
-                    <InventoryHeatmap onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'reallocation-optimizer' && (
-                    <ReallocationOptimizer onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'inbound-risk-monitor' && (
-                    <InboundRiskMonitor onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'aging-stock-intelligence' && (
-                    <AgingStockIntelligence onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'demand-workbench' && (
-                    <DemandWorkbench onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'sell-through-analytics' && (
-                    <SellThroughAnalytics onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'sell-in-forecast' && (
-                    <SellInForecast onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'sku-aggregation' && (
-                    <SKUAggregation onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'bom-explorer' && (
-                    <BOMExplorer onBack={() => setStoxView('landing')} />
-                  )}
-                  {/* component-consolidation now uses ModuleTilesView */}
-                  {stoxView === 'store-deployment' && (
-                    <StoreDeployment onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'executive-command' && (
-                    <ExecutiveCommandCenter onBack={() => setStoxView('landing')} />
-                  )}
-                  {stoxView === 'scenario-planner' && (
-                    <ScenarioPlanner onBack={() => setStoxView('landing')} />
-                  )}
-                  {/* New Store System Modules */}
-                  {stoxView === 'tile0-forecast-simulation' && (
-                    <Tile0ForecastSimulation onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {stoxView === 'store-forecasting' && (
-                    <StoreForecast onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {stoxView === 'store-health-monitor' && (
-                    <StoreHealthMonitor onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {stoxView === 'store-optimization' && (
-                    <StoreOptimization onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {stoxView === 'store-replenishment' && (
-                    <StoreReplenishment onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {stoxView === 'store-financial-impact' && (
-                    <StoreFinancialImpact onBack={() => setStoxView('store-modules')} />
-                  )}
-                  {/* DC System Modules */}
-                  {stoxView === 'dc-demand-aggregation' && (
-                    <DCDemandAggregation onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-health-monitor' && (
-                    <DCHealthMonitor onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-optimization' && (
-                    <DCOptimization onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-bom' && (
-                    <DCBOM onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-lot-size' && (
-                    <DCLotSize onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-supplier-exec' && (
-                    <DCSupplierExecution onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {stoxView === 'dc-financial-impact' && (
-                    <DCFinancialImpact onBack={() => setStoxView('dc-modules')} />
-                  )}
-                  {/* PRD Module Tiles Views */}
-                  {['demand-flow', 'demand-forecasting', 'outbound-replenishment', 'dc-inventory', 'supply-planning', 'bom-explosion', 'component-consolidation', 'analytics-whatif'].includes(stoxView) && !currentFioriTile && (
-                    <ModuleTilesView
-                      moduleId={stoxView}
-                      onBack={(target) => {
-                        if (target === 'stox') {
-                          setStoxView('landing');
-                        } else if (target === 'core') {
-                          setCoreAIView('landing');
-                        }
-                      }}
-                      onTileClick={(tileId) => {
-                        console.log('Fiori tile clicked:', tileId);
-                        // Get module data to pass to detail view
-                        const moduleColors = {
-                          'demand-flow': '#06b6d4',
-                          'demand-forecasting': '#10b981',
-                          'outbound-replenishment': '#3b82f6',
-                          'dc-inventory': '#f59e0b',
-                          'supply-planning': '#8b5cf6',
-                          'bom-explosion': '#ec4899',
-                          'component-consolidation': '#ef4444',
-                          'analytics-whatif': '#607D8B',
-                        };
-                        setCurrentFioriTile({
-                          tileId,
-                          moduleId: stoxView,
-                          moduleColor: moduleColors[stoxView] || '#3b82f6',
-                        });
-                      }}
-                    />
-                  )}
-                  {/* Fiori Tile Detail View */}
-                  {currentFioriTile && (
-                    <FioriTileDetail
-                      tileId={currentFioriTile.tileId}
-                      tileTitle={currentFioriTile.tileId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                      moduleColor={currentFioriTile.moduleColor}
-                      onBack={(target) => {
-                        if (target === 'module') {
-                          setCurrentFioriTile(null);
-                        } else if (target === 'stox') {
-                          setCurrentFioriTile(null);
-                          setStoxView('landing');
-                        } else if (target === 'core') {
-                          setCurrentFioriTile(null);
-                          setStoxView('landing');
-                          setCoreAIView('landing');
-                        }
-                      }}
-                    />
-                  )}
-                </Box>
-              </Fade>
-              <Fade in={coreAIView === 'route'} timeout={300}>
-                <Box sx={{ display: coreAIView === 'route' ? 'block' : 'none', height: '100%', overflow: 'auto' }}>
-                  {routeView === 'landing' && (
-                    <RouteAILanding
-                      onBack={() => setCoreAIView('landing')}
-                      onTileClick={(moduleId) => {
-                        console.log('RouteAI tile clicked:', moduleId);
-                        setRouteView(moduleId);
-                      }}
-                    />
-                  )}
-                  {routeView === 'fleet-management' && (
-                    <FleetManagement onBack={() => setRouteView('landing')} />
-                  )}
-                  {routeView === 'route-optimization' && (
-                    <RouteOptimization onBack={() => setRouteView('landing')} />
-                  )}
-                  {routeView === 'delivery-tracking' && (
-                    <DeliveryTracking onBack={() => setRouteView('landing')} />
-                  )}
-                  {routeView === 'performance-analytics' && (
-                    <PerformanceAnalytics onBack={() => setRouteView('landing')} />
-                  )}
-                  {routeView === 'fuel-management' && (
-                    <FuelManagement onBack={() => setRouteView('landing')} />
-                  )}
-                  {routeView === 'maintenance-scheduler' && (
-                    <MaintenanceScheduler onBack={() => setRouteView('landing')} />
-                  )}
-                  {!['landing', 'fleet-management', 'route-optimization', 'delivery-tracking', 'performance-analytics', 'fuel-management', 'maintenance-scheduler'].includes(routeView) && (
-                    <RouteAI onBack={() => setRouteView('landing')} />
-                  )}
-                </Box>
-              </Fade>
+                  }}
+                  starredConversations={starredConversations}
+                  onToggleStar={handleToggleStar}
+                  onDeleteConversation={async (convId) => {
+                    if (chatInterfaceRef.current?.deleteConversation) {
+                      await chatInterfaceRef.current.deleteConversation(convId);
+                    }
+                  }}
+                  projects={projects}
+                />
+              ) : (
+                <SimpleChatInterface
+                  ref={chatInterfaceRef}
+                  onConversationsChange={setConversations}
+                  onConversationIdChange={setConversationId}
+                  onLoadingChange={setLoadingConversations}
+                  onBackToSearch={() => setChatView('search')}
+                />
+              )}
             </Box>
           )}
 
-          {/* AXIS.AI Tab - Strategic AI */}
-          {selectedTab === 2 && (
-            <Box sx={{ height: 'calc(100vh - 180px)' }}>
-              <Fade in={axisAIView === 'landing'} timeout={300}>
-                <Box sx={{ display: axisAIView === 'landing' ? 'block' : 'none', height: '100%' }}>
-                  <AxisAIDashboard onTileClick={(moduleId) => {
-                    setAxisAIView(moduleId);
-                  }} />
-                </Box>
-              </Fade>
-              <Fade in={axisAIView === 'forecast'} timeout={300}>
-                <Box sx={{ display: axisAIView === 'forecast' ? 'block' : 'none', height: '100%' }}>
-                  <ForecastAIDashboard onBack={() => setAxisAIView('landing')} />
-                </Box>
-              </Fade>
-              <Fade in={axisAIView === 'scenario'} timeout={300}>
-                <Box sx={{ display: axisAIView === 'scenario' ? 'block' : 'none', height: '100%' }}>
-                  <ScenarioAIDashboard onBack={() => setAxisAIView('landing')} />
-                </Box>
-              </Fade>
+          {/* Agent Mode - Autonomous AI Agent */}
+          {selectedTab === 'agent' && (
+            <Box sx={{
+              height: 'calc(100vh - 100px)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              pb: 0
+            }}>
+              <AgentModeInterface
+                onConversationsChange={setConversations}
+                onConversationIdChange={setConversationId}
+                onLoadingChange={setLoadingConversations}
+              />
             </Box>
           )}
 
-          {/* MARKETS.AI Tab - Dynamic Integration */}
-          {selectedTab === 3 && (
-            <Box sx={{ height: 'calc(100vh - 180px)', overflowY: 'auto' }}>
-              <MarketsAIDashboard />
+          {/* Projects (Content Hub) */}
+          {selectedTab === 'content' && <ProjectsHub setSelectedTab={setSelectedTab} useSapTheme={useSapTheme} />}
+
+          {/* Artifacts */}
+          {selectedTab === 'artifacts' && (
+            <Box sx={{ p: 4 }}>
+              <Typography variant="h4" fontWeight={400} gutterBottom>
+                Artifacts
+              </Typography>
+              <Typography color="text.secondary">
+                Coming soon - View and manage your generated artifacts
+              </Typography>
             </Box>
           )}
 
-          {/* Control Center */}
-          {selectedTab === 4 && <ControlCenter apiHealth={apiHealth} onRefreshStatus={checkApiHealth} />}
-
-          {/* Old Data Explorer code - can be removed */}
-          {false && selectedTab === 5 && (
-            <Box>
-              <Grid container spacing={3}>
-                {/* Summary Cards */}
-                <Grid item xs={12}>
-                  {loadingSchema ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                      <CircularProgress />
-                    </Box>
-                  ) : (
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6} md={3}>
-                        <Card>
-                          <CardContent>
-                            <Typography color="text.secondary" gutterBottom>
-                              Total Tables
-                            </Typography>
-                            <Typography variant="h4">
-                              {schemaData.summary.totalTables || 0}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Across {schemaData.summary.dataSources || 0} data sources
-                            </Typography>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6} md={3}>
-                        <Card>
-                          <CardContent>
-                            <Typography color="text.secondary" gutterBottom>
-                              Total Columns
-                            </Typography>
-                            <Typography variant="h4">
-                              {(schemaData.summary.totalColumns && schemaData.summary.totalColumns.toLocaleString()) || 0}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Average {schemaData.summary.totalTables > 0 
-                                ? (schemaData.summary.totalColumns / schemaData.summary.totalTables).toFixed(1) 
-                                : 0} per table
-                            </Typography>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6} md={3}>
-                        <Card>
-                          <CardContent>
-                            <Typography color="text.secondary" gutterBottom>
-                              Total Rows
-                            </Typography>
-                            <Typography variant="h4">
-                              {formatNumber(schemaData.summary.totalRows || 0)}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {formatBytes(schemaData.summary.totalSize || 0)} total size
-                            </Typography>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6} md={3}>
-                        <Card>
-                          <CardContent>
-                            <Typography color="text.secondary" gutterBottom>
-                              Relationships
-                            </Typography>
-                            <Typography variant="h4">
-                              {schemaData.summary.totalRelationships || 0}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Foreign key connections
-                            </Typography>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    </Grid>
-                  )}
-                </Grid>
-
-                {/* Search and Filter */}
-                <Grid item xs={12}>
-                  <Paper elevation={1} sx={{ p: 2 }}>
-                    <Grid container spacing={2} alignItems="center">
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          placeholder="Search tables, columns, or descriptions..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          InputProps={{
-                            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                          }}
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={2}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Data Source</InputLabel>
-                          <Select 
-                            value={dataSourceFilter} 
-                            label="Data Source"
-                            onChange={(e) => setDataSourceFilter(e.target.value)}
-                          >
-                            <MenuItem value="">All Sources</MenuItem>
-                            <MenuItem value="bigquery">BigQuery</MenuItem>
-                            <MenuItem value="postgres">PostgreSQL</MenuItem>
-                            <MenuItem value="mysql">MySQL</MenuItem>
-                            <MenuItem value="snowflake">Snowflake</MenuItem>
-                            <MenuItem value="mongodb">MongoDB</MenuItem>
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} md={2}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Schema</InputLabel>
-                          <Select 
-                            value={schemaFilter} 
-                            label="Schema"
-                            onChange={(e) => setSchemaFilter(e.target.value)}
-                          >
-                            <MenuItem value="">All Schemas</MenuItem>
-                            <MenuItem value="public">public</MenuItem>
-                            <MenuItem value="analytics">analytics</MenuItem>
-                            <MenuItem value="raw">raw</MenuItem>
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} md={2}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Table Type</InputLabel>
-                          <Select 
-                            value={tableTypeFilter} 
-                            label="Table Type"
-                            onChange={(e) => setTableTypeFilter(e.target.value)}
-                          >
-                            <MenuItem value="">All Types</MenuItem>
-                            <MenuItem value="table">Tables</MenuItem>
-                            <MenuItem value="view">Views</MenuItem>
-                            <MenuItem value="materialized">Materialized Views</MenuItem>
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} md={2}>
-                        <ToggleButtonGroup
-                          value={viewMode}
-                          exclusive
-                          size="small"
-                          fullWidth
-                          onChange={(e, newMode) => {
-                            if (newMode !== null) {
-                              setViewMode(newMode);
-                            }
-                          }}
-                        >
-                          <ToggleButton value="table">
-                            <TableChartIcon sx={{ mr: 1 }} /> Table View
-                          </ToggleButton>
-                          <ToggleButton value="graph">
-                            <SchemaIcon sx={{ mr: 1 }} /> Graph View
-                          </ToggleButton>
-                        </ToggleButtonGroup>
-                      </Grid>
-                    </Grid>
-                  </Paper>
-                </Grid>
-
-                {/* Tables List */}
-                <Grid item xs={12}>
-                  {loadingSchema ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                      <CircularProgress />
-                    </Box>
-                  ) : schemaData.schemas && schemaData.schemas.length > 0 ? (() => {
-                    const filteredSchemas = filterTables(schemaData.schemas);
-                    return filteredSchemas.length > 0 ? (
-                      filteredSchemas.map((schema, idx) => (
-                      <Accordion key={idx} defaultExpanded={idx === 0} sx={{ mb: 2 }}>
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <StorageIcon />
-                            <Typography variant="h6">
-                              {schema.source} - {schema.database}
-                            </Typography>
-                            <Chip size="small" label={`${(schema.tables && schema.tables.length) || 0} tables`} />
-                          </Box>
-                        </AccordionSummary>
-                        <AccordionDetails>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Table Name</TableCell>
-                              <TableCell>Description</TableCell>
-                              <TableCell align="right">Rows</TableCell>
-                              <TableCell align="right">Size</TableCell>
-                              <TableCell align="right">Last Updated</TableCell>
-                              <TableCell>Relationships</TableCell>
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {schema.tables && schema.tables.map((table, tableIdx) => (
-                              <TableRow key={tableIdx} hover>
-                                <TableCell>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <TableChartIcon fontSize="small" color="primary" />
-                                    <Typography variant="body2" fontWeight="medium">
-                                      {table.name}
-                                    </Typography>
-                                  </Box>
-                                </TableCell>
-                                <TableCell>{table.description || 'No description'}</TableCell>
-                                <TableCell align="right">{formatNumber(table.row_count || 0)}</TableCell>
-                                <TableCell align="right">{formatBytes(table.size_bytes || 0)}</TableCell>
-                                <TableCell align="right">{table.last_modified || 'Unknown'}</TableCell>
-                                <TableCell>
-                                  {table.relationships ? (
-                                    <Chip size="small" label={`${table.relationships} FK`} variant="outlined" />
-                                  ) : (
-                                    '-'
-                                  )}
-                                </TableCell>
-                              <TableCell>
-                                <Stack direction="row" spacing={1}>
-                                  <MuiTooltip title="View details">
-                                    <IconButton 
-                                      size="small"
-                                      onClick={async () => {
-                                        // For now, show mock data since API might not be ready
-                                        setSelectedTable({
-                                          name: table.name,
-                                          database: schema.source,
-                                          schema: schema.database,
-                                          description: table.description || 'No description available',
-                                          rows: table.row_count || 0,
-                                          size: formatBytes(table.size_bytes || 0),
-                                          columns: table.columns || [],
-                                          relationships: table.relationshipDetails || [],
-                                          indexes: table.indexes || [],
-                                          partitioning: table.partitioning,
-                                          stats: table.stats || {}
-                                        });
-                                        setTableDetailsOpen(true);
-                                      }}
-                                    >
-                                      <InfoIcon fontSize="small" />
-                                    </IconButton>
-                                  </MuiTooltip>
-                                  <MuiTooltip title="View sample query">
-                                    <IconButton size="small">
-                                      <CodeIcon fontSize="small" />
-                                    </IconButton>
-                                  </MuiTooltip>
-                                </Stack>
-                              </TableCell>
-                            </TableRow>
-                            ))}
-                            {(!schema.tables || schema.tables.length === 0) && (
-                              <TableRow>
-                                <TableCell colSpan={7} align="center">
-                                  No tables found
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                        </AccordionDetails>
-                      </Accordion>
-                    ))
-                    ) : (
-                      <Paper sx={{ p: 4, textAlign: 'center' }}>
-                        <SearchIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                        <Typography variant="h6" gutterBottom>
-                          No tables match your filters
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Try adjusting your search criteria or clear filters to see all tables
-                        </Typography>
-                        <Button 
-                          variant="outlined" 
-                          sx={{ mt: 2 }}
-                          onClick={() => {
-                            setSearchTerm('');
-                            setDataSourceFilter('');
-                            setSchemaFilter('');
-                            setTableTypeFilter('');
-                          }}
-                        >
-                          Clear Filters
-                        </Button>
-                      </Paper>
-                    )
-                  })() : (
-                    <Paper sx={{ p: 3, textAlign: 'center' }}>
-                      <Typography variant="body1" color="text.secondary">
-                        No schema data available. Click refresh to load schemas.
-                      </Typography>
-                    </Paper>
-                  )}
-                </Grid>
-
-                {/* Table Details Modal/Drawer would go here */}
-              </Grid>
-            </Box>
-          )}
-
-          {/* Document Intelligence Tab */}
-          {selectedTab === 6 && <DocumentIntelligence />}
-          
-          {/* Process Mining Tab */}
-          {selectedTab === 7 && <ProcessMiningPage />}
-          
-          {/* Enterprise Pulse Tab */}
-          {selectedTab === 8 && (
-            <Box sx={{ height: 'calc(100vh - 180px)' }}>
-              <EnterprisePulse />
-            </Box>
-          )}
-          
-          {/* Vision AI Tab */}
-          {selectedTab === 9 && (
-            <Box sx={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
-              <DocumentVisionIntelligence onNavigateToConfig={() => setSelectedTab(4)} />
-            </Box>
-          )}
-
-          {/* COMMAND TOWER Tab */}
-          {selectedTab === 10 && (
-            <Box sx={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
-              <TicketingSystem onBack={() => setSelectedTab(1)} />
-            </Box>
-          )}
-
-          {/* EMAIL INTEL Tab */}
-          {selectedTab === 13 && (
-            <Box sx={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
-              <EmailIntelligence onNavigateToConfig={() => setSelectedTab(4)} />
-            </Box>
-          )}
-
-          {/* ROUTE.AI Tab */}
-          {selectedTab === 15 && (
-            <Box sx={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
-              <RouteAI />
-            </Box>
-          )}
-
+          {/* Admin - Settings & Administration */}
+          {selectedTab === 'admin' && <AdminHub setSelectedTab={setSelectedTab} useSapTheme={useSapTheme} />}
         </Container>
       </Box>
 
@@ -1239,166 +749,14 @@ function App() {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           variant="filled"
         >
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      {/* Table Details Dialog */}
-      <Dialog
-        open={tableDetailsOpen}
-        onClose={() => setTableDetailsOpen(false)}
-        maxWidth="lg"
-        fullWidth
-      >
-        {selectedTable && (
-          <>
-            <Box sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'space-between',
-              p: 3,
-              borderBottom: 1,
-              borderColor: 'divider'
-            }}>
-              <Box>
-                <Typography variant="h5" gutterBottom>
-                  {selectedTable.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {selectedTable.database} • {selectedTable.schema}
-                </Typography>
-              </Box>
-              <IconButton onClick={() => setTableDetailsOpen(false)}>
-                <CloseIcon />
-              </IconButton>
-            </Box>
-            
-            <Box sx={{ p: 3 }}>
-              {/* Overview */}
-              <Typography variant="h6" gutterBottom>Overview</Typography>
-              <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid item xs={12}>
-                  <Typography variant="body1" paragraph>
-                    {selectedTable.description}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6} md={3}>
-                  <Typography variant="caption" color="text.secondary">Total Rows</Typography>
-                  <Typography variant="body1">{selectedTable.rows && selectedTable.rows.toLocaleString()}</Typography>
-                </Grid>
-                <Grid item xs={6} md={3}>
-                  <Typography variant="caption" color="text.secondary">Storage Size</Typography>
-                  <Typography variant="body1">{selectedTable.size}</Typography>
-                </Grid>
-                <Grid item xs={6} md={3}>
-                  <Typography variant="caption" color="text.secondary">Storage Type</Typography>
-                  <Typography variant="body1">{selectedTable.stats && selectedTable.stats.storageType}</Typography>
-                </Grid>
-                <Grid item xs={6} md={3}>
-                  <Typography variant="caption" color="text.secondary">Compression</Typography>
-                  <Typography variant="body1">{selectedTable.stats && selectedTable.stats.compression}</Typography>
-                </Grid>
-              </Grid>
-
-              {/* Columns */}
-              <Typography variant="h6" gutterBottom>Columns ({selectedTable.columns && selectedTable.columns.length})</Typography>
-              <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Column Name</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell>Nullable</TableCell>
-                      <TableCell>Description</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {selectedTable.columns && selectedTable.columns.map((col, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>{col.name}</TableCell>
-                        <TableCell>
-                          <Chip size="small" label={col.type} variant="outlined" />
-                        </TableCell>
-                        <TableCell>{col.nullable ? 'Yes' : 'No'}</TableCell>
-                        <TableCell>{col.description}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-
-              {/* Relationships */}
-              <Typography variant="h6" gutterBottom>Relationships</Typography>
-              <Box sx={{ mb: 3 }}>
-                {selectedTable.relationships && selectedTable.relationships.map((rel, idx) => (
-                  <Chip 
-                    key={idx}
-                    label={`${rel.column} → ${rel.references}`}
-                    variant="outlined"
-                    icon={<CableIcon />}
-                    sx={{ mr: 1, mb: 1 }}
-                  />
-                ))}
-              </Box>
-
-              {/* Indexes */}
-              <Typography variant="h6" gutterBottom>Indexes</Typography>
-              <Box sx={{ mb: 3 }}>
-                {selectedTable.indexes && selectedTable.indexes.map((idx, i) => (
-                  <Box key={i} sx={{ mb: 1 }}>
-                    <Typography variant="body2">
-                      <strong>{idx.name}</strong> ({idx.type}) - Columns: {idx.columns.join(', ')}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              {/* Partitioning */}
-              {selectedTable.partitioning && (
-                <>
-                  <Typography variant="h6" gutterBottom>Partitioning</Typography>
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="body2">
-                      Type: {selectedTable.partitioning.type} on {selectedTable.partitioning.column} ({selectedTable.partitioning.interval})
-                    </Typography>
-                  </Box>
-                </>
-              )}
-
-              {/* Sample Query */}
-              <Typography variant="h6" gutterBottom>Sample Query</Typography>
-              <Box sx={{ 
-                p: 2, 
-                bgcolor: 'grey.900', 
-                color: 'white',
-                borderRadius: 1,
-                fontFamily: 'monospace',
-                fontSize: '0.875rem',
-                overflow: 'auto',
-              }}>
-                <pre style={{ margin: 0 }}>
-{`SELECT 
-    snapshot_date,
-    sku,
-    warehouse_id,
-    quantity_on_hand,
-    quantity_available
-FROM ${selectedTable.schema}.${selectedTable.name}
-WHERE snapshot_date = CURRENT_DATE()
-    AND quantity_available < 10
-ORDER BY quantity_available ASC
-LIMIT 100;`}
-                </pre>
-              </Box>
-            </Box>
-          </>
-        )}
-      </Dialog>
     </Box>
     </ThemeProvider>
   );
@@ -1430,10 +788,10 @@ function AuthenticatedApp() {
   // If not signed in, show enhanced login screen
   if (!isSignedIn) {
     return (
-      <Box sx={{ 
-        display: 'flex', 
+      <Box sx={{
+        display: 'flex',
         minHeight: '100vh',
-        bgcolor: '#fafbfc',
+        bgcolor: '#f7f7f7',
         fontFamily: 'Poppins, sans-serif',
         justifyContent: 'center',
         alignItems: 'center',
@@ -1443,7 +801,7 @@ function AuthenticatedApp() {
         <style>
           {`
             @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-            
+
             @keyframes fadeInUp {
               from {
                 opacity: 0;
@@ -1456,7 +814,7 @@ function AuthenticatedApp() {
             }
           `}
         </style>
-        
+
         {/* Background decoration */}
         <Box sx={{
           position: 'absolute',
@@ -1474,7 +832,7 @@ function AuthenticatedApp() {
             width: '80%',
             height: '100%',
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(25, 118, 210, 0.03) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgba(10, 110, 209, 0.025) 0%, transparent 60%)',
           }} />
           <Box sx={{
             position: 'absolute',
@@ -1483,61 +841,60 @@ function AuthenticatedApp() {
             width: '80%',
             height: '100%',
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(25, 118, 210, 0.02) 0%, transparent 60%)',
+            background: 'radial-gradient(circle, rgba(10, 110, 209, 0.015) 0%, transparent 60%)',
           }} />
         </Box>
         {/* Login Form */}
-        <Paper sx={{ 
+        <Paper sx={{
           p: { xs: 3, sm: 4, md: 5 },
           maxWidth: 420,
           width: '90%',
-          borderRadius: '16px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.08)',
+          borderRadius: '12px',
+          boxShadow: '0 0 0 1px rgba(0,0,0,0.1), 0 20px 40px rgba(0, 0, 0, 0.06)',
           background: 'white',
           position: 'relative',
           zIndex: 1,
-          border: '1px solid rgba(0, 0, 0, 0.04)',
-          animation: 'fadeInUp 0.6s ease-out',
+          border: '1px solid rgba(0, 0, 0, 0.06)',
+          animation: 'fadeInUp 0.5s ease-out',
         }}>
           {/* Logo */}
           <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <img 
-              src="/mantra9.png" 
-              alt="Cloud Mantra" 
+            <img
+              src="/mantra9.png"
+              alt="Cloud Mantra"
               style={{ height: 60, objectFit: 'contain' }}
             />
           </Box>
-            
-          <Typography sx={{ 
+
+          <Typography sx={{
             fontSize: { xs: '1.1rem', sm: '1.5rem' },
-            fontWeight: 600, 
-            mb: 1.5, 
+            fontWeight: 400,
+            mb: 1.5,
             textAlign: 'center',
-            color: '#0f172a',
+            color: '#32363a',
             fontFamily: 'Poppins, sans-serif',
-            letterSpacing: '-0.5px',
-            whiteSpace: 'nowrap',
+            letterSpacing: '-0.3px',
           }}>
-            Decision Intelligence Platform
+            Enterprise Decision Intelligence
           </Typography>
-          <Typography sx={{ 
+          <Typography sx={{
             fontSize: '0.875rem',
-            mb: 4, 
-            textAlign: 'center', 
-            color: '#64748b',
+            mb: 4,
+            textAlign: 'center',
+            color: '#6a6d70',
             fontFamily: 'Poppins, sans-serif',
             fontWeight: 400,
           }}>
-            Transform enterprise data into actionable insights
+            Unified platform for data-driven business decisions
           </Typography>
-            
+
           {/* Auth Button */}
           <Box sx={{ mb: 4 }}>
             <AuthButton />
           </Box>
-          
+
           <Divider sx={{ my: 4 }}>
-            <Typography sx={{ 
+            <Typography sx={{
               fontSize: '0.75rem',
               color: '#94a3b8',
               fontFamily: 'Poppins, sans-serif',
@@ -1547,19 +904,19 @@ function AuthenticatedApp() {
               Secure Authentication
             </Typography>
           </Divider>
-          
+
           {/* Security Features */}
           <Box sx={{ mt: 4 }}>
-            <Box sx={{ 
-              display: 'flex', 
+            <Box sx={{
+              display: 'flex',
               justifyContent: 'center',
-              alignItems: 'center', 
+              alignItems: 'center',
               gap: 3,
               mb: 3,
             }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <LockIcon sx={{ fontSize: 16, color: '#64748b' }} />
-                <Typography sx={{ 
+                <Typography sx={{
                   fontSize: '0.8rem',
                   color: '#64748b',
                   fontFamily: 'Poppins, sans-serif',
@@ -1569,7 +926,7 @@ function AuthenticatedApp() {
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CheckCircleIcon sx={{ fontSize: 16, color: '#64748b' }} />
-                <Typography sx={{ 
+                <Typography sx={{
                   fontSize: '0.8rem',
                   color: '#64748b',
                   fontFamily: 'Poppins, sans-serif',
@@ -1578,8 +935,8 @@ function AuthenticatedApp() {
                 </Typography>
               </Box>
             </Box>
-            
-            <Typography sx={{ 
+
+            <Typography sx={{
               fontSize: '0.75rem',
               color: '#94a3b8',
               fontFamily: 'Poppins, sans-serif',
@@ -1588,8 +945,8 @@ function AuthenticatedApp() {
             }}>
               By signing in, you agree to our Terms of Service and Privacy Policy
             </Typography>
-            
-            <Typography sx={{ 
+
+            <Typography sx={{
               fontSize: '0.7rem',
               color: '#cbd5e1',
               fontFamily: 'Poppins, sans-serif',
@@ -1608,14 +965,14 @@ function AuthenticatedApp() {
   const userEmail = user?.primaryEmailAddress?.emailAddress;
   if (userEmail) {
     const { authorized_emails, authorized_domains } = authConfig.authentication.access_control;
-    
+
     // Check if email is in whitelist
     const isEmailAuthorized = authorized_emails.includes(userEmail);
-    
+
     // Check if domain is authorized
     const userDomain = userEmail.split('@')[1];
     const isDomainAuthorized = authorized_domains.includes(userDomain);
-    
+
     if (!isEmailAuthorized && !isDomainAuthorized) {
       // User is signed in but not authorized
       return (
@@ -1649,12 +1006,12 @@ function AuthenticatedApp() {
 // Export the wrapped component
 function AppWithAuth() {
   const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  
+
   if (!clerkPubKey) {
     // No Clerk key, just show the app
     return <App />;
   }
-  
+
   return (
     <ClerkProvider publishableKey={clerkPubKey}>
       <AuthenticatedApp />

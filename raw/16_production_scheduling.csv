@@ -1,8 +1,0 @@
-id,production_order,material,material_description,order_quantity,confirmed_quantity,plant,start_date,finish_date,status,yield_pct,scrap_qty,batch_number,line_number,supervisor
-PS001,PO-100234,SKU-7891,Madison Reed Premium Color Kit,8500,8370,Plant-NJ-01,2024-02-01,2024-02-05,Completed,98.5,130,BATCH-240201-A,Line-01,Tom Anderson
-PS002,PO-100235,SKU-4523,Color Reviving Gloss,7600,7400,Plant-NJ-01,2024-02-02,2024-02-05,Completed,97.4,200,BATCH-240202-A,Line-02,Tom Anderson
-PS003,PO-100236,SKU-9021,Root Retouch Kit,7000,6750,Plant-NJ-01,2024-02-03,2024-02-05,Completed,96.4,250,BATCH-240203-A,Line-01,Tom Anderson
-PS004,PO-100237,SKU-3312,Shine Therapy Conditioner,6500,6130,Plant-CA-02,2024-02-02,2024-02-05,Completed,94.3,370,BATCH-240202-B,Line-03,Maria Garcia
-PS005,PO-100238,SKU-5641,Volume Boost Shampoo,6800,6420,Plant-CA-02,2024-02-03,2024-02-05,Completed,94.4,380,BATCH-240203-B,Line-03,Maria Garcia
-PS006,PO-100239,SKU-7891,Madison Reed Premium Color Kit,8800,0,Plant-NJ-01,2024-02-08,2024-02-12,Released,0.0,0,BATCH-240208-A,Line-01,Tom Anderson
-PS007,PO-100240,SKU-4523,Color Reviving Gloss,7900,0,Plant-NJ-01,2024-02-09,2024-02-12,Released,0.0,0,BATCH-240209-A,Line-02,Tom Anderson

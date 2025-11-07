@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Drawer,
@@ -6,42 +5,24 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Typography,
   IconButton,
-  Divider,
-  Stack,
-  Badge,
-  Chip,
   Tooltip,
-  Avatar,
+  Typography,
+  Divider,
+  Button,
+  CircularProgress,
 } from '@mui/material';
 import {
-  ForumOutlined as ForumIcon,
-  Analytics as AnalyticsIcon,
-  Timeline as TimelineIcon,
-  BarChart as BarChartIcon,
-  Hub as HubIcon,
-  QueryStats as QueryStatsIcon,
-  DataUsage as DataUsageIcon,
-  Cable as CableIcon,
-  Description as DescriptionIcon,
-  ChevronLeft as ChevronLeftIcon,
   Menu as MenuIcon,
   MenuOpen as MenuOpenIcon,
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-  FiberManualRecord as DotIcon,
-  AccountTree as ProcessMiningIcon,
-  Psychology as SimulationIcon,
-  Speed as SpeedIcon,
-  AutoAwesome as StoxShiftIcon,
-  RemoveRedEye as VisionIcon,
-  Science as MLStudioIcon,
-  ModelTraining as ModelIcon,
-  SmartToy as AIModelIcon,
-  AccountCircle as PersonaIcon,
-  Settings as SettingsIcon,
-  RocketLaunch as ExecutionIcon,
+  AdminPanelSettings as AdminIcon,
+  Chat as ChatIcon,
+  Add as AddIcon,
+  Folder as FolderIcon,
+  Delete as DeleteIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
+  SmartToy as AgentIcon,
 } from '@mui/icons-material';
 
 const EnhancedSidebar = ({
@@ -49,111 +30,82 @@ const EnhancedSidebar = ({
   setDrawerOpen,
   selectedTab,
   setSelectedTab,
-  apiHealth,
   useSapTheme,
+  conversations = [],
+  conversationId,
+  onLoadConversation,
+  onDeleteConversation,
+  onNewChat,
+  onOpenChatHistory,
+  loadingConversations = false,
+  starredConversations = [],
+  onToggleStar,
 }) => {
-  const menuItems = [
+  // Get conversations without project and filter out duplicate "New Conversation" entries
+  const conversationsWithoutProject = (() => {
+    const filtered = conversations.filter(conv => !conv.project_id);
+
+    // Find all "New Conversation" entries with only welcome messages (unused)
+    const newConversations = filtered.filter(conv =>
+      conv.title === 'New Conversation' &&
+      (!conv.messages || conv.messages.length <= 1)
+    );
+
+    // If there are multiple unused "New Conversation" entries, keep only the most recent one
+    if (newConversations.length > 1) {
+      const mostRecentNew = newConversations[0]; // Already sorted by date
+      const unusedNewIds = newConversations.slice(1).map(c => c.conversation_id || c.conversationId);
+
+      return filtered.filter(conv =>
+        !unusedNewIds.includes(conv.conversation_id || conv.conversationId)
+      );
+    }
+
+    return filtered;
+  })();
+
+  const mainMenuItems = [
     {
-      section: 'Mantra AI',
-      items: [
-        {
-          id: 8,
-          icon: <SpeedIcon />,
-          primary: 'ENTERPRISE PULSE',
-          secondary: 'Real-time Business Metrics',
-          color: '#00ACC1',
-        },
-        {
-          id: 7,
-          icon: <ProcessMiningIcon />,
-          primary: 'PROCESS MINING',
-          secondary: 'Business Process Analytics',
-          color: '#FF6B35',
-        },
-        {
-          id: 6,
-          icon: <DescriptionIcon />,
-          primary: 'DOCUMENT HUB',
-          secondary: 'Upload & Analyze Documents',
-          color: '#9C27B0',
-        },
-      ],
+      id: 'chat',
+      icon: <ChatIcon />,
+      primary: 'Chats',
+      color: '#6a6d70',
     },
     {
-      section: 'Decision Intelligence',
-      items: [
-        {
-          id: 0,
-          icon: <ForumIcon />,
-          primary: 'AXIS.AI',
-          secondary: 'Platform-Wide Q&A',
-          color: '#2196F3',
-        },
-        {
-          id: 1,
-          icon: <AnalyticsIcon />,
-          primary: 'CORE.AI',
-          secondary: 'Operational Intelligence',
-          color: '#4285F4',
-          status: 'active',
-        },
-        {
-          id: 3,
-          icon: <BarChartIcon />,
-          primary: 'MARKETS.AI',
-          secondary: 'Market Intelligence',
-          color: '#FF5722',
-        },
-      ],
+      id: 'agent',
+      icon: <AgentIcon />,
+      primary: 'Agent Mode',
+      color: '#6a6d70',
     },
     {
-      section: 'Processing Hub',
-      items: [
-        {
-          id: 9,
-          icon: <VisionIcon />,
-          primary: 'VISION STUDIO',
-          secondary: 'Document OCR & Image Intelligence',
-          color: '#00BCD4',
-        },
-        {
-          id: 13,
-          icon: <ForumIcon />,
-          primary: 'EMAIL INTEL',
-          secondary: 'Email & Communication Analysis',
-          color: '#E91E63',
-        },
-        {
-          id: 10,
-          icon: <ExecutionIcon />,
-          primary: 'COMMAND TOWER',
-          secondary: 'Action Tracking & Audit Trail',
-          color: '#10b981',
-          status: 'active',
-        },
-      ],
+      id: 'content',
+      icon: <FolderIcon />,
+      primary: 'Projects',
+      color: '#6a6d70',
     },
   ];
 
-  const sidebarBgColor = useSapTheme ? 'background.paper' : '#0f0f23';
-  const sidebarTextColor = useSapTheme ? 'text.primary' : '#e0e0e0';
-  const hoverBgColor = useSapTheme ? 'action.hover' : 'rgba(255,255,255,0.08)';
+  const adminMenuItem = {
+    id: 'admin',
+    icon: <AdminIcon />,
+    primary: 'Control Center',
+    color: '#6a6d70',
+  };
 
   return (
     <Drawer
       variant="permanent"
       open={drawerOpen}
       sx={{
-        width: drawerOpen ? 240 : 64,
+        width: drawerOpen ? 240 : 0,
         flexShrink: 0,
         '& .MuiDrawer-paper': {
-          width: drawerOpen ? 240 : 64,
+          width: drawerOpen ? 240 : 0,
           boxSizing: 'border-box',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          bgcolor: sidebarBgColor,
+          transition: 'width 0.3s',
+          bgcolor: useSapTheme ? 'background.paper' : '#0f0f23',
           borderRight: 0,
           overflowX: 'hidden',
-          boxShadow: useSapTheme ? '2px 0 8px rgba(0,0,0,0.1)' : '2px 0 12px rgba(0,0,0,0.5)',
         },
       }}
     >
@@ -165,320 +117,399 @@ const EnhancedSidebar = ({
           justifyContent: 'space-between',
           p: 2,
           minHeight: 64,
-          bgcolor: useSapTheme ? 'background.paper' : 'background.paper',
           borderBottom: '1px solid',
-          borderColor: useSapTheme ? 'divider' : 'rgba(255,255,255,0.1)',
-          position: 'relative',
+          borderColor: 'divider',
         }}
       >
         {drawerOpen ? (
           <>
-            {/* Logo - Left aligned */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                flex: 1,
-              }}
-            >
-              <Box
-                component="img"
-                src="/mantra9.png"
-                alt="Mantra9"
-                sx={{
-                  height: 40,
-                  width: 'auto',
-                  objectFit: 'contain',
-                }}
-              />
-            </Box>
-
-            {/* Hamburger Menu Button */}
-            <IconButton
-              onClick={() => setDrawerOpen(!drawerOpen)}
-              size="small"
-              sx={{
-                color: useSapTheme ? 'text.primary' : 'text.primary',
-              }}
-            >
+            <Box component="img" src="/mantra9.png" alt="Mantra9" sx={{ height: 40 }} />
+            <IconButton onClick={() => setDrawerOpen(false)} size="small">
               <MenuOpenIcon />
             </IconButton>
           </>
         ) : (
-          /* Centered Menu Button when collapsed */
-          <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-            <IconButton
-              onClick={() => setDrawerOpen(!drawerOpen)}
-              size="small"
-              sx={{
-                color: useSapTheme ? 'text.primary' : 'text.primary',
-              }}
-            >
-              <MenuIcon />
-            </IconButton>
-          </Box>
+          <IconButton onClick={() => setDrawerOpen(true)} size="small">
+            <MenuIcon />
+          </IconButton>
         )}
       </Box>
 
       {/* Navigation */}
-      <Box sx={{ flex: 1, overflowY: 'hidden', overflowX: 'hidden', py: 1.5 }}>
-        {menuItems.map((section, sectionIndex) => (
-          <Box key={sectionIndex}>
-            {drawerOpen && (
-              <Typography
-                variant="caption"
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', py: 1 }}>
+        {/* New Chat Button */}
+        {drawerOpen && (
+          <Box sx={{ px: 2, mb: 2 }}>
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setSelectedTab('chat');
+                if (onNewChat) onNewChat();
+              }}
+              sx={{
+                justifyContent: 'flex-start',
+                borderRadius: '6px',
+                py: 1.25,
+                bgcolor: '#1a1a1a',
+                color: '#ffffff',
+                fontWeight: 500,
+                textTransform: 'none',
+                boxShadow: 'none',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  bgcolor: '#2a2a2a',
+                  boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
+                },
+              }}
+            >
+              New chat
+            </Button>
+          </Box>
+        )}
+
+        {!drawerOpen && (
+          <Box sx={{ px: 1, mb: 2 }}>
+            <Tooltip title="New chat" placement="right">
+              <IconButton
+                onClick={() => {
+                  setSelectedTab('chat');
+                  if (onNewChat) onNewChat();
+                }}
                 sx={{
-                  px: 2,
-                  py: 0.5,
-                  display: 'block',
-                  color: useSapTheme ? 'text.secondary' : 'rgba(255,255,255,0.4)',
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  fontSize: '0.65rem',
+                  width: '100%',
+                  borderRadius: '6px',
+                  bgcolor: '#1a1a1a',
+                  color: '#ffffff',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: '#2a2a2a',
+                  },
                 }}
               >
-                {section.section}
-              </Typography>
-            )}
+                <AddIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
 
-            <List sx={{ px: 0.5, py: 0 }}>
-              {section.items.map((item) => (
-                <Tooltip
-                  key={item.id}
-                  title={!drawerOpen ? item.primary : item.disabled ? 'Coming Soon' : ''}
-                  placement="right"
+        {/* Main Menu Items */}
+        <List sx={{ px: 1 }}>
+          {mainMenuItems.map((item) => (
+            <Tooltip key={item.id} title={!drawerOpen ? item.primary : ''} placement="right">
+              <ListItemButton
+                selected={selectedTab === item.id}
+                onClick={() => {
+                  setSelectedTab(item.id);
+                  if (item.id === 'chat' && onOpenChatHistory) {
+                    onOpenChatHistory();
+                  }
+                }}
+                sx={{
+                  borderRadius: 2,
+                  mb: 0.5,
+                  minHeight: 44,
+                  justifyContent: drawerOpen ? 'flex-start' : 'center',
+                  px: drawerOpen ? 2 : 1.5,
+                  bgcolor: 'transparent',
+                  '&:hover': {
+                    bgcolor: 'rgba(106, 109, 112, 0.1)',
+                  },
+                  '&.Mui-selected': {
+                    bgcolor: 'rgba(106, 109, 112, 0.15)',
+                    '&:hover': {
+                      bgcolor: 'rgba(106, 109, 112, 0.2)',
+                    },
+                  },
+                }}
+              >
+                <ListItemIcon
+                  sx={{
+                    minWidth: drawerOpen ? 40 : 'auto',
+                    color: item.color,
+                    display: 'flex',
+                    justifyContent: 'center',
+                  }}
                 >
-                  <ListItemButton
-                    selected={selectedTab === item.id}
-                    onClick={() => !item.disabled && setSelectedTab(item.id)}
-                    disabled={item.disabled}
-                    sx={{
-                      borderRadius: 2,
-                      mb: 0.25,
-                      mx: 0.25,
-                      minHeight: 36,
-                      transition: 'all 0.2s',
-                      color: useSapTheme ? 'inherit' : sidebarTextColor,
-                      position: 'relative',
-                      overflow: 'hidden',
-                      opacity: item.disabled ? 0.5 : 1,
-                      cursor: item.disabled ? 'not-allowed' : 'pointer',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        left: 0,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 3,
-                        height: '70%',
-                        bgcolor: item.color,
-                        borderRadius: '0 2px 2px 0',
-                        opacity: 0,
-                        transition: 'opacity 0.2s',
-                      },
-                      '&:hover': {
-                        bgcolor: hoverBgColor,
-                        transform: drawerOpen ? 'translateX(4px)' : 'none',
-                        '&::before': {
-                          opacity: 0.5,
-                        },
-                      },
-                      '&.Mui-selected': {
-                        bgcolor: useSapTheme
-                          ? 'primary.main'
-                          : `${item.color}20`,
-                        color: useSapTheme ? 'white' : 'white',
-                        '&::before': {
-                          opacity: 1,
-                        },
-                        '&:hover': {
-                          bgcolor: useSapTheme
-                            ? 'primary.dark'
-                            : `${item.color}30`,
-                        },
-                        '& .MuiListItemIcon-root': {
-                          color: useSapTheme ? 'white' : item.color,
-                        },
-                      },
+                  {item.icon}
+                </ListItemIcon>
+                {drawerOpen && (
+                  <ListItemText
+                    primary={item.primary}
+                    primaryTypographyProps={{
+                      fontSize: '0.9rem',
+                      fontWeight: selectedTab === item.id ? 500 : 400,
+                      color: '#32363a',
                     }}
-                  >
-                    <ListItemIcon
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          ))}
+        </List>
+
+        {/* Starred Section */}
+        {drawerOpen && starredConversations.length > 0 && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Box sx={{ px: 2, mb: 1 }}>
+              <Typography variant="caption" sx={{ color: '#6a6d70', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Starred
+              </Typography>
+            </Box>
+
+            {/* Starred Conversations List */}
+            <Box sx={{ px: 1, mb: 2, maxHeight: '200px', overflowY: 'auto' }}>
+              <List sx={{ py: 0 }}>
+                {starredConversations.map((conv) => {
+                  const isActive = (conv.conversation_id || conv.conversationId) === conversationId;
+                  const displayTitle = conv.title || 'New Conversation';
+
+                  return (
+                    <ListItemButton
+                      key={conv.conversation_id || conv.conversationId}
+                      selected={isActive}
+                      onClick={() => {
+                        setSelectedTab('chat');
+                        if (onLoadConversation) {
+                          onLoadConversation(conv.conversation_id || conv.conversationId);
+                        }
+                      }}
                       sx={{
-                        minWidth: drawerOpen ? 36 : 'auto',
-                        color: 'inherit',
+                        borderRadius: 2,
+                        mb: 0.5,
+                        px: 1.5,
+                        py: 1,
+                        bgcolor: 'transparent',
+                        '&:hover': {
+                          bgcolor: 'rgba(106, 109, 112, 0.1)',
+                          '& .star-btn': {
+                            opacity: 1,
+                          },
+                        },
+                        '&.Mui-selected': {
+                          bgcolor: 'rgba(106, 109, 112, 0.08)',
+                          '&:hover': {
+                            bgcolor: 'rgba(106, 109, 112, 0.12)',
+                          },
+                        },
                       }}
                     >
-                      <Box
-                        sx={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 1.5,
-                          bgcolor:
-                            selectedTab === item.id
-                              ? 'transparent'
-                              : useSapTheme
-                              ? `${item.color}15`
-                              : `${item.color}20`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s',
-                          position: 'relative',
-                        }}
-                      >
-                        {item.badge && !drawerOpen ? (
-                          <Badge
-                            badgeContent={item.badge}
-                            color="primary"
-                            sx={{
-                              '& .MuiBadge-badge': {
-                                fontSize: '0.6rem',
-                                height: 16,
-                                minWidth: 16,
-                                top: -4,
-                                right: -4,
-                              },
-                            }}
-                          >
-                            {item.icon}
-                          </Badge>
-                        ) : (
-                          item.icon
-                        )}
-                        {item.status && drawerOpen && (
-                          <DotIcon
-                            sx={{
-                              position: 'absolute',
-                              top: 2,
-                              right: 2,
-                              fontSize: 10,
-                              color: item.status === 'new' ? '#4CAF50' : 
-                                     item.status === 'coming-soon' ? '#FF9800' : 
-                                     '#4CAF50',
-                            }}
-                          />
-                        )}
+                      <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontSize: '0.875rem',
+                            fontWeight: isActive ? 500 : 400,
+                            color: '#1A2332',
+                            noWrap: true,
+                          }}
+                        >
+                          {displayTitle}
+                        </Typography>
                       </Box>
-                    </ListItemIcon>
-                    {drawerOpen && (
-                      <ListItemText
-                        primary={
-                          <Stack
-                            direction="row"
-                            alignItems="center"
-                            spacing={1}
-                          >
-                            <Typography variant="body2" fontWeight={500}>
-                              {item.primary}
-                            </Typography>
-                            {item.badge && (
-                              <Chip
-                                label={item.badge}
-                                size="small"
-                                sx={{
-                                  height: 20,
-                                  fontSize: '0.65rem',
-                                  bgcolor: useSapTheme
-                                    ? 'primary.light'
-                                    : item.color,
-                                  color: 'white',
-                                }}
-                              />
-                            )}
-                            {item.status === 'coming-soon' && (
-                              <Chip
-                                label="Soon"
-                                size="small"
-                                sx={{
-                                  height: 18,
-                                  fontSize: '0.6rem',
-                                  bgcolor: 'rgba(255, 152, 0, 0.2)',
-                                  color: '#FF9800',
-                                  border: '1px solid #FF9800',
-                                }}
-                              />
-                            )}
-                            {item.status === 'new' && (
-                              <Chip
-                                label="New"
-                                size="small"
-                                sx={{
-                                  height: 18,
-                                  fontSize: '0.6rem',
-                                  bgcolor: 'rgba(76, 175, 80, 0.2)',
-                                  color: '#4CAF50',
-                                  border: '1px solid #4CAF50',
-                                }}
-                              />
-                            )}
-                          </Stack>
-                        }
-                        secondary={null}
-                        primaryTypographyProps={{ fontWeight: 500 }}
-                        secondaryTypographyProps={{
-                          sx: {
-                            color: useSapTheme
-                              ? 'text.secondary'
-                              : 'rgba(255,255,255,0.5)',
-                            fontSize: '0.7rem',
-                            display: 'none',
+                      <IconButton
+                        size="small"
+                        className="star-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onToggleStar) {
+                            onToggleStar(conv.conversation_id || conv.conversationId);
+                          }
+                        }}
+                        sx={{
+                          p: 0.5,
+                          color: '#df6e0c',
+                          '&:hover': {
+                            bgcolor: 'rgba(223, 110, 12, 0.1)',
                           },
                         }}
-                      />
-                    )}
-                  </ListItemButton>
-                </Tooltip>
-              ))}
-            </List>
+                      >
+                        <StarIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </ListItemButton>
+                  );
+                })}
+              </List>
+            </Box>
+          </>
+        )}
 
-            {sectionIndex < menuItems.length - 1 && (
-              <Divider
+        {/* Recent Chats Section */}
+        {drawerOpen && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Box sx={{ px: 2, mb: 1 }}>
+              <Typography variant="caption" sx={{ color: '#6a6d70', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Recent Chats
+              </Typography>
+            </Box>
+
+            {/* Conversations List */}
+            <Box sx={{ px: 1, flex: 1, overflowY: 'auto' }}>
+              {loadingConversations ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                  <CircularProgress size={20} />
+                </Box>
+              ) : conversationsWithoutProject.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3, px: 2, fontSize: '0.85rem' }}>
+                  No conversations yet
+                </Typography>
+              ) : (
+                <List sx={{ py: 0 }}>
+                  {conversationsWithoutProject
+                    .slice(0, 10)
+                    .map((conv) => {
+                      const isActive = (conv.conversation_id || conv.conversationId) === conversationId;
+                      const displayTitle = conv.title || 'New Conversation';
+                      const isStarred = starredConversations.some(
+                        starredConv => (starredConv.conversation_id || starredConv.conversationId) === (conv.conversation_id || conv.conversationId)
+                      );
+
+                      return (
+                        <ListItemButton
+                          key={conv.conversation_id || conv.conversationId}
+                          selected={isActive}
+                          onClick={() => {
+                            setSelectedTab('chat');
+                            if (onLoadConversation) {
+                              onLoadConversation(conv.conversation_id || conv.conversationId);
+                            }
+                          }}
+                          sx={{
+                            borderRadius: 2,
+                            mb: 0.5,
+                            px: 1.5,
+                            py: 1,
+                            bgcolor: 'transparent',
+                            '&:hover': {
+                              bgcolor: 'rgba(106, 109, 112, 0.1)',
+                              '& .action-btn': {
+                                opacity: 1,
+                              },
+                            },
+                            '&.Mui-selected': {
+                              bgcolor: 'rgba(106, 109, 112, 0.08)',
+                              '&:hover': {
+                                bgcolor: 'rgba(106, 109, 112, 0.12)',
+                              },
+                            },
+                          }}
+                        >
+                          <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontSize: '0.875rem',
+                                fontWeight: isActive ? 500 : 400,
+                                color: '#1A2332',
+                                noWrap: true,
+                              }}
+                            >
+                              {displayTitle}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <IconButton
+                              size="small"
+                              className="action-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onToggleStar) {
+                                  onToggleStar(conv.conversation_id || conv.conversationId);
+                                }
+                              }}
+                              sx={{
+                                opacity: isStarred ? 1 : 0,
+                                transition: 'opacity 0.2s',
+                                p: 0.5,
+                                color: isStarred ? '#df6e0c' : '#6a6d70',
+                                '&:hover': {
+                                  bgcolor: 'rgba(223, 110, 12, 0.1)',
+                                  color: '#df6e0c',
+                                },
+                              }}
+                            >
+                              {isStarred ? <StarIcon sx={{ fontSize: 16 }} /> : <StarBorderIcon sx={{ fontSize: 16 }} />}
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              className="action-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onDeleteConversation) {
+                                  onDeleteConversation(conv.conversation_id || conv.conversationId);
+                                }
+                              }}
+                              sx={{
+                                opacity: 0,
+                                transition: 'opacity 0.2s',
+                                p: 0.5,
+                                '&:hover': {
+                                  bgcolor: 'rgba(187, 0, 0, 0.1)',
+                                  color: '#bb0000',
+                                },
+                              }}
+                            >
+                              <DeleteIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Box>
+                        </ListItemButton>
+                      );
+                    })}
+                </List>
+              )}
+            </Box>
+          </>
+        )}
+
+        {/* Admin Section at Bottom */}
+        <Box sx={{ px: 1, pb: 1, borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
+          <Tooltip title={!drawerOpen ? adminMenuItem.primary : ''} placement="right">
+            <ListItemButton
+              selected={selectedTab === adminMenuItem.id}
+              onClick={() => setSelectedTab(adminMenuItem.id)}
+              sx={{
+                borderRadius: 2,
+                minHeight: 44,
+                justifyContent: drawerOpen ? 'flex-start' : 'center',
+                px: drawerOpen ? 2 : 1.5,
+                bgcolor: 'transparent',
+                '&:hover': {
+                  bgcolor: 'rgba(106, 109, 112, 0.1)',
+                },
+                '&.Mui-selected': {
+                  bgcolor: 'rgba(106, 109, 112, 0.15)',
+                  '&:hover': {
+                    bgcolor: 'rgba(106, 109, 112, 0.2)',
+                  },
+                },
+              }}
+            >
+              <ListItemIcon
                 sx={{
-                  my: 2,
-                  mx: 2,
-                  borderColor: useSapTheme
-                    ? 'divider'
-                    : 'rgba(255,255,255,0.08)',
+                  minWidth: drawerOpen ? 40 : 'auto',
+                  color: adminMenuItem.color,
+                  display: 'flex',
+                  justifyContent: 'center',
                 }}
-              />
-            )}
-          </Box>
-        ))}
-      </Box>
-
-      {/* Footer */}
-      <Box
-        sx={{
-          p: 1,
-          borderTop: 1,
-          borderColor: useSapTheme ? 'divider' : 'rgba(255,255,255,0.08)',
-          bgcolor: useSapTheme ? 'background.default' : 'rgba(0,0,0,0.2)',
-        }}
-      >
-        <ListItemButton
-          onClick={() => setSelectedTab(4)}
-          sx={{
-            borderRadius: 2,
-            bgcolor: selectedTab === 4 ? '#FF9800' + '20' : 'transparent',
-            border: '1px solid',
-            borderColor: selectedTab === 4 ? '#FF9800' : 'divider',
-            '&:hover': {
-              bgcolor: '#FF9800' + '10',
-            },
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: drawerOpen ? 36 : 'auto' }}>
-            <HubIcon sx={{ color: '#FF9800' }} />
-          </ListItemIcon>
-          {drawerOpen && (
-            <ListItemText
-              primary="CONTROL CENTER"
-              primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-            />
-          )}
-        </ListItemButton>
+              >
+                {adminMenuItem.icon}
+              </ListItemIcon>
+              {drawerOpen && (
+                <ListItemText
+                  primary={adminMenuItem.primary}
+                  primaryTypographyProps={{
+                    fontSize: '0.9rem',
+                    fontWeight: selectedTab === adminMenuItem.id ? 500 : 400,
+                    color: '#32363a',
+                  }}
+                />
+              )}
+            </ListItemButton>
+          </Tooltip>
+        </Box>
       </Box>
     </Drawer>
   );

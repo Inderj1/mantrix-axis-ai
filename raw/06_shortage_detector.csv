@@ -1,7 +1,0 @@
-id,sku,product_name,location,on_hand,safety_stock,in_transit,forecast_7d,shortage_qty,severity,days_until_stockout,reorder_point,lead_time_days,supplier,last_order_date,suggested_order_qty,category
-SD001,SKU-7891,Madison Reed Premium Color Kit,DC-Minneapolis,1250,2500,3500,2800,0,Low,14,3000,5,MFG-Plant-01,2024-02-01,5000,Finished Goods
-SD002,SKU-7891,Madison Reed Premium Color Kit,DC-Phoenix,980,2200,4200,3100,0,Medium,12,2800,4,MFG-Plant-01,2024-02-02,6000,Finished Goods
-SD003,SKU-4523,Color Reviving Gloss,DC-Minneapolis,850,1800,2100,2200,0,Medium,11,2200,5,MFG-Plant-01,2024-02-01,4000,Finished Goods
-SD004,SKU-9021,Root Retouch Kit,DC-Bentonville,480,1350,1500,1850,0,Critical,6,1650,6,MFG-Plant-01,2024-01-28,3200,Finished Goods
-SD005,COMP-P205,Color Pigment Base,WH-Raw-Materials,8200,8000,0,2400,8540,Critical,4,10000,21,PigmentCo Ltd,2024-01-10,15000,Raw Material
-SD006,COMP-A401,Ammonia-Free Activator,WH-Raw-Materials,4200,3500,0,1100,2550,Critical,5,5000,18,ChemSupply Inc.,2024-01-15,8000,Raw Material

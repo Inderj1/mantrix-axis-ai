@@ -1,9 +1,0 @@
-id,vendor_code,vendor_name,category,total_pos,on_time_deliveries,on_time_pct,quality_score,total_spend_ytd,defect_rate_ppm,lead_time_avg_days,lead_time_variance_days,payment_terms,preferred_vendor,rating
-SP001,V-1001,ChemSupply Inc.,Raw Materials,24,21,87.5,92.5,285000.00,450,16,2.5,Net 30,Yes,A
-SP002,V-1002,PigmentCo Ltd,Raw Materials,18,14,77.8,88.2,425000.00,850,23,4.2,Net 45,No,B
-SP003,V-1003,PackPro Solutions,Packaging,45,42,93.3,95.8,198000.00,220,9,1.5,Net 30,Yes,A
-SP004,V-1004,BeautyIngredients Corp,Raw Materials,32,29,90.6,94.2,312000.00,380,13,2.1,Net 30,Yes,A
-SP005,V-1005,ProteinSupply Ltd,Raw Materials,12,9,75.0,86.5,145000.00,920,21,5.5,Net 60,No,C
-SP006,V-1006,ApplicatorPro Inc,Packaging,28,26,92.9,96.2,156000.00,180,11,1.8,Net 30,Yes,A
-SP007,V-1007,VitaminCo Ltd,Raw Materials,15,12,80.0,89.8,98000.00,680,23,4.8,Net 45,No,B
-SP008,V-1008,PrintMaster Co,Packaging,35,34,97.1,98.5,42000.00,95,6,0.8,Net 15,Yes,A

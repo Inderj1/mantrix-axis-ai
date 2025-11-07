@@ -17,13 +17,13 @@ provider "google" {
 
 # VPC Network
 resource "google_compute_network" "mantrix_vpc" {
-  name                    = "mantrix-vpc"
+  name                    = "${var.project_name}-vpc"
   auto_create_subnetworks = false
 }
 
 # Subnet
 resource "google_compute_subnetwork" "mantrix_subnet" {
-  name          = "mantrix-subnet"
+  name          = "${var.project_name}-subnet"
   ip_cidr_range = "10.0.1.0/24"
   region        = var.region
   network       = google_compute_network.mantrix_vpc.id
@@ -31,7 +31,7 @@ resource "google_compute_subnetwork" "mantrix_subnet" {
 
 # Firewall Rules
 resource "google_compute_firewall" "allow_ssh" {
-  name    = "mantrix-allow-ssh"
+  name    = "${var.project_name}-allow-ssh"
   network = google_compute_network.mantrix_vpc.name
 
   allow {
@@ -40,11 +40,11 @@ resource "google_compute_firewall" "allow_ssh" {
   }
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["mantrix-vm"]
+  target_tags   = ["${var.project_name}-vm"]
 }
 
 resource "google_compute_firewall" "allow_http" {
-  name    = "mantrix-allow-http"
+  name    = "${var.project_name}-allow-http"
   network = google_compute_network.mantrix_vpc.name
 
   allow {
@@ -53,11 +53,11 @@ resource "google_compute_firewall" "allow_http" {
   }
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["mantrix-vm"]
+  target_tags   = ["${var.project_name}-vm"]
 }
 
 resource "google_compute_firewall" "allow_https" {
-  name    = "mantrix-allow-https"
+  name    = "${var.project_name}-allow-https"
   network = google_compute_network.mantrix_vpc.name
 
   allow {
@@ -66,26 +66,40 @@ resource "google_compute_firewall" "allow_https" {
   }
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["mantrix-vm"]
+  target_tags   = ["${var.project_name}-vm"]
+}
+
+# Firewall for application ports
+resource "google_compute_firewall" "allow_app_ports" {
+  name    = "${var.project_name}-allow-app-ports"
+  network = google_compute_network.mantrix_vpc.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["3000", "5001"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["${var.project_name}-vm"]
 }
 
 # Static IP Address
 resource "google_compute_address" "mantrix_ip" {
-  name = "mantrix-static-ip"
+  name = "${var.project_name}-static-ip"
 }
 
-# Compute Instance (equivalent to t3.medium: 2 vCPU, 4GB RAM)
+# Compute Instance (e2-medium: 2 vCPU, 4GB RAM ~= t3.medium)
 resource "google_compute_instance" "mantrix_vm" {
-  name         = "mantrix-production"
+  name         = "${var.project_name}-vm"
   machine_type = var.machine_type
   zone         = var.zone
 
-  tags = ["mantrix-vm", "http-server", "https-server"]
+  tags = ["${var.project_name}-vm", "http-server", "https-server"]
 
   boot_disk {
     initialize_params {
       image = "ubuntu-os-cloud/ubuntu-2204-lts"
-      size  = 30
+      size  = var.disk_size_gb
       type  = "pd-standard"
     }
   }
@@ -110,7 +124,8 @@ resource "google_compute_instance" "mantrix_vm" {
 
   labels = {
     environment = "production"
-    application = "mantrix"
+    application = "mantrix-madison"
+    project     = var.project_name
   }
 }
 
@@ -118,35 +133,9 @@ resource "google_compute_instance" "mantrix_vm" {
 resource "google_dns_record_set" "mantrix_a" {
   count = var.use_cloud_dns ? 1 : 0
 
-  name         = "mantrix.cloudmantra.ai."
+  name         = "${var.domain_name}."
   type         = "A"
   ttl          = 300
   managed_zone = var.dns_zone_name
   rrdatas      = [google_compute_address.mantrix_ip.address]
-}
-
-# Outputs
-output "instance_ip" {
-  description = "Public IP address of the Mantrix instance"
-  value       = google_compute_address.mantrix_ip.address
-}
-
-output "instance_name" {
-  description = "Name of the compute instance"
-  value       = google_compute_instance.mantrix_vm.name
-}
-
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh ${var.ssh_user}@${google_compute_address.mantrix_ip.address}"
-}
-
-output "application_url" {
-  description = "Application URL"
-  value       = "http://${google_compute_address.mantrix_ip.address}"
-}
-
-output "dns_configuration" {
-  description = "DNS A record to configure"
-  value       = "mantrix.cloudmantra.ai -> ${google_compute_address.mantrix_ip.address}"
 }

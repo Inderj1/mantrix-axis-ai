@@ -1,9 +1,0 @@
-id,sku,product_name,store_id,store_name,region,current_stock,recommended_stock,deployment_qty,priority,deployment_date,transportation_cost,route_number,driver,delivery_status,notes
-STD001,SKU-7891,Madison Reed Premium Color Kit,STR-001,Sephora Chicago,Midwest,12,35,23,High,2024-02-08,125.50,RT-N101,Mike Johnson,Scheduled,Valentine promo
-STD002,SKU-7891,Madison Reed Premium Color Kit,STR-002,Sephora Dallas,South,15,40,25,High,2024-02-08,145.00,RT-S205,Sarah Williams,Scheduled,Valentine promo
-STD003,SKU-4523,Color Reviving Gloss,STR-001,Sephora Chicago,Midwest,8,25,17,Medium,2024-02-09,95.00,RT-N102,Mike Johnson,Scheduled,Regular replenishment
-STD004,SKU-4523,Color Reviving Gloss,STR-003,Ulta Phoenix,Southwest,10,30,20,Medium,2024-02-09,110.00,RT-W301,Tom Davis,Scheduled,Regular replenishment
-STD005,SKU-9021,Root Retouch Kit,STR-002,Sephora Dallas,South,6,22,16,Critical,2024-02-07,88.00,RT-S206,Sarah Williams,In Transit,Stockout risk
-STD006,SKU-9021,Root Retouch Kit,STR-004,Ulta Minneapolis,Midwest,5,20,15,Critical,2024-02-07,78.00,RT-N103,Mike Johnson,In Transit,Stockout risk
-STD007,SKU-3312,Shine Therapy Conditioner,STR-005,CVS Houston,South,18,45,27,Medium,2024-02-10,115.00,RT-S207,Sarah Williams,Planned,Regular replenishment
-STD008,SKU-5641,Volume Boost Shampoo,STR-006,CVS Chicago,Midwest,20,50,30,Medium,2024-02-10,105.00,RT-N104,Mike Johnson,Planned,Regular replenishment

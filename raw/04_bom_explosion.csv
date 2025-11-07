@@ -1,7 +1,0 @@
-id,finished_good_id,finished_good_name,component_id,component_name,component_type,qty_per_unit,total_requirement,available_stock,shortage_qty,safety_stock,lead_time_days,supplier,bom_level,alternative_bom,scrap_pct,status
-BOM001,SKU-7891,Madison Reed Premium Color Kit,COMP-C401,Color Developer 60ml,ROH,1,8370,12500,0,5000,14,ChemSupply Inc.,1,COMP-C402,2.0,ok
-BOM002,SKU-7891,Madison Reed Premium Color Kit,COMP-P205,Color Pigment Base,ROH,2,16740,8200,8540,8000,21,PigmentCo Ltd,1,,3.5,critical
-BOM003,SKU-7891,Madison Reed Premium Color Kit,PKG-B120,Premium Box Packaging,VERP,1,8370,6500,1870,3000,10,PackPro Solutions,1,PKG-B121,1.0,warning
-BOM004,SKU-4523,Color Reviving Gloss,COMP-G301,Gloss Base Formula,ROH,1,6430,15200,0,7000,12,BeautyIngredients Corp,1,,1.5,ok
-BOM005,SKU-4523,Color Reviving Gloss,PKG-T085,Tube 150ml,VERP,1,6430,4200,2230,2500,8,PackPro Solutions,1,PKG-T086,0.5,warning
-BOM006,SKU-9021,Root Retouch Kit,COMP-A401,Ammonia-Free Activator,ROH,1,6750,4200,2550,3500,18,ChemSupply Inc.,1,COMP-A402,3.0,critical

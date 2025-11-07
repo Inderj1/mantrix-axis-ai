@@ -1,8 +1,0 @@
-id,material_number,material_description,mrp_type,lot_size,reorder_point,safety_stock,planned_order_qty,planned_order_date,mrp_element_type,exception_message,planner_code,abc_indicator,mrp_controller
-MRP001,SKU-7891,Madison Reed Premium Color Kit,PD,LOT,3000,2500,8800,2024-02-10,PlOrd,,P01,A,M01
-MRP002,SKU-4523,Color Reviving Gloss,PD,LOT,2200,1800,7900,2024-02-11,PlOrd,,P01,A,M01
-MRP003,SKU-9021,Root Retouch Kit,PD,LOT,1800,1500,7300,2024-02-12,PlOrd,10: Component shortage,P01,B,M01
-MRP004,COMP-P205,Color Pigment Base,ND,EX,10000,8000,15000,2024-02-08,PurRqs,10: Reschedule,P02,A,M02
-MRP005,COMP-A401,Ammonia-Free Activator,ND,EX,5000,3500,8000,2024-02-09,PurRqs,10: Reschedule,P02,B,M02
-MRP006,PKG-B120,Premium Box Packaging,ND,EX,4500,3000,5000,2024-02-13,PurRqs,,P03,B,M03
-MRP007,PKG-T085,Tube 150ml,ND,EX,3500,2500,6000,2024-02-14,PurRqs,,P03,B,M03

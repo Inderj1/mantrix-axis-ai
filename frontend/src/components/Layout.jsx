@@ -18,18 +18,10 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  Home as HomeIcon,
-  Search as SearchIcon,
-  History as HistoryIcon,
-  Schema as SchemaIcon,
-  HealthAndSafety as HealthIcon,
   ChevronLeft as ChevronLeftIcon,
   Chat as ChatIcon,
   Psychology as PsychologyIcon,
   AccountTree as AccountTreeIcon,
-  Person as PersonIcon,
-  Inventory as InventoryIcon,
-  AccountBalance as AccountBalanceIcon,
   AdminPanelSettings as AdminIcon,
   AccountCircle as AccountCircleIcon,
 } from '@mui/icons-material';
@@ -40,16 +32,9 @@ import authConfig from '../auth_config.json';
 const drawerWidth = 240;
 
 const menuItems = [
-  { text: 'Chat Explorer', icon: <ChatIcon />, path: '/chat' },
-  { text: 'Customer 360°', icon: <PersonIcon />, path: '/customer-360' },
-  { text: 'Product Performance', icon: <InventoryIcon />, path: '/product-performance' },
-  { text: 'Financial Analytics', icon: <AccountBalanceIcon />, path: '/financial-analytics' },
-  { text: 'Process Mining', icon: <AccountTreeIcon />, path: '/process-mining' },
-  { text: 'What-If Analysis', icon: <PsychologyIcon />, path: '/whatif-analysis' },
-  { text: 'Query Builder', icon: <SearchIcon />, path: '/query' },
-  { text: 'History', icon: <HistoryIcon />, path: '/history' },
-  { text: 'Schema', icon: <SchemaIcon />, path: '/schema' },
-  { text: 'Health', icon: <HealthIcon />, path: '/health' },
+  { text: 'AXIS.AI', icon: <ChatIcon />, path: '/chat' },
+  { text: 'CONTROL TOWER', icon: <AccountTreeIcon />, path: '/process-mining' },
+  { text: 'COMMAND CENTER', icon: <PsychologyIcon />, path: '/whatif-analysis' },
 ];
 
 const profileMenuItem = { text: 'AI Persona', icon: <AccountCircleIcon />, path: '/profile' };

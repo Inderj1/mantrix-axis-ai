@@ -1,5 +1,0 @@
-id,from_location,from_location_type,to_location,to_location_type,sku,product_name,current_stock_from,current_stock_to,suggested_transfer_qty,transportation_cost,transit_days,savings_potential,priority,status,created_date,approval_status
-RO001,DC-Phoenix,Distribution Center,DC-Bentonville,Distribution Center,SKU-9021,Root Retouch Kit,540,480,150,245.00,2,1250.00,Critical,Pending Approval,2024-02-05,Pending
-RO002,DC-Minneapolis,Distribution Center,DC-Phoenix,Distribution Center,SKU-7891,Madison Reed Premium Color Kit,1250,980,200,320.00,3,1580.00,High,Approved,2024-02-04,Approved
-RO003,Store-Chicago-001,Retail Store,Store-Dallas-001,Retail Store,SKU-4523,Color Reviving Gloss,32,28,8,85.00,1,95.00,Medium,In Transit,2024-02-03,Approved
-RO004,DC-Bentonville,Distribution Center,DC-Phoenix,Distribution Center,SKU-4523,Color Reviving Gloss,890,720,100,180.00,2,850.00,High,Pending Approval,2024-02-05,Pending
