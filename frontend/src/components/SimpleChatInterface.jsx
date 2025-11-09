@@ -1415,12 +1415,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               }}
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                <Stack direction="row" spacing={0.5} alignItems="center">
+                <Stack direction="row" spacing={1.5} alignItems="flex-start">
                   <img src="/axis-ai2.png" alt="Axis AI" style={{ width: 80, height: 80 }} />
                   <Box sx={{ flex: 1 }}>
-                    <Typography
-                      variant="body2"
-                      component="div"
+                    <Box
                       sx={{
                         lineHeight: 1.8,
                         color: 'text.primary',
@@ -1463,7 +1461,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                         lines.forEach((line, lineIdx) => {
                           const trimmedLine = line.trim();
 
-                          // Check for markdown headings (### H3, ## H2, # H1)
+                          // Check for markdown headings (#### H4, ### H3, ## H2, # H1)
+                          const h4Match = trimmedLine.match(/^####\s+(.+)$/);
                           const h3Match = trimmedLine.match(/^###\s+(.+)$/);
                           const h2Match = trimmedLine.match(/^##\s+(.+)$/);
                           const h1Match = trimmedLine.match(/^#\s+(.+)$/);
@@ -1472,11 +1471,11 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                           // Matches: "1. text", "1) text", "- text", "* text", "• text"
                           const listMatch = trimmedLine.match(/^(?:\d+[\.\)]\s+|[-*•]\s+)(.+)$/);
 
-                          if (h3Match) {
+                          if (h4Match) {
                             // Add accumulated paragraph before heading
                             if (currentParagraph.trim()) {
                               elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 4 }}>
                                   {formatText(currentParagraph.trim())}
                                 </Typography>
                               );
@@ -1485,7 +1484,24 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             inList = false;
 
                             elements.push(
-                              <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 600, mt: 2.5, mb: 1, color: 'text.primary', fontSize: '0.95rem' }}>
+                              <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', pl: 3, borderLeft: '3px solid', borderColor: 'grey.300' }}>
+                                {formatText(h4Match[1])}
+                              </Typography>
+                            );
+                          } else if (h3Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+
+                            elements.push(
+                              <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', pl: 1.5, position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
                                 {formatText(h3Match[1])}
                               </Typography>
                             );
@@ -1493,7 +1509,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             // Add accumulated paragraph before heading
                             if (currentParagraph.trim()) {
                               elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
                                   {formatText(currentParagraph.trim())}
                                 </Typography>
                               );
@@ -1502,7 +1518,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             inList = false;
 
                             elements.push(
-                              <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 650, mt: 3, mb: 1.25, color: 'text.primary', fontSize: '1.05rem' }}>
+                              <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 700, mt: 4, mb: 1.5, color: 'primary.main', fontSize: '1.125rem', borderBottom: '2px solid', borderColor: 'primary.main', pb: 0.75, display: 'inline-block', width: '100%' }}>
                                 {formatText(h2Match[1])}
                               </Typography>
                             );
@@ -1510,7 +1526,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             // Add accumulated paragraph before heading
                             if (currentParagraph.trim()) {
                               elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
                                   {formatText(currentParagraph.trim())}
                                 </Typography>
                               );
@@ -1519,7 +1535,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             inList = false;
 
                             elements.push(
-                              <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 700, mt: 3, mb: 1.5, color: 'primary.main', fontSize: '1.15rem' }}>
+                              <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 800, mt: 3, mb: 2.5, color: 'primary.dark', fontSize: '1.35rem', letterSpacing: '-0.5px', pb: 1, borderBottom: '3px solid', borderColor: 'primary.dark' }}>
                                 {formatText(h1Match[1])}
                               </Typography>
                             );
@@ -1575,7 +1591,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
 
                         return elements.length > 0 ? elements : formatText(message.content);
                       })()}
-                    </Typography>
+                    </Box>
                     {message.error && (
                       <Alert severity="error" sx={{ mt: 2 }}>
                         {message.error}

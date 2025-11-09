@@ -1540,21 +1540,13 @@ const AgentModeInterface = forwardRef((props, ref) => {
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <InfoIcon sx={{ color: 'primary.main', mt: 0.3, fontSize: 20 }} />
+                  <Box
+                    component="img"
+                    src="/axis-ai2.png"
+                    alt="AXIS AI"
+                    sx={{ width: 80, height: 80 }}
+                  />
                   <Box sx={{ flex: 1 }}>
-                    <Typography
-                      variant="subtitle2"
-                      sx={{
-                        fontWeight: 600,
-                        color: 'primary.main',
-                        mb: 1,
-                        textTransform: 'uppercase',
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      AI Assistant
-                    </Typography>
                     <Box
                       sx={{
                         lineHeight: 1.8,

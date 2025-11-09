@@ -6,7 +6,7 @@ exec > >(tee /var/log/startup-script.log)
 exec 2>&1
 
 echo "========================================="
-echo "Mantrix Madison Reed - GCP Startup Script"
+echo "Mantrix DrinkAZ - GCP Startup Script"
 echo "Started at: $(date)"
 echo "========================================="
 
@@ -99,7 +99,7 @@ ufw allow 5001/tcp  # Backend API
 # Create systemd service for application
 cat > /etc/systemd/system/mantrix.service <<'EOF'
 [Unit]
-Description=Mantrix Madison Reed Application
+Description=Mantrix DrinkAZ Application
 After=network.target docker.service
 Requires=docker.service
 
@@ -120,7 +120,7 @@ EOF
 cat > /etc/nginx/sites-available/mantrix <<'EOF'
 server {
     listen 80;
-    server_name madisonreed.cloudmantra.ai;
+    server_name drinkaz-axis.cloudmantra.ai;
 
     client_max_body_size 100M;
 
@@ -178,11 +178,11 @@ cat > /opt/mantrix/deploy.sh <<'DEPLOY_EOF'
 #!/bin/bash
 set -e
 
-echo "Deploying Mantrix Madison Reed..."
+echo "Deploying Mantrix DrinkAZ..."
 
 # Pull latest code
 cd /opt/mantrix
-git pull origin demo/madison
+git pull origin nov06-agent-mode
 
 # Build and restart containers
 docker-compose down
@@ -234,8 +234,8 @@ REACT_APP_CLERK_PUBLISHABLE_KEY=your-clerk-key
 CLERK_SECRET_KEY=your-clerk-secret
 
 # Domain
-DOMAIN=madisonreed.cloudmantra.ai
-REACT_APP_API_URL=https://madisonreed.cloudmantra.ai/api
+DOMAIN=drinkaz-axis.cloudmantra.ai
+REACT_APP_API_URL=https://drinkaz-axis.cloudmantra.ai/api
 ENV_EOF
 
 echo "========================================="
@@ -244,10 +244,10 @@ echo "========================================="
 echo ""
 echo "Next steps:"
 echo "1. Clone the repository to /opt/mantrix"
-echo "   git clone https://github.com/cloudmantra-ai/mantrix.unified-madison.git /opt/mantrix"
+echo "   git clone -b nov06-agent-mode https://github.com/Inderj1/mantrix-axis-ai.git /opt/mantrix"
 echo "2. Create .env file from .env.example"
 echo "3. Run docker-compose up -d"
-echo "4. Configure SSL: sudo certbot --nginx -d madisonreed.cloudmantra.ai"
+echo "4. Configure SSL: sudo certbot --nginx -d drinkaz-axis.cloudmantra.ai"
 echo ""
 echo "Logs: sudo tail -f /var/log/startup-script.log"
 echo "========================================="
