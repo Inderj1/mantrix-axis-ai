@@ -237,7 +237,7 @@ const SMART_COMPLETIONS = {
 };
 
 const AgentModeInterface = forwardRef((props, ref) => {
-  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch } = props;
+  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch, initialQuestion, onQuestionUsed } = props;
   // Get authenticated user from Clerk
   const { user, isLoaded: isUserLoaded } = useUser();
 
@@ -298,6 +298,16 @@ const AgentModeInterface = forwardRef((props, ref) => {
 
     return () => clearTimeout(scrollTimeout);
   }, [messages, loading]); // Scroll when messages change or loading state changes
+
+  // Handle initial question from chat interface
+  useEffect(() => {
+    if (initialQuestion) {
+      setInputMessage(initialQuestion);
+      if (onQuestionUsed) {
+        onQuestionUsed();
+      }
+    }
+  }, [initialQuestion, onQuestionUsed]);
 
   // No conversation management functions - Agent Mode has no persistence
 

@@ -88,14 +88,15 @@ ORDER BY current_inventory ASC"""
         ]
     
     def generate_sql(
-        self, 
-        user_query: str, 
-        table_schemas: List[Dict[str, Any]], 
+        self,
+        user_query: str,
+        table_schemas: List[Dict[str, Any]],
         examples: Optional[List[Dict[str, str]]] = None,
         retry_count: int = 0,
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
-        join_hints: Optional[List[Dict[str, Any]]] = None
+        join_hints: Optional[List[Dict[str, Any]]] = None,
+        conversation_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Generate SQL query from natural language using table schemas."""
         logger.info(f"=== Starting SQL generation ===")
@@ -108,18 +109,30 @@ ORDER BY current_inventory ASC"""
                 logger.info(f"First table name: {table_schemas[0].get('table_name', 'NO TABLE NAME')}")
         logger.info(f"Financial context type: {type(financial_context)}")
         logger.info(f"Business context type: {type(business_context)}")
+        logger.info(f"Conversation context: {bool(conversation_context)}")
+        if conversation_context:
+            logger.info(f"Follow-up type: {conversation_context.get('follow_up_type', 'unknown')}")
+
         try:
             logger.info("Building system prompt...")
             system_prompt = self._build_system_prompt(financial_context)
             logger.info("System prompt built successfully")
-            
+
             # Use provided examples or default few-shot examples
             logger.info("Getting relevant examples...")
             effective_examples = examples if examples else self._get_relevant_examples(user_query, financial_context)
             logger.info(f"Got {len(effective_examples) if effective_examples else 0} examples")
-            
+
             logger.info("Building user prompt...")
-            user_prompt = self._build_user_prompt(user_query, table_schemas, effective_examples, financial_context, business_context, join_hints)
+            user_prompt = self._build_user_prompt(
+                user_query,
+                table_schemas,
+                effective_examples,
+                financial_context,
+                business_context,
+                join_hints,
+                conversation_context
+            )
             logger.info("User prompt built successfully")
             if join_hints:
                 logger.info(f"JOIN hints included in prompt: {len(join_hints)} relationships")
@@ -598,10 +611,26 @@ Financial Query Rules:
         examples: Optional[List[Dict[str, str]]] = None,
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
-        join_hints: Optional[List[Dict[str, Any]]] = None
+        join_hints: Optional[List[Dict[str, Any]]] = None,
+        conversation_context: Optional[Dict[str, Any]] = None
     ) -> str:
         prompt_parts = []
-        
+
+        # If this is a follow-up query, prepend context-aware prompt
+        if conversation_context and conversation_context.get("is_follow_up"):
+            from src.core.conversation_context import ConversationContextManager
+            context_manager = ConversationContextManager()
+
+            # Build context-aware prompt section
+            context_prompt = context_manager.build_context_prompt(
+                query,
+                conversation_context,
+                conversation_context.get("follow_up_type", "other")
+            )
+
+            prompt_parts.append(context_prompt)
+            prompt_parts.append("\n" + "=" * 80 + "\n")
+
         # Add table schemas
         prompt_parts.append("Available tables and their schemas:")
         for schema in schemas:

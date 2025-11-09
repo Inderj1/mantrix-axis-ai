@@ -219,15 +219,27 @@ class SQLGenerator:
         return "\n".join(parts)
     
     def generate_sql(
-        self, 
+        self,
         query: str,
         use_vector_search: bool = True,
         max_tables: int = 5,
         auto_optimize: bool = True,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        conversation_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Generate SQL from natural language query."""
+        """Generate SQL from natural language query.
+
+        Args:
+            query: Natural language query
+            use_vector_search: Whether to use vector search for table selection
+            max_tables: Maximum number of tables to consider
+            auto_optimize: Whether to apply query optimization
+            force_refresh: Force cache refresh
+            conversation_context: Context from previous conversation messages
+        """
         logger.info(f">>> SQL Generator: Starting generation for query: {query}")
+        if conversation_context:
+            logger.info(f"Using conversation context with {len(conversation_context.get('previous_sql', ''))} chars of previous SQL")
         try:
             # Apply financial hierarchy parsing if enabled
             financial_context = None
@@ -477,6 +489,8 @@ class SQLGenerator:
                 llm_kwargs["business_context"] = enhanced_context
             if join_hints:
                 llm_kwargs["join_hints"] = join_hints
+            if conversation_context:
+                llm_kwargs["conversation_context"] = conversation_context
             
             # Debug relevant_schemas before passing to LLM
             logger.info(f"Relevant schemas type: {type(relevant_schemas)}")

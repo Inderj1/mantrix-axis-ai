@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useClerk } from '@clerk/clerk-react';
 import {
   Box,
   AppBar,
@@ -37,7 +38,8 @@ import {
   Menu as MenuIcon,
 } from '@mui/icons-material';
 
-const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen }) => {
+const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, user }) => {
+  const { signOut } = useClerk();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -115,6 +117,16 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen }) =
     setAnchorEl(null);
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      // Clear session storage on logout
+      sessionStorage.clear();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
   return (
     <AppBar
       position="static"
@@ -137,6 +149,13 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen }) =
 
         {/* Right: Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200, justifyContent: 'flex-end' }}>
+          {/* User Name */}
+          {user && (
+            <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>
+              {user.fullName || user.firstName || user.emailAddresses?.[0]?.emailAddress || 'User'}
+            </Typography>
+          )}
+
           {/* User Profile */}
           <IconButton onClick={handleProfileMenuOpen} size="small">
             <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
@@ -168,7 +187,7 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen }) =
               <ListItemText>Settings</ListItemText>
             </MenuItem>
             <Divider />
-            <MenuItem>
+            <MenuItem onClick={handleLogout}>
               <ListItemIcon>
                 <LogoutIcon fontSize="small" />
               </ListItemIcon>

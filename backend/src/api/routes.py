@@ -259,18 +259,65 @@ async def process_query(
     """Process a natural language query and return results."""
     start_time = datetime.utcnow()
     execution_id = str(uuid.uuid4())
-    
+
     try:
         # Override dataset if provided
         if request.dataset:
             generator.bq_client.dataset_id = request.dataset
-        
+
         # Get options
         options = request.options or {}
         use_vector_search = options.get("use_vector_search", True)
         max_tables = options.get("max_tables", 5)
         execute = options.get("execute", True)
-        
+
+        # Retrieve conversation context if conversationId provided
+        conversation_context = None
+        if request.conversationId:
+            try:
+                from src.core.conversation_context import ConversationContextManager
+
+                # Get conversation from MongoDB
+                conversation_data = await mongodb.get_conversation(request.conversationId)
+
+                if conversation_data:
+                    # Convert to Conversation model
+                    messages = [Message(**msg) for msg in conversation_data.get("messages", [])]
+                    from src.models.conversation import Conversation
+
+                    conversation = Conversation(
+                        conversation_id=conversation_data["conversationId"],
+                        user_id=conversation_data["userId"],
+                        title=conversation_data["title"],
+                        messages=messages,
+                        created_at=conversation_data["createdAt"],
+                        updated_at=conversation_data["updatedAt"],
+                        metadata=conversation_data.get("metadata", {})
+                    )
+
+                    # Extract context using ConversationContextManager
+                    context_manager = ConversationContextManager()
+
+                    # Check if this is a follow-up question
+                    if context_manager.is_follow_up(request.question):
+                        conversation_context = context_manager.get_context_from_conversation(conversation)
+
+                        if conversation_context:
+                            # Build context-aware prompt
+                            follow_up_type = context_manager.classify_follow_up_type(request.question)
+                            conversation_context["follow_up_type"] = follow_up_type
+                            conversation_context["is_follow_up"] = True
+
+                            logger.info(
+                                f"Follow-up detected",
+                                follow_up_type=follow_up_type,
+                                previous_query=conversation_context.get("previous_query", "N/A")[:50]
+                            )
+            except Exception as e:
+                logger.warning(f"Failed to retrieve conversation context: {e}")
+                # Continue without context on error
+                conversation_context = None
+
         # Save user message to conversation if conversationId provided
         if request.conversationId:
             user_message = Message(
@@ -280,16 +327,37 @@ async def process_query(
                 timestamp=datetime.now(timezone.utc)
             )
             await mongodb.add_message(request.conversationId, user_message.model_dump())
-        
+
         if execute:
-            # Generate and execute
-            result = generator.generate_and_execute(request.question)
+            # Generate and execute with context
+            if conversation_context:
+                # For generate_and_execute, we need to pass context through generate_sql
+                # First generate SQL with context
+                sql_result = generator.generate_sql(
+                    request.question,
+                    use_vector_search=use_vector_search,
+                    max_tables=max_tables,
+                    conversation_context=conversation_context
+                )
+
+                if sql_result.get("error") or not sql_result.get("sql"):
+                    result = sql_result
+                else:
+                    # Execute the generated SQL
+                    execution_result = generator.execute_query(sql_result["sql"])
+                    result = {
+                        **sql_result,
+                        "execution": execution_result
+                    }
+            else:
+                result = generator.generate_and_execute(request.question)
         else:
             # Just generate SQL
             result = generator.generate_sql(
                 request.question,
                 use_vector_search=use_vector_search,
-                max_tables=max_tables
+                max_tables=max_tables,
+                conversation_context=conversation_context
             )
         
         # Generate follow-up suggestions asynchronously (non-blocking)
@@ -325,6 +393,24 @@ async def process_query(
 
         # Save assistant response to conversation if conversationId provided
         if request.conversationId:
+            # Extract context metadata from result for future follow-ups
+            metadata = {
+                "cost": result.get("validation", {}).get("estimated_cost_usd"),
+                "bytesProcessed": result.get("validation", {}).get("total_bytes_processed"),
+                "tablesUsed": result.get("tables_used", [])
+            }
+
+            # Add enhanced metadata for conversation context
+            if result.get("sql"):
+                # Parse SQL to extract context information
+                from src.core.conversation_context import ConversationContextManager
+                context_manager = ConversationContextManager()
+                sql_context = context_manager._parse_sql_for_context(result["sql"])
+
+                metadata["tables_used"] = sql_context.get("tables_used", result.get("tables_used", []))
+                metadata["columns_selected"] = sql_context.get("columns_selected", [])
+                metadata["limit"] = sql_context.get("limit")
+
             assistant_message = Message(
                 id=f"msg-{int(datetime.now(timezone.utc).timestamp())}-assistant",
                 type="assistant",
@@ -333,11 +419,7 @@ async def process_query(
                 results=result.get("execution", {}).get("results") if execute else None,
                 result_count=result.get("execution", {}).get("row_count", 0) if execute else None,
                 error=result.get("error"),
-                metadata={
-                    "cost": result.get("validation", {}).get("estimated_cost_usd"),
-                    "bytesProcessed": result.get("validation", {}).get("total_bytes_processed"),
-                    "tablesUsed": result.get("tables_used", [])
-                },
+                metadata=metadata,
                 timestamp=datetime.now(timezone.utc)
             )
             # Convert any datetime.date objects to datetime for MongoDB compatibility

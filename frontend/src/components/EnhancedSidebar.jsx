@@ -116,37 +116,39 @@ const EnhancedSidebar = ({
         },
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          p: 2,
-          minHeight: 64,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        {drawerOpen ? (
-          <>
-            <Box component="img" src="/mantra9.png" alt="Mantra9" sx={{ height: 40 }} />
-            <IconButton onClick={() => setDrawerOpen(false)} size="small">
-              <MenuOpenIcon />
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        {/* Header */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            p: 2,
+            minHeight: 64,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            flexShrink: 0,
+          }}
+        >
+          {drawerOpen ? (
+            <>
+              <Box component="img" src="/mantra9.png" alt="Mantra9" sx={{ height: 40 }} />
+              <IconButton onClick={() => setDrawerOpen(false)} size="small">
+                <MenuOpenIcon />
+              </IconButton>
+            </>
+          ) : (
+            <IconButton onClick={() => setDrawerOpen(true)} size="small">
+              <MenuIcon />
             </IconButton>
-          </>
-        ) : (
-          <IconButton onClick={() => setDrawerOpen(true)} size="small">
-            <MenuIcon />
-          </IconButton>
-        )}
-      </Box>
+          )}
+        </Box>
 
-      {/* Navigation */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', py: 1 }}>
+        {/* Navigation */}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', py: 1, minHeight: 0 }}>
         {/* New Chat Button */}
         {drawerOpen && (
-          <Box sx={{ px: 2, mb: 2 }}>
+          <Box sx={{ px: 2, mb: 2, flexShrink: 0 }}>
             <Button
               fullWidth
               variant="contained"
@@ -177,7 +179,7 @@ const EnhancedSidebar = ({
         )}
 
         {!drawerOpen && (
-          <Box sx={{ px: 1, mb: 2 }}>
+          <Box sx={{ px: 1, mb: 2, flexShrink: 0 }}>
             <Tooltip title="New chat" placement="right">
               <IconButton
                 onClick={() => {
@@ -202,7 +204,7 @@ const EnhancedSidebar = ({
         )}
 
         {/* Main Menu Items */}
-        <List sx={{ px: 1 }}>
+        <List sx={{ px: 1, flexShrink: 0 }}>
           {mainMenuItems.map((item) => (
             <Tooltip key={item.id} title={!drawerOpen ? item.primary : ''} placement="right">
               <ListItemButton
@@ -258,7 +260,7 @@ const EnhancedSidebar = ({
 
         {/* Starred Section */}
         {drawerOpen && starredConversations.length > 0 && (
-          <>
+          <Box sx={{ flexShrink: 0 }}>
             <Divider sx={{ my: 2 }} />
             <Box sx={{ px: 2, mb: 1 }}>
               <Typography variant="caption" sx={{ color: '#6a6d70', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -340,12 +342,12 @@ const EnhancedSidebar = ({
                 })}
               </List>
             </Box>
-          </>
+          </Box>
         )}
 
         {/* Recent Chats Section */}
         {drawerOpen && (
-          <>
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Divider sx={{ my: 2 }} />
             <Box sx={{ px: 2, mb: 1 }}>
               <Typography variant="caption" sx={{ color: '#6a6d70', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -354,7 +356,7 @@ const EnhancedSidebar = ({
             </Box>
 
             {/* Conversations List */}
-            <Box sx={{ px: 1, flex: 1, overflowY: 'auto' }}>
+            <Box sx={{ px: 1, flex: 1, overflowY: 'auto', minHeight: 0 }}>
               {loadingConversations ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                   <CircularProgress size={20} />
@@ -366,7 +368,6 @@ const EnhancedSidebar = ({
               ) : (
                 <List sx={{ py: 0 }}>
                   {conversationsWithoutProject
-                    .slice(0, 10)
                     .map((conv) => {
                       const isActive = (conv.conversation_id || conv.conversationId) === conversationId;
                       const displayTitle = conv.title || 'New Conversation';
@@ -468,54 +469,55 @@ const EnhancedSidebar = ({
                 </List>
               )}
             </Box>
-          </>
+          </Box>
         )}
 
-        {/* Admin Section at Bottom */}
-        <Box sx={{ px: 1, pb: 1, borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
-          <Tooltip title={!drawerOpen ? adminMenuItem.primary : ''} placement="right">
-            <ListItemButton
-              selected={selectedTab === adminMenuItem.id}
-              onClick={() => setSelectedTab(adminMenuItem.id)}
-              sx={{
-                borderRadius: 2,
-                minHeight: 44,
-                justifyContent: drawerOpen ? 'flex-start' : 'center',
-                px: drawerOpen ? 2 : 1.5,
-                bgcolor: 'transparent',
-                '&:hover': {
-                  bgcolor: 'rgba(106, 109, 112, 0.1)',
-                },
-                '&.Mui-selected': {
-                  bgcolor: 'rgba(106, 109, 112, 0.15)',
-                  '&:hover': {
-                    bgcolor: 'rgba(106, 109, 112, 0.2)',
-                  },
-                },
-              }}
-            >
-              <ListItemIcon
+          {/* Admin Section at Bottom */}
+          <Box sx={{ px: 1, pb: 1, borderTop: '1px solid', borderColor: 'divider', pt: 1, flexShrink: 0 }}>
+            <Tooltip title={!drawerOpen ? adminMenuItem.primary : ''} placement="right">
+              <ListItemButton
+                selected={selectedTab === adminMenuItem.id}
+                onClick={() => setSelectedTab(adminMenuItem.id)}
                 sx={{
-                  minWidth: drawerOpen ? 40 : 'auto',
-                  color: adminMenuItem.color,
-                  display: 'flex',
-                  justifyContent: 'center',
+                  borderRadius: 2,
+                  minHeight: 44,
+                  justifyContent: drawerOpen ? 'flex-start' : 'center',
+                  px: drawerOpen ? 2 : 1.5,
+                  bgcolor: 'transparent',
+                  '&:hover': {
+                    bgcolor: 'rgba(106, 109, 112, 0.1)',
+                  },
+                  '&.Mui-selected': {
+                    bgcolor: 'rgba(106, 109, 112, 0.15)',
+                    '&:hover': {
+                      bgcolor: 'rgba(106, 109, 112, 0.2)',
+                    },
+                  },
                 }}
               >
-                {adminMenuItem.icon}
-              </ListItemIcon>
-              {drawerOpen && (
-                <ListItemText
-                  primary={adminMenuItem.primary}
-                  primaryTypographyProps={{
-                    fontSize: '0.9rem',
-                    fontWeight: selectedTab === adminMenuItem.id ? 500 : 400,
-                    color: '#32363a',
+                <ListItemIcon
+                  sx={{
+                    minWidth: drawerOpen ? 40 : 'auto',
+                    color: adminMenuItem.color,
+                    display: 'flex',
+                    justifyContent: 'center',
                   }}
-                />
-              )}
-            </ListItemButton>
-          </Tooltip>
+                >
+                  {adminMenuItem.icon}
+                </ListItemIcon>
+                {drawerOpen && (
+                  <ListItemText
+                    primary={adminMenuItem.primary}
+                    primaryTypographyProps={{
+                      fontSize: '0.9rem',
+                      fontWeight: selectedTab === adminMenuItem.id ? 500 : 400,
+                      color: '#32363a',
+                    }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          </Box>
         </Box>
       </Box>
     </Drawer>

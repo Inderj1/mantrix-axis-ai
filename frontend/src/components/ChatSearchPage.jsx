@@ -163,9 +163,9 @@ const ChatSearchPage = ({
   };
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Header */}
-      <Paper elevation={0} sx={{ p: 3, mb: 2, borderRadius: 2 }}>
+      <Paper elevation={0} sx={{ p: 3, mb: 2, borderRadius: 2, flexShrink: 0 }}>
         <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
           All Conversations
         </Typography>
@@ -192,7 +192,7 @@ const ChatSearchPage = ({
       </Paper>
 
       {/* DataGrid Content */}
-      <Box sx={{ flex: 1, width: '100%' }}>
+      <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}

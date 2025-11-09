@@ -177,6 +177,8 @@ import {
   FilterList as FilterListIcon,
   Forum as ForumIcon,
   Lock as LockIcon,
+  Chat as ChatIcon,
+  SmartToy as SmartToyIcon,
 } from '@mui/icons-material';
 
 
@@ -232,6 +234,9 @@ function App() {
   const [starredConversations, setStarredConversations] = useState([]);
   const [chatView, setChatView] = useState('chat'); // 'search' or 'chat' - default to 'chat' to show recent conversation
 
+  // Agent Mode state
+  const [agentModeInitialQuestion, setAgentModeInitialQuestion] = useState(null);
+
   // Projects state
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -255,6 +260,7 @@ function App() {
 
   // Refs to SimpleChatInterface functions
   const chatInterfaceRef = React.useRef(null);
+  const hasInitializedSession = React.useRef(false);
   const [schemaData, setSchemaData] = useState({
     summary: {
       totalTables: 0,
@@ -332,6 +338,31 @@ function App() {
     if (user) {
       loadProjects();
       loadConversations();
+    }
+  }, [user?.id]);
+
+  // Initialize chat view when user logs in (but not on refresh)
+  useEffect(() => {
+    if (user && !hasInitializedSession.current) {
+      // Check if this is a fresh login or a page refresh
+      const sessionKey = `mantrix-session-${user.id}`;
+      const hasSession = sessionStorage.getItem(sessionKey);
+
+      if (!hasSession) {
+        // Fresh login - default to new chat
+        hasInitializedSession.current = true;
+        sessionStorage.setItem(sessionKey, 'true');
+
+        // Set to chat tab and chat view
+        setSelectedTab('chat');
+        setChatView('chat');
+
+        // Clear any existing conversation to start fresh
+        setConversationId(null);
+      } else {
+        // Page refresh - keep existing persisted state
+        hasInitializedSession.current = true;
+      }
     }
   }, [user?.id]);
 
@@ -657,6 +688,7 @@ function App() {
           setSelectedTab={setSelectedTab}
           drawerOpen={drawerOpen}
           setDrawerOpen={setDrawerOpen}
+          user={user}
         />
 
         <Container maxWidth="xl" sx={{
@@ -701,6 +733,10 @@ function App() {
                   onConversationIdChange={setConversationId}
                   onLoadingChange={setLoadingConversations}
                   onBackToSearch={() => setChatView('search')}
+                  onOpenAgentMode={(question) => {
+                    setAgentModeInitialQuestion(question);
+                    setSelectedTab('agent');
+                  }}
                 />
               )}
             </Box>
@@ -719,6 +755,8 @@ function App() {
                 onConversationsChange={setConversations}
                 onConversationIdChange={setConversationId}
                 onLoadingChange={setLoadingConversations}
+                initialQuestion={agentModeInitialQuestion}
+                onQuestionUsed={() => setAgentModeInitialQuestion(null)}
               />
             </Box>
           )}
@@ -862,35 +900,57 @@ function AuthenticatedApp() {
           animation: 'fadeInUp 0.5s ease-out',
         }}>
           {/* Logo */}
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
+          <Box sx={{ textAlign: 'center', mb: 0.5 }}>
             <img
-              src="/mantra9.png"
-              alt="Cloud Mantra"
-              style={{ height: 60, objectFit: 'contain' }}
+              src="/axis-ai2.png"
+              alt="AXIS AI"
+              style={{ height: 120, objectFit: 'contain' }}
             />
           </Box>
 
           <Typography sx={{
-            fontSize: { xs: '1.1rem', sm: '1.5rem' },
-            fontWeight: 400,
+            fontSize: { xs: '1.5rem', sm: '2rem' },
+            fontWeight: 700,
             mb: 1.5,
             textAlign: 'center',
             color: '#32363a',
             fontFamily: 'Poppins, sans-serif',
-            letterSpacing: '-0.3px',
+            letterSpacing: '-0.5px',
           }}>
-            Enterprise Decision Intelligence
+            AXIS AI
           </Typography>
           <Typography sx={{
             fontSize: '0.875rem',
-            mb: 4,
+            mb: 3,
             textAlign: 'center',
             color: '#6a6d70',
             fontFamily: 'Poppins, sans-serif',
             fontWeight: 400,
           }}>
-            Unified platform for data-driven business decisions
+            Your AI Conversational Interface
           </Typography>
+
+          {/* Feature Highlights */}
+          <Box sx={{ mb: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <ChatIcon sx={{ color: '#0a6ed1', fontSize: 24 }} />
+              <Typography sx={{ fontSize: '0.875rem', color: '#32363a', fontFamily: 'Poppins, sans-serif' }}>
+                <strong>Natural Language Chat</strong> - Ask questions in plain English
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <SmartToyIcon sx={{ color: '#0a6ed1', fontSize: 24 }} />
+              <Typography sx={{ fontSize: '0.875rem', color: '#32363a', fontFamily: 'Poppins, sans-serif' }}>
+                <strong>Autonomous Agent Mode</strong> - AI executes complex tasks independently
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <StorageIcon sx={{ color: '#0a6ed1', fontSize: 24 }} />
+              <Typography sx={{ fontSize: '0.875rem', color: '#32363a', fontFamily: 'Poppins, sans-serif' }}>
+                <strong>Enterprise Data Access</strong> - Connect to your databases securely
+              </Typography>
+            </Box>
+          </Box>
 
           {/* Auth Button */}
           <Box sx={{ mb: 4 }}>

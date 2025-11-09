@@ -63,6 +63,7 @@ import {
   Dashboard as DashboardIcon,
   AutoGraph as AutoGraphIcon,
   InfoOutlined as InfoIcon,
+  SmartToy as SmartToyIcon,
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
 import { apiService } from '../services/api';
@@ -180,7 +181,7 @@ const SAMPLE_QUERIES = [
 ];
 
 const SimpleChatInterface = forwardRef((props, ref) => {
-  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch } = props;
+  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch, onOpenAgentMode } = props;
   // Get authenticated user from Clerk
   const { user, isLoaded: isUserLoaded } = useUser();
 
@@ -1414,22 +1415,9 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               }}
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <InfoIcon sx={{ color: 'primary.main', mt: 0.3, fontSize: 20 }} />
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <img src="/axis-ai2.png" alt="Axis AI" style={{ width: 80, height: 80 }} />
                   <Box sx={{ flex: 1 }}>
-                    <Typography
-                      variant="subtitle2"
-                      sx={{
-                        fontWeight: 600,
-                        color: 'primary.main',
-                        mb: 1,
-                        textTransform: 'uppercase',
-                        fontSize: '0.75rem',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      Query Summary
-                    </Typography>
                     <Typography
                       variant="body2"
                       component="div"
@@ -1744,48 +1732,26 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                     </Button>
                     <Button
                       size="small"
-                      variant="contained"
-                      color="secondary"
-                      startIcon={<AutoGraphIcon />}
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<SmartToyIcon />}
                       onClick={() => {
+                        // Find the user's question
                         const messageIndex = messages.findIndex(m => m.id === message.id);
-                        let userQuestion = 'Query results';
-                        // Look backwards from the current message to find the user's question
+                        let userQuestion = '';
                         for (let i = messageIndex - 1; i >= 0; i--) {
                           if (messages[i].type === 'user') {
                             userQuestion = messages[i].content;
                             break;
                           }
                         }
-                        setAnalyticsModalData({
-                          query: userQuestion,
-                          results: {
-                            rows: message.results,
-                            metadata: message.metadata,
-                            sql: message.sql,
-                          },
-                        });
-                        setShowAnalyticsModal(true);
+                        // Navigate to agent mode with the question
+                        if (onOpenAgentMode) {
+                          onOpenAgentMode(userQuestion);
+                        }
                       }}
                     >
-                      Analytics Workbench
-                    </Button>
-                    
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<ResearchIcon />}
-                      onClick={() => {
-                        const userMessage = messages[messages.findIndex(m => m.id === message.id) - 1];
-                        const researchQuestion = userMessage?.content 
-                          ? `Based on this query result: "${userMessage.content}", provide a deeper analysis of the trends, patterns, and business implications.`
-                          : 'Analyze the trends and patterns in this data';
-                        
-                        setDeepResearchQuestion(researchQuestion);
-                        setShowDeepResearch(true);
-                      }}
-                    >
-                      Deep Research
+                      Agent Mode
                     </Button>
                   </Stack>
                 </Stack>
