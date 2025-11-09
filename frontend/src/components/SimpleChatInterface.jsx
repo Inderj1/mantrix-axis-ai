@@ -1416,7 +1416,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <img src="/axis-ai4.png" alt="Axis AI" style={{ height: 80, width: 'auto', objectFit: 'contain' }} />
+                  <img src="/axis-ai4.png" alt="Axis AI" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
                   <Box sx={{ flex: 1 }}>
                     <Box
                       sx={{

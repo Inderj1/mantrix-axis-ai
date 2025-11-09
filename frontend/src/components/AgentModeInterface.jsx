@@ -1549,7 +1549,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     component="img"
                     src="/axis-ai4.png"
                     alt="AXIS AI"
-                    sx={{ height: 80, width: 'auto', objectFit: 'contain' }}
+                    sx={{ height: 72, width: 'auto', objectFit: 'contain' }}
                   />
                   <Box sx={{ flex: 1 }}>
                     <Box
@@ -2210,12 +2210,12 @@ const AgentModeInterface = forwardRef((props, ref) => {
                   {queryData.insights && (
                     <Card elevation={2} sx={{ mt: 2, bgcolor: 'background.paper' }}>
                       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                        <Stack direction="row" spacing={0} alignItems="flex-start">
+                        <Stack direction="row" spacing={1.5} alignItems="flex-start">
                           <Box
                             component="img"
                             src="/axis-ai4.png"
                             alt="AXIS AI"
-                            sx={{ height: 80, width: 'auto', objectFit: 'contain' }}
+                            sx={{ height: 72, width: 'auto', objectFit: 'contain', display: 'block' }}
                           />
                           <Box sx={{ flex: 1 }}>
                             <Box sx={{ color: 'text.primary', fontSize: '0.95rem', lineHeight: 1.8 }}>
