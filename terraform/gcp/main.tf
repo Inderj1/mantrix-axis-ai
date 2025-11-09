@@ -90,9 +90,10 @@ resource "google_compute_address" "mantrix_ip" {
 
 # Compute Instance (e2-medium: 2 vCPU, 4GB RAM ~= t3.medium)
 resource "google_compute_instance" "mantrix_vm" {
-  name         = "${var.project_name}-vm"
-  machine_type = var.machine_type
-  zone         = var.zone
+  name                      = "${var.project_name}-vm"
+  machine_type              = var.machine_type
+  zone                      = var.zone
+  allow_stopping_for_update = true
 
   tags = ["${var.project_name}-vm", "http-server", "https-server"]
 

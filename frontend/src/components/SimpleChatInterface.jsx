@@ -1416,7 +1416,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <img src="/axis-ai2.png" alt="Axis AI" style={{ width: 80, height: 80 }} />
+                  <img src="/axis-ai4.png" alt="Axis AI" style={{ height: 80, width: 'auto', objectFit: 'contain' }} />
                   <Box sx={{ flex: 1 }}>
                     <Box
                       sx={{
@@ -1963,22 +1963,6 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                         />
                       )}
                     </>
-                  )}
-                  {message.results && message.results.length > 0 && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<InsightsIcon />}
-                      onClick={() => handleViewDetailedResults(message)}
-                      sx={{ 
-                        height: 24, 
-                        fontSize: '0.75rem',
-                        textTransform: 'none',
-                        ml: 'auto'
-                      }}
-                    >
-                      View detailed results
-                    </Button>
                   )}
                 </Stack>
               </Paper>

@@ -124,7 +124,7 @@ const PlatformSettings = () => {
                     onChange={handleSettingChange('darkMode')}
                   />
                 }
-                label="Dark mode (coming soon)"
+                label="Dark mode (not available for change)"
                 disabled
               />
               <FormControl fullWidth size="small">

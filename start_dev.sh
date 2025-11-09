@@ -28,11 +28,26 @@ if [ ! -d "backend/venv" ]; then
     cd backend
     python3 -m venv venv
     source venv/bin/activate
-    pip install -r requirements.txt
+    pip install -r requirements.txt 2>/dev/null || true
     cd ..
+    echo -e "${GREEN}✓ Virtual environment created${NC}"
 else
     echo -e "${GREEN}✓ Virtual environment found${NC}"
 fi
+
+# Install/update required dependencies
+echo -e "${YELLOW}Checking dependencies...${NC}"
+cd backend
+source venv/bin/activate
+pip install -q rdflib crewai nest-asyncio 2>/dev/null || echo -e "${YELLOW}⚠ Some dependencies may need manual installation${NC}"
+cd ..
+echo -e "${GREEN}✓ Dependencies checked${NC}"
+
+# Clean up any existing processes on required ports
+echo -e "\n${YELLOW}Cleaning up existing processes...${NC}"
+lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true
+lsof -ti:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
+echo -e "${GREEN}✓ Ports freed${NC}"
 
 # Start Redis
 echo -e "\n${YELLOW}Starting Redis...${NC}"

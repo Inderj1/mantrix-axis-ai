@@ -70,20 +70,8 @@ import {
   Dashboard as DashboardIcon,
   AutoGraph as AutoGraphIcon,
   InfoOutlined as InfoIcon,
-  CheckCircle as CheckCircleIcon,
-  RadioButtonUnchecked as PendingIcon,
-  Brightness1 as DotIcon,
-  AccountTree as AccountTreeIcon,
-  Speed as SpeedIcon,
-  Storage as StorageIcon,
-  TableChart as TableIcon,
-  PivotTableChart as PivotIcon,
-  LineStyle as LineChartIcon2,
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
-import PivotTableUI from 'react-pivottable/PivotTableUI';
-import 'react-pivottable/pivottable.css';
-import TableRenderers from 'react-pivottable/TableRenderers';
 import { apiService } from '../services/api';
 import ResultAnalysis from './ResultAnalysis';
 import DeepResearchInterface from './DeepResearchInterface';
@@ -237,7 +225,7 @@ const SMART_COMPLETIONS = {
 };
 
 const AgentModeInterface = forwardRef((props, ref) => {
-  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch, initialQuestion, onQuestionUsed } = props;
+  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch } = props;
   // Get authenticated user from Clerk
   const { user, isLoaded: isUserLoaded } = useUser();
 
@@ -273,9 +261,6 @@ const AgentModeInterface = forwardRef((props, ref) => {
   const [analyticsModalMode, setAnalyticsModalMode] = useState('modal'); // 'modal', 'drawer', 'embedded'
   const [showDeepResearch, setShowDeepResearch] = useState(false);
   const [deepResearchQuestion, setDeepResearchQuestion] = useState('');
-  const [tableViewMode, setTableViewMode] = useState({}); // Track view mode per query index
-  const [tableChartType, setTableChartType] = useState({}); // Track chart type per query index
-  const [tablePivotState, setTablePivotState] = useState({}); // Track pivot state per query index
   const initializationRef = useRef(false);
 
   console.log('AgentModeInterface rendering, mode:', mode, 'userId:', userId);
@@ -298,16 +283,6 @@ const AgentModeInterface = forwardRef((props, ref) => {
 
     return () => clearTimeout(scrollTimeout);
   }, [messages, loading]); // Scroll when messages change or loading state changes
-
-  // Handle initial question from chat interface
-  useEffect(() => {
-    if (initialQuestion) {
-      setInputMessage(initialQuestion);
-      if (onQuestionUsed) {
-        onQuestionUsed();
-      }
-    }
-  }, [initialQuestion, onQuestionUsed]);
 
   // No conversation management functions - Agent Mode has no persistence
 
@@ -362,8 +337,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
     try {
       // Call streaming agent analysis endpoint
       console.log('Starting streaming query to agent system:', queryText);
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE_URL}/api/v1/agents/analyze-stream`, {
+      const response = await fetch('http://localhost:8000/api/v1/agents/analyze-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -373,14 +347,6 @@ const AgentModeInterface = forwardRef((props, ref) => {
           context: {}
         })
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -426,15 +392,15 @@ const AgentModeInterface = forwardRef((props, ref) => {
                   case 'routing':
                     updated.routing = event.data;
                     updated.agentsUsed = event.data.experts || [];
-                    updated.statusMessages = [...(updated.statusMessages || []), `Agents: ${event.data.experts?.join(', ') || 'N/A'}`];
+                    updated.statusMessages = [...(updated.statusMessages || []), `🤖 Agents: ${event.data.experts?.join(', ') || 'N/A'}`];
                     break;
 
                   case 'sql_generation':
-                    updated.statusMessages = [...(updated.statusMessages || []), `Generating SQL for: ${event.data.query}`];
+                    updated.statusMessages = [...(updated.statusMessages || []), `🔍 Generating SQL for: ${event.data.query}`];
                     break;
 
                   case 'sql_execution':
-                    updated.statusMessages = [...(updated.statusMessages || []), `Executing query...`];
+                    updated.statusMessages = [...(updated.statusMessages || []), `⚡ Executing query...`];
                     break;
 
                   case 'query_results':
@@ -443,7 +409,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     updated.sql = queryData.sql;
                     updated.results = queryData.results;
                     updated.resultCount = queryData.row_count;
-                    updated.statusMessages = [...(updated.statusMessages || []), `Retrieved ${queryData.row_count} rows`];
+                    updated.statusMessages = [...(updated.statusMessages || []), `✅ Retrieved ${queryData.row_count} rows`];
                     break;
 
                   case 'execution_plan':
@@ -455,19 +421,15 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     break;
 
                   case 'analysis':
-                    // Attach insights to the last query in allSqlQueries (don't set message.content to avoid duplication)
-                    if (updated.allSqlQueries && updated.allSqlQueries.length > 0) {
-                      const lastQueryIndex = updated.allSqlQueries.length - 1;
-                      updated.allSqlQueries = updated.allSqlQueries.map((q, idx) =>
-                        idx === lastQueryIndex ? { ...q, insights: event.data } : q
-                      );
-                    }
+                    // Set final content but keep status messages
+                    updated.content = event.data;
                     updated.streaming = false;
                     break;
 
                   case 'complete':
                     const finalData = event.data;
-                    // Don't set content here to avoid duplicate display (analysis is already in query.insights)
+                    // Set final content but preserve streamed routing/agents (don't override with final data)
+                    updated.content = finalData.analysis || 'Agent analysis completed.';
                     // Only set agentsUsed if we don't already have it from routing event
                     if (!updated.agentsUsed || updated.agentsUsed.length === 0) {
                       updated.agentsUsed = finalData.agents_used || [];
@@ -1275,246 +1237,90 @@ const AgentModeInterface = forwardRef((props, ref) => {
     return (
       <Box sx={{ mb: 3 }}>
         <Box sx={{ flex: 1, maxWidth: '100%' }}>
-            {/* Corporate Streaming Progress - Horizontal Stepper */}
-            {message.statusMessages && message.statusMessages.length > 0 && (
-            <Accordion
-              defaultExpanded={true}
+            {/* Streaming Progress - Visual progress bar */}
+            {message.streaming && message.statusMessages && message.statusMessages.length > 0 && (
+            <Card
+              elevation={1}
               sx={{
-                mb: 3,
-                background: 'linear-gradient(to bottom, #ffffff, #f8fafc)',
+                mb: 2,
+                bgcolor: 'grey.50',
                 border: '1px solid',
-                borderColor: '#e2e8f0',
-                borderRadius: 2,
-                '&:before': {
-                  display: 'none'
-                },
-                boxShadow: 2
+                borderColor: 'grey.300',
+                overflow: 'hidden'
               }}
             >
-              <AccordionSummary
-                expandIcon={<ExpandMoreIcon />}
-                sx={{
-                  minHeight: 56,
-                  '& .MuiAccordionSummary-content': {
-                    margin: '12px 0'
-                  }
-                }}
-              >
-                {/* Collapsed Header */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                  <CheckCircleIcon sx={{ color: '#10b981', fontSize: 18 }} />
-                  <Box sx={{ flex: 1 }}>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{
-                        fontWeight: 600,
-                        color: '#1e293b',
-                        fontSize: '0.9rem',
-                        letterSpacing: '0.01em',
-                        fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                      }}
-                    >
-                      Analysis Complete
-                    </Typography>
-                    {message.routing && message.routing.orchestrator && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: '#64748b',
-                          fontSize: '0.75rem',
-                          fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                        }}
-                      >
-                        Orchestrator: {message.routing.orchestrator}
-                      </Typography>
-                    )}
-                  </Box>
-                  <Chip
-                    label={`${message.statusMessages.length} steps completed`}
-                    size="small"
-                    sx={{
-                      bgcolor: '#f1f5f9',
-                      color: '#475569',
-                      fontWeight: 600,
-                      fontSize: '0.7rem'
-                    }}
-                  />
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails sx={{ p: 3, pt: 2 }}>
-                {/* Progress Steps */}
-                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Typography
-                      variant="subtitle2"
-                      sx={{
-                        fontWeight: 600,
-                        color: '#475569',
-                        fontSize: '0.8rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                      }}
-                    >
-                      Execution Steps
-                    </Typography>
-                  </Box>
-                  {message.routing && message.routing.orchestrator && (
-                    <Chip
-                      label={`Orchestrator: ${message.routing.orchestrator}`}
-                      size="small"
-                      variant="outlined"
-                      sx={{
-                        borderColor: '#cbd5e1',
-                        color: '#475569',
-                        fontSize: '0.7rem',
-                        height: 24,
-                        fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                      }}
-                    />
-                  )}
-                </Box>
-
+              <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
                 {/* Progress Bar */}
                 <Box sx={{
-                  height: '6px',
-                  bgcolor: '#e2e8f0',
-                  borderRadius: 1,
+                  height: '4px',
+                  bgcolor: 'grey.200',
                   position: 'relative',
-                  overflow: 'hidden',
-                  mb: 3
+                  overflow: 'hidden'
                 }}>
                   <Box sx={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     height: '100%',
-                    width: message.streaming ? `${Math.min((message.statusMessages.length / 8) * 100, 100)}%` : '100%',
-                    background: message.streaming ? 'linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)' : 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
-                    borderRadius: 1,
-                    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                    '&::after': message.streaming ? {
+                    width: `${(message.statusMessages.length / 8) * 100}%`, // Assuming ~8 steps max
+                    bgcolor: 'primary.main',
+                    transition: 'width 0.3s ease-in-out',
+                    '&::after': {
                       content: '""',
                       position: 'absolute',
                       top: 0,
                       left: 0,
                       bottom: 0,
                       right: 0,
-                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-                      animation: 'shimmer 2s infinite'
-                    } : {}
+                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                      animation: 'shimmer 1.5s infinite'
+                    }
                   }} />
                 </Box>
 
-                {/* Horizontal Stepper - Show all steps with status */}
-                <Box sx={{ position: 'relative' }}>
-                  <Stack spacing={2.5}>
-                    {message.statusMessages.map((status, idx) => {
-                      // If streaming is done, mark all as completed. Otherwise, show active state for last item
-                      const isCompleted = !message.streaming || idx < message.statusMessages.length - 1;
-                      const isActive = message.streaming && idx === message.statusMessages.length - 1;
-                      const stepNumber = idx + 1;
-
+                {/* Status Messages */}
+                <Box sx={{ p: 2 }}>
+                  <Stack spacing={1}>
+                    {message.statusMessages.slice(-3).map((status, idx) => {
+                      const actualIdx = message.statusMessages.length - 3 + idx;
+                      const isLatest = idx === message.statusMessages.slice(-3).length - 1;
                       return (
-                        <Box
-                          key={idx}
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                            opacity: isActive ? 1 : 0.7,
-                            transform: isActive ? 'scale(1.02)' : 'scale(1)',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                          }}
-                        >
-                          {/* Step Number */}
+                        <Box key={actualIdx} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          {/* Step number */}
                           <Box sx={{
-                            minWidth: '32px',
-                            height: '32px',
+                            minWidth: '24px',
+                            height: '24px',
                             borderRadius: '50%',
-                            bgcolor: isCompleted ? '#10b981' : isActive ? '#1e3a8a' : '#e2e8f0',
-                            color: isCompleted || isActive ? 'white' : '#94a3b8',
+                            bgcolor: isLatest ? 'primary.main' : 'grey.300',
+                            color: isLatest ? 'white' : 'text.secondary',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '0.875rem',
-                            fontWeight: 700,
-                            flexShrink: 0,
-                            boxShadow: isActive ? '0 4px 12px rgba(30, 58, 138, 0.3)' : 'none',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
-                            position: 'relative',
-                            '&::after': isActive ? {
-                              content: '""',
-                              position: 'absolute',
-                              inset: '-4px',
-                              borderRadius: '50%',
-                              padding: '2px',
-                              background: 'linear-gradient(90deg, #3b82f6, #1e3a8a, #3b82f6)',
-                              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                              WebkitMaskComposite: 'xor',
-                              maskComposite: 'exclude',
-                              animation: 'spin 2s linear infinite',
-                              opacity: 0.6
-                            } : {}
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            flexShrink: 0
                           }}>
-                            {stepNumber}
+                            {actualIdx + 1}
                           </Box>
 
-                          {/* Step Content */}
-                          <Box sx={{ flex: 1 }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                fontSize: '0.875rem',
-                                color: isActive ? '#1e293b' : '#64748b',
-                                fontWeight: isActive ? 600 : 500,
-                                lineHeight: 1.5,
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            >
-                              {status}{isActive ? '...' : ''}
-                            </Typography>
-                          </Box>
-
-                          {/* Status Badge */}
-                          {isCompleted && (
-                            <Chip
-                              label="Done"
-                              size="small"
-                              sx={{
-                                bgcolor: '#d1fae5',
-                                color: '#065f46',
-                                fontWeight: 600,
-                                fontSize: '0.7rem',
-                                height: 20,
-                                '& .MuiChip-label': { px: 1 },
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            />
-                          )}
-                          {isActive && (
-                            <Chip
-                              label="Processing..."
-                              size="small"
-                              sx={{
-                                bgcolor: '#dbeafe',
-                                color: '#1e3a8a',
-                                fontWeight: 600,
-                                fontSize: '0.7rem',
-                                height: 20,
-                                '& .MuiChip-label': { px: 1 },
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            />
-                          )}
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: '0.875rem',
+                              color: isLatest ? 'text.primary' : 'text.secondary',
+                              fontWeight: isLatest ? 600 : 400,
+                              opacity: isLatest ? 1 : 0.7
+                            }}
+                          >
+                            {status}
+                          </Typography>
                         </Box>
                       );
                     })}
                   </Stack>
                 </Box>
-              </AccordionDetails>
-            </Accordion>
+              </CardContent>
+            </Card>
             )}
 
             <style>
@@ -1522,14 +1328,6 @@ const AgentModeInterface = forwardRef((props, ref) => {
                 @keyframes shimmer {
                   0% { transform: translateX(-100%); }
                   100% { transform: translateX(100%); }
-                }
-                @keyframes pulse {
-                  0%, 100% { opacity: 1; }
-                  50% { opacity: 0.5; }
-                }
-                @keyframes spin {
-                  from { transform: rotate(0deg); }
-                  to { transform: rotate(360deg); }
                 }
               `}
             </style>
@@ -1545,13 +1343,21 @@ const AgentModeInterface = forwardRef((props, ref) => {
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <Box
-                    component="img"
-                    src="/axis-ai4.png"
-                    alt="AXIS AI"
-                    sx={{ height: 80, width: 'auto', objectFit: 'contain' }}
-                  />
+                  <InfoIcon sx={{ color: 'primary.main', mt: 0.3, fontSize: 20 }} />
                   <Box sx={{ flex: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{
+                        fontWeight: 600,
+                        color: 'primary.main',
+                        mb: 1,
+                        textTransform: 'uppercase',
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      AI Assistant
+                    </Typography>
                     <Box
                       sx={{
                         lineHeight: 1.8,
@@ -1733,8 +1539,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     )}
 
                     {/* Agent Collaboration Info */}
-                    {/* Hide metadata sections when streaming is complete - they're already in progress section */}
-                    {false && message.agentsUsed && message.agentsUsed.length > 0 && (
+                    {message.agentsUsed && message.agentsUsed.length > 0 && (
                       <Box sx={{ mt: 2 }}>
                         <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.7rem' }}>
                           Agents Involved:
@@ -1757,8 +1562,8 @@ const AgentModeInterface = forwardRef((props, ref) => {
                       </Box>
                     )}
 
-                    {/* Execution Plan - Hidden from final response */}
-                    {false && !message.streaming && message.executionPlan && (
+                    {/* Execution Plan - Only show essential info */}
+                    {!message.streaming && message.executionPlan && (
                       <Accordion sx={{ mt: 2, bgcolor: 'primary.50', border: '1px solid', borderColor: 'primary.200' }} elevation={0}>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1810,8 +1615,8 @@ const AgentModeInterface = forwardRef((props, ref) => {
                       </Accordion>
                     )}
 
-                    {/* Execution Timeline - Hidden from final response */}
-                    {false && !message.streaming && message.executionLogs && message.executionLogs.length > 0 && (
+                    {/* Execution Timeline - Only show when complete */}
+                    {!message.streaming && message.executionLogs && message.executionLogs.length > 0 && (
                       <Accordion sx={{ mt: 2 }} elevation={0}>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1872,8 +1677,8 @@ const AgentModeInterface = forwardRef((props, ref) => {
                       </Accordion>
                     )}
 
-                    {/* Agent Routing Info - Hidden from final response */}
-                    {false && message.routing && message.routing.orchestrator && (
+                    {/* Agent Routing Info */}
+                    {message.routing && message.routing.orchestrator && (
                       <Accordion sx={{ mt: 2 }} elevation={0}>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
@@ -1953,271 +1758,16 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     </AccordionDetails>
                   </Accordion>
 
-                  {/* Results Table for this query */}
-                  {queryData.results && queryData.results.length > 0 && (() => {
-                    const queryIndex = `${message.id}-${idx}`;
-                    const currentViewMode = tableViewMode[queryIndex] || 'table';
-                    const currentChartType = tableChartType[queryIndex] || 'bar';
-                    const currentPivotState = tablePivotState[queryIndex] || {};
-
-                    // Prepare DataGrid columns
-                    const columns = Object.keys(queryData.results[0]).map((key) => {
-                      const isAmount = key.toLowerCase().includes('amount') ||
-                                      key.toLowerCase().includes('revenue') ||
-                                      key.toLowerCase().includes('cost') ||
-                                      key.toLowerCase().includes('total') ||
-                                      key.toLowerCase().includes('price');
-
-                      return {
-                        field: key,
-                        headerName: key
-                          .split('_')
-                          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                          .join(' '),
-                        flex: 1,
-                        minWidth: 150,
-                        renderCell: (params) => {
-                          if (typeof params.value === 'number') {
-                            if (isAmount) {
-                              return `$${params.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                            }
-                            return params.value.toLocaleString('en-US');
-                          }
-                          return params.value || '';
-                        },
-                        align: typeof queryData.results[0][key] === 'number' ? 'right' : 'left',
-                        headerAlign: typeof queryData.results[0][key] === 'number' ? 'right' : 'left',
-                      };
-                    });
-
-                    const rows = queryData.results.map((row, index) => ({
-                      id: row.id || index,
-                      ...row,
-                    }));
-
-                    // Prepare chart data
-                    const prepareChartData = () => {
-                      const numericColumns = Object.keys(queryData.results[0]).filter(key =>
-                        typeof queryData.results[0][key] === 'number' && !key.toLowerCase().includes('id')
-                      );
-                      const categoricalColumns = Object.keys(queryData.results[0]).filter(key =>
-                        typeof queryData.results[0][key] === 'string'
-                      );
-
-                      const xAxisColumn = categoricalColumns[0] || Object.keys(queryData.results[0])[0];
-
-                      // Aggregate data if needed
-                      const aggregated = {};
-                      queryData.results.forEach(row => {
-                        const key = row[xAxisColumn];
-                        if (!aggregated[key]) {
-                          aggregated[key] = { [xAxisColumn]: key };
-                          numericColumns.forEach(col => {
-                            aggregated[key][col] = 0;
-                          });
-                        }
-                        numericColumns.forEach(col => {
-                          aggregated[key][col] += row[col] || 0;
-                        });
-                      });
-
-                      return Object.values(aggregated);
-                    };
-
-                    const chartData = prepareChartData();
-
-                    return (
-                      <Paper elevation={1} sx={{ p: 2 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                          <Typography variant="h6">
-                            Results ({queryData.results.length} rows)
-                          </Typography>
-                          <Stack direction="row" spacing={1}>
-                            <ToggleButtonGroup
-                              value={currentViewMode}
-                              exclusive
-                              onChange={(e, newMode) => {
-                                if (newMode) {
-                                  setTableViewMode(prev => ({ ...prev, [queryIndex]: newMode }));
-                                }
-                              }}
-                              size="small"
-                            >
-                              <ToggleButton value="table">
-                                <TableIcon sx={{ mr: 0.5 }} fontSize="small" />
-                                Table
-                              </ToggleButton>
-                              <ToggleButton value="pivot">
-                                <PivotIcon sx={{ mr: 0.5 }} fontSize="small" />
-                                Pivot
-                              </ToggleButton>
-                              <ToggleButton value="chart">
-                                <BarChartIcon sx={{ mr: 0.5 }} fontSize="small" />
-                                Chart
-                              </ToggleButton>
-                            </ToggleButtonGroup>
-                            <Button
-                              size="small"
-                              startIcon={<DownloadIcon />}
-                              onClick={() => downloadCSV(queryData.results)}
-                            >
-                              Export CSV
-                            </Button>
-                          </Stack>
-                        </Stack>
-
-                        {/* Table View */}
-                        {currentViewMode === 'table' && (
-                          <Box sx={{ height: 400, width: '100%' }}>
-                            <DataGrid
-                              rows={rows}
-                              columns={columns}
-                              initialState={{
-                                pagination: {
-                                  paginationModel: { pageSize: 10, page: 0 },
-                                },
-                              }}
-                              pageSizeOptions={[10, 25, 50, 100]}
-                              density="compact"
-                              disableRowSelectionOnClick
-                              sx={{
-                                '& .MuiDataGrid-cell': {
-                                  fontSize: '0.875rem',
-                                },
-                                '& .MuiDataGrid-columnHeaders': {
-                                  backgroundColor: 'action.hover',
-                                  fontSize: '0.875rem',
-                                  fontWeight: 600,
-                                },
-                              }}
-                            />
-                          </Box>
-                        )}
-
-                        {/* Pivot Table View */}
-                        {currentViewMode === 'pivot' && (
-                          <Box sx={{ width: '100%', overflow: 'auto' }}>
-                            <PivotTableUI
-                              data={queryData.results}
-                              onChange={s => setTablePivotState(prev => ({ ...prev, [queryIndex]: s }))}
-                              renderers={TableRenderers}
-                              {...currentPivotState}
-                            />
-                          </Box>
-                        )}
-
-                        {/* Chart View */}
-                        {currentViewMode === 'chart' && (
-                          <Box>
-                            <Tabs
-                              value={currentChartType}
-                              onChange={(e, v) => setTableChartType(prev => ({ ...prev, [queryIndex]: v }))}
-                              sx={{ mb: 2 }}
-                            >
-                              <Tab value="bar" label="Bar" />
-                              <Tab value="line" label="Line" />
-                              <Tab value="pie" label="Pie" />
-                              <Tab value="area" label="Area" />
-                            </Tabs>
-
-                            <ResponsiveContainer width="100%" height={400}>
-                              {currentChartType === 'bar' && chartData.length > 0 && (
-                                <BarChart data={chartData}>
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey={Object.keys(chartData[0] || {})[0]} />
-                                  <YAxis />
-                                  <RechartsTooltip />
-                                  <Legend />
-                                  {Object.keys(chartData[0] || {}).slice(1).map((key, idx) => (
-                                    <Bar key={key} dataKey={key} fill={COLORS[idx % COLORS.length]} />
-                                  ))}
-                                </BarChart>
-                              )}
-
-                              {currentChartType === 'line' && chartData.length > 0 && (
-                                <LineChart data={chartData}>
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey={Object.keys(chartData[0] || {})[0]} />
-                                  <YAxis />
-                                  <RechartsTooltip />
-                                  <Legend />
-                                  {Object.keys(chartData[0] || {}).slice(1).map((key, idx) => (
-                                    <Line
-                                      key={key}
-                                      type="monotone"
-                                      dataKey={key}
-                                      stroke={COLORS[idx % COLORS.length]}
-                                      strokeWidth={2}
-                                    />
-                                  ))}
-                                </LineChart>
-                              )}
-
-                              {currentChartType === 'pie' && chartData.length > 0 && (
-                                <PieChart>
-                                  <Pie
-                                    data={chartData}
-                                    cx="50%"
-                                    cy="50%"
-                                    outerRadius={120}
-                                    fill="#8884d8"
-                                    dataKey={Object.keys(chartData[0] || {}).find(k => typeof chartData[0][k] === 'number')}
-                                    label
-                                  >
-                                    {chartData.map((entry, index) => (
-                                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                  </Pie>
-                                  <RechartsTooltip />
-                                  <Legend />
-                                </PieChart>
-                              )}
-
-                              {currentChartType === 'area' && chartData.length > 0 && (
-                                <AreaChart data={chartData}>
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey={Object.keys(chartData[0] || {})[0]} />
-                                  <YAxis />
-                                  <RechartsTooltip />
-                                  <Legend />
-                                  {Object.keys(chartData[0] || {}).slice(1).map((key, idx) => (
-                                    <Area
-                                      key={key}
-                                      type="monotone"
-                                      dataKey={key}
-                                      fill={COLORS[idx % COLORS.length]}
-                                      stroke={COLORS[idx % COLORS.length]}
-                                    />
-                                  ))}
-                                </AreaChart>
-                              )}
-                            </ResponsiveContainer>
-
-                            {chartData.length === 0 && (
-                              <Box sx={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Typography color="text.secondary">
-                                  No data available for chart visualization
-                                </Typography>
-                              </Box>
-                            )}
-                          </Box>
-                        )}
-                      </Paper>
-                    );
-                  })()}
-
-                  {/* AI Insights for this query - Shown at the end */}
+                  {/* AI Insights for this query */}
                   {queryData.insights && (
-                    <Card elevation={2} sx={{ mt: 2, bgcolor: 'background.paper' }}>
+                    <Card elevation={2} sx={{ mb: 2, bgcolor: 'background.paper' }}>
                       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                        <Stack direction="row" spacing={0} alignItems="flex-start">
-                          <Box
-                            component="img"
-                            src="/axis-ai4.png"
-                            alt="AXIS AI"
-                            sx={{ height: 80, width: 'auto', objectFit: 'contain' }}
-                          />
+                        <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                          <InfoIcon sx={{ color: 'primary.main', mt: 0.3, fontSize: 20 }} />
                           <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'primary.main', mb: 1, textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                              Query Insights #{idx + 1}
+                            </Typography>
                             <Box sx={{ color: 'text.primary', fontSize: '0.95rem', lineHeight: 1.8 }}>
                               {(() => {
                                 // Helper function to format text with markdown-style bold
@@ -2242,16 +1792,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                                   });
                                 };
 
-                                // Remove triple backticks from beginning and end
-                                let cleanedInsights = queryData.insights;
-                                if (cleanedInsights.startsWith('```')) {
-                                  cleanedInsights = cleanedInsights.replace(/^```[a-zA-Z]*\n?/, '');
-                                }
-                                if (cleanedInsights.endsWith('```')) {
-                                  cleanedInsights = cleanedInsights.replace(/\n?```$/, '');
-                                }
-
-                                const lines = cleanedInsights.split('\n');
+                                const lines = queryData.insights.split('\n');
                                 const elements = [];
                                 let currentParagraph = '';
                                 let inList = false;
@@ -2269,7 +1810,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                                   if (h4Match) {
                                     if (currentParagraph.trim()) {
                                       elements.push(
-                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 4 }}>
                                           {formatText(currentParagraph.trim())}
                                         </Typography>
                                       );
@@ -2277,14 +1818,14 @@ const AgentModeInterface = forwardRef((props, ref) => {
                                     }
                                     inList = false;
                                     elements.push(
-                                      <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', borderLeft: '3px solid', borderColor: 'grey.300' }}>
+                                      <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', pl: 3, borderLeft: '3px solid', borderColor: 'grey.300' }}>
                                         {formatText(h4Match[1])}
                                       </Typography>
                                     );
                                   } else if (h3Match) {
                                     if (currentParagraph.trim()) {
                                       elements.push(
-                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
+                                        <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 2 }}>
                                           {formatText(currentParagraph.trim())}
                                         </Typography>
                                       );
@@ -2292,7 +1833,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                                     }
                                     inList = false;
                                     elements.push(
-                                      <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
+                                      <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', pl: 1.5, position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
                                         {formatText(h3Match[1])}
                                       </Typography>
                                     );
@@ -2338,7 +1879,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                                     inList = true;
                                     const listItemText = listMatch[1];
                                     elements.push(
-                                      <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem' }}>
+                                      <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem', pl: 2 }}>
                                         {formatText(listItemText)}
                                       </Typography>
                                     );
@@ -2376,6 +1917,55 @@ const AgentModeInterface = forwardRef((props, ref) => {
                         </Stack>
                       </CardContent>
                     </Card>
+                  )}
+
+                  {/* Results Table for this query */}
+                  {queryData.results && queryData.results.length > 0 && (
+                    <Paper elevation={1} sx={{ p: 2 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                        <Typography variant="h6">
+                          Results ({queryData.results.length} rows)
+                        </Typography>
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            size="small"
+                            startIcon={<DownloadIcon />}
+                            onClick={() => downloadCSV(queryData.results)}
+                          >
+                            Export CSV
+                          </Button>
+                        </Stack>
+                      </Stack>
+                      <TableContainer sx={{ maxHeight: 400 }}>
+                        <Table size="small" stickyHeader>
+                          <TableHead>
+                            <TableRow>
+                              {Object.keys(queryData.results[0]).map((col) => (
+                                <TableCell key={col} sx={{ fontWeight: 600, bgcolor: 'grey.100' }}>
+                                  {col}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {queryData.results.slice(0, 100).map((row, rowIdx) => (
+                              <TableRow key={rowIdx} hover>
+                                {Object.keys(queryData.results[0]).map((col) => (
+                                  <TableCell key={col}>
+                                    {typeof row[col] === 'number' ? row[col].toLocaleString() : row[col]}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                      {queryData.results.length > 100 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                          Showing first 100 rows of {queryData.results.length}
+                        </Typography>
+                      )}
+                    </Paper>
                   )}
                 </Box>
               ))
@@ -2437,7 +2027,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                       size="small"
                       variant="contained"
                       startIcon={<InsightsIcon />}
-                      onClick={() => handleViewDetailedResults(message)}
+                      onClick={() => handleAnalyzeResults(message)}
                     >
                       View Detailed Results
                     </Button>
@@ -2685,6 +2275,22 @@ const AgentModeInterface = forwardRef((props, ref) => {
                   )}
                 </>
               )}
+              {message.results && message.results.length > 0 && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<InsightsIcon />}
+                      onClick={() => handleViewDetailedResults(message)}
+                      sx={{ 
+                        height: 24, 
+                        fontSize: '0.75rem',
+                        textTransform: 'none',
+                        ml: 'auto'
+                      }}
+                    >
+                      View detailed results
+                    </Button>
+              )}
             </Stack>
         </Box>
       </Box>
@@ -2736,6 +2342,39 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     : 'Conduct comprehensive analysis with AI Agent'}
                 </Typography>
               </Box>
+            </Box>
+            
+            {/* Right section */}
+            <Box>
+              <Stack direction="row" spacing={2} alignItems="center">
+                {/* Mode Toggle */}
+                <ToggleButtonGroup
+                  value={mode}
+                  exclusive
+                  onChange={(e, newMode) => {
+                    console.log('Mode changing from', mode, 'to', newMode);
+                    if (newMode !== null) {
+                      setMode(newMode);
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      textTransform: 'none',
+                      px: 2,
+                    }
+                  }}
+                >
+                  <ToggleButton value="chat">
+                    <ChatIcon sx={{ mr: 1, fontSize: 18 }} />
+                    Chat
+                  </ToggleButton>
+                  <ToggleButton value="research">
+                    <ResearchIcon sx={{ mr: 1, fontSize: 18 }} />
+                    Research
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Stack>
             </Box>
           </Box>
         </Paper>
@@ -2859,6 +2498,14 @@ const AgentModeInterface = forwardRef((props, ref) => {
               </div>
             ))}
             
+            {loading && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  Processing your query...
+                </Typography>
+              </Box>
+            )}
           </Box>
         </Box>
 

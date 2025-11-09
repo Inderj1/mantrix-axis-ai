@@ -900,25 +900,14 @@ function AuthenticatedApp() {
           animation: 'fadeInUp 0.5s ease-out',
         }}>
           {/* Logo */}
-          <Box sx={{ textAlign: 'center', mb: 0.5 }}>
+          <Box sx={{ textAlign: 'center', mb: 1.5 }}>
             <img
-              src="/axis-ai2.png"
+              src="/axis-ai4.png"
               alt="AXIS AI"
               style={{ height: 120, objectFit: 'contain' }}
             />
           </Box>
 
-          <Typography sx={{
-            fontSize: { xs: '1.5rem', sm: '2rem' },
-            fontWeight: 700,
-            mb: 1.5,
-            textAlign: 'center',
-            color: '#32363a',
-            fontFamily: 'Poppins, sans-serif',
-            letterSpacing: '-0.5px',
-          }}>
-            AXIS AI
-          </Typography>
           <Typography sx={{
             fontSize: '0.875rem',
             mb: 3,

@@ -156,44 +156,10 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, use
             </Typography>
           )}
 
-          {/* User Profile */}
-          <IconButton onClick={handleProfileMenuOpen} size="small">
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-              <PersonIcon sx={{ fontSize: 20 }} />
-            </Avatar>
+          {/* Logout Button */}
+          <IconButton onClick={handleLogout} size="small" color="primary">
+            <LogoutIcon />
           </IconButton>
-
-          {/* Profile Menu */}
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleProfileMenuClose}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-            PaperProps={{
-              sx: { width: 240, mt: 1 },
-            }}
-          >
-            <MenuItem>
-              <ListItemIcon>
-                <PersonIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Profile</ListItemText>
-            </MenuItem>
-            <MenuItem>
-              <ListItemIcon>
-                <SettingsIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Settings</ListItemText>
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Logout</ListItemText>
-            </MenuItem>
-          </Menu>
         </Box>
       </Toolbar>
     </AppBar>

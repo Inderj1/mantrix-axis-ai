@@ -107,7 +107,7 @@ const ControlCenter = ({ apiHealth, onRefreshStatus }) => {
               <SettingsIcon sx={{ fontSize: 36, color: '#1976d2' }} />
             </Avatar>
             <Box>
-              <Typography variant="h4" fontWeight={700}>
+              <Typography variant="h4" fontWeight={900}>
                 Control Center
               </Typography>
               <Typography variant="body1" color="text.secondary">
@@ -120,17 +120,21 @@ const ControlCenter = ({ apiHealth, onRefreshStatus }) => {
               size="small"
               icon={apiHealth?.status === 'healthy' ? <CheckCircleIcon /> : <ErrorIcon />}
               label={`API: ${apiHealth?.status || 'Unknown'}`}
-              color={apiHealth?.status === 'healthy' ? 'success' : 'error'}
+              color="default"
               variant="outlined"
+              disabled
+              sx={{ opacity: 0.5 }}
             />
             <Chip
               size="small"
               icon={<CheckCircleIcon />}
               label="DB: Connected"
-              color="success"
+              color="default"
               variant="outlined"
+              disabled
+              sx={{ opacity: 0.5 }}
             />
-            <IconButton color="primary" onClick={onRefreshStatus} size="small">
+            <IconButton color="default" onClick={onRefreshStatus} size="small" disabled sx={{ opacity: 0.5 }}>
               <RefreshIcon />
             </IconButton>
           </Stack>

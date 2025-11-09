@@ -108,9 +108,8 @@ const AdminHub = ({ setSelectedTab, useSapTheme }) => {
     { label: 'System Status', value: 'Operational', status: 'success', icon: <CheckIcon /> },
     { label: 'API Response Time', value: '145ms', status: 'success', icon: <PerformanceIcon /> },
     { label: 'Database Health', value: 'Good', status: 'success', icon: <DataIcon /> },
-    { label: 'Active Users', value: '128', status: 'success', icon: <UsersIcon /> },
-    { label: 'Data Sources', value: '10/12', status: 'warning', icon: <ConnectionIcon /> },
-    { label: 'Security Alerts', value: '2', status: 'error', icon: <WarningIcon /> },
+    { label: 'Data Sources', value: '1/12', status: 'warning', icon: <ConnectionIcon /> },
+    { label: 'Security Alerts', value: '0', status: 'success', icon: <WarningIcon /> },
   ];
 
   // Recent activity
@@ -273,7 +272,7 @@ const AdminHub = ({ setSelectedTab, useSapTheme }) => {
             User Management
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            User management features coming soon...
+            Details are in backend and not visible to user
           </Typography>
         </Paper>
       )}
@@ -285,33 +284,37 @@ const AdminHub = ({ setSelectedTab, useSapTheme }) => {
             Data Source Configuration
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Data source management features coming soon...
+            Details are in backend and not visible to user
           </Typography>
         </Paper>
       )}
 
       {/* Settings Tab */}
       {selectedCategory === 3 && (
-        <Paper sx={{ p: 3 }}>
+        <Paper sx={{ p: 3, opacity: 0.5 }}>
           <Typography variant="h6" fontWeight={600} gutterBottom>
             System Settings
           </Typography>
           <Stack spacing={2} sx={{ mt: 2 }}>
             <FormControlLabel
-              control={<Switch defaultChecked />}
+              control={<Switch defaultChecked disabled />}
               label="Enable email notifications"
+              disabled
             />
             <FormControlLabel
-              control={<Switch defaultChecked />}
+              control={<Switch defaultChecked disabled />}
               label="Auto-backup enabled"
+              disabled
             />
             <FormControlLabel
-              control={<Switch />}
+              control={<Switch disabled />}
               label="Maintenance mode"
+              disabled
             />
             <FormControlLabel
-              control={<Switch defaultChecked />}
+              control={<Switch defaultChecked disabled />}
               label="Audit logging"
+              disabled
             />
           </Stack>
         </Paper>
