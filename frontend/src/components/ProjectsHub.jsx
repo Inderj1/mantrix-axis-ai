@@ -139,24 +139,10 @@ const ProjectsHub = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
-          <Typography
-            variant="h4"
-            fontWeight={400}
-            gutterBottom
-            sx={{
-              color: '#32363a',
-              fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif',
-            }}
-          >
+          <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
             Projects
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{
-              fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif',
-            }}
-          >
+          <Typography variant="body2" color="text.secondary">
             Organize your conversations into projects
           </Typography>
         </Box>

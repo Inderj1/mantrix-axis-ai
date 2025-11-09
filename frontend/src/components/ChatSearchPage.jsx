@@ -206,8 +206,8 @@ const ChatSearchPage = ({
             starred: isStarred(conv.conversation_id || conv.conversationId),
             projectName: getProjectName(conv.project_id),
             messageCount: (conv.messages || []).length,
-            created_at: conv.created_at,
-            updated_at: conv.updated_at || conv.created_at,
+            created_at: conv.created_at || conv.createdAt,
+            updated_at: conv.updated_at || conv.updatedAt || conv.created_at || conv.createdAt,
             _raw: conv
           }))}
           columns={[
@@ -247,22 +247,24 @@ const ChatSearchPage = ({
               headerName: 'Messages',
               width: 100,
               type: 'number',
+              align: 'center',
+              headerAlign: 'center',
             },
             {
               field: 'created_at',
               headerName: 'Created',
               width: 180,
               type: 'dateTime',
-              valueGetter: (params) => params ? new Date(params) : null,
-              renderCell: (params) => formatDate(params.value),
+              valueGetter: (value) => value ? new Date(value) : null,
+              renderCell: (params) => formatDate(params.row.created_at),
             },
             {
               field: 'updated_at',
               headerName: 'Last Updated',
               width: 180,
               type: 'dateTime',
-              valueGetter: (params) => params ? new Date(params) : null,
-              renderCell: (params) => formatDate(params.value),
+              valueGetter: (value) => value ? new Date(value) : null,
+              renderCell: (params) => formatDate(params.row.updated_at),
             },
             {
               field: 'actions',

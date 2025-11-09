@@ -17,6 +17,7 @@ from src.api.markets_routes import router as markets_router
 from src.api.stox_routes import router as stox_router
 from src.api.comms_routes import router as comms_router
 from src.api.comms_config_routes import router as comms_config_router
+from src.api.agent_routes import router as agent_router
 
 # Configure structured logging
 structlog.configure(
@@ -99,6 +100,7 @@ allowed_origins = [
     "http://localhost:3001",
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://localhost:5175",
     "http://localhost:5176",
     "http://localhost:8000",
     "https://accounts.dev.clerk",
@@ -138,6 +140,7 @@ app.include_router(markets_router, prefix="/api/v1")
 app.include_router(stox_router)
 app.include_router(comms_router)
 app.include_router(comms_config_router)
+app.include_router(agent_router)
 
 
 @app.get("/")

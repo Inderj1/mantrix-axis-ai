@@ -10,9 +10,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Anthropic
-    anthropic_api_key: str = Field(..., alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-3-5-sonnet-20241022", alias="ANTHROPIC_MODEL")
+    # Anthropic (for NLP-to-SQL system)
+    anthropic_api_key: Optional[str] = Field(None, alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-3-5-sonnet-20240620", alias="ANTHROPIC_MODEL")
 
     # OpenAI (for embeddings)
     openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")

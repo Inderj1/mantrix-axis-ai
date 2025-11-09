@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple
 import anthropic
 from anthropic import Anthropic
+from openai import OpenAI
 import structlog
 import json
 import time
@@ -14,9 +15,24 @@ logger = structlog.get_logger()
 
 
 class LLMClient:
-    def __init__(self):
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.anthropic_model
+    def __init__(self, use_openai=False):
+        """
+        Initialize LLM Client with either OpenAI or Anthropic
+
+        Args:
+            use_openai: If True, use OpenAI GPT-4o. If False, use Anthropic Claude.
+        """
+        self.use_openai = use_openai
+
+        if use_openai:
+            self.client = OpenAI(api_key=settings.openai_api_key)
+            self.model = "gpt-4o"
+            logger.info(f"LLMClient initialized with OpenAI model: {self.model}")
+        else:
+            self.client = Anthropic(api_key=settings.anthropic_api_key)
+            self.model = settings.anthropic_model
+            logger.info(f"LLMClient initialized with Anthropic model: {self.model}")
+
         self.error_handler = QueryErrorHandler(llm_client=self)
         self.max_retries = 3
         self.retry_delay = 1.0  # Base delay in seconds
@@ -144,107 +160,126 @@ ORDER BY current_inventory ASC"""
                 }
             }
             
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                temperature=0,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt + "\n\nPlease use the generate_sql_query tool to provide your response."}
-                ],
-                tools=[sql_generation_tool],
-                tool_choice={"type": "tool", "name": "generate_sql_query"}
-            )
-            
-            # Debug logging for response structure
-            logger.info(f"Response type: {type(response)}")
-            logger.info(f"Response content type: {type(response.content)}")
-            logger.info(f"Response content length: {len(response.content) if response.content else 'None'}")
-            if response.content:
-                for i, content in enumerate(response.content):
-                    logger.info(f"Content[{i}] type: {type(content)}, content type: {getattr(content, 'type', 'no type attr')}")
-                    if hasattr(content, 'type') and content.type == "tool_use":
-                        logger.info(f"Tool use name: {getattr(content, 'name', 'no name')}")
-                        logger.info(f"Tool use input type: {type(getattr(content, 'input', 'no input'))}")
-                        logger.info(f"Tool use input: {repr(getattr(content, 'input', 'no input'))}")
-            
-            # Extract the tool use response
-            tool_use = None
-            for content in response.content:
-                if content.type == "tool_use" and content.name == "generate_sql_query":
-                    tool_use = content
-                    break
-            
-            if tool_use and hasattr(tool_use, 'input'):
-                raw_result = tool_use.input
-                logger.info(f"Tool use raw result type: {type(raw_result)}")
-                logger.info(f"Tool use raw result content: {repr(raw_result)}")
+            if self.use_openai:
+                # OpenAI format - use function calling
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    functions=[{
+                        "name": "generate_sql_query",
+                        "description": "Generate a SQL query based on natural language",
+                        "parameters": sql_generation_tool["input_schema"]
+                    }],
+                    function_call={"name": "generate_sql_query"},
+                    temperature=0,
+                    max_tokens=2000
+                )
 
-                # Handle different response formats from Anthropic
-                if isinstance(raw_result, dict):
-                    result = raw_result
-                    logger.info("Tool returned dict - using directly")
-
-                    # Normalize tables_used if it's a string (Claude 3 Opus compatibility)
-                    if "tables_used" in result and isinstance(result["tables_used"], str):
-                        logger.info(f"Normalizing tables_used from string to list: {result['tables_used']}")
-                        tables_str = result["tables_used"]
-                        # Split by newlines and remove markdown bullet points
-                        tables_list = []
-                        for line in tables_str.split('\n'):
-                            line = line.strip()
-                            if line:
-                                # Remove markdown bullet points (-, *, etc.)
-                                line = line.lstrip('-*• ').strip()
-                                if line:
-                                    tables_list.append(line)
-                        result["tables_used"] = tables_list
-                        logger.info(f"Normalized tables_used to: {result['tables_used']}")
-
-                elif isinstance(raw_result, str):
-                    logger.warning("Tool returned string - attempting JSON parse")
-                    try:
-                        result = json.loads(raw_result)
-                        logger.info("Successfully parsed JSON from string response")
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse JSON from tool response: {e}")
-                        # Fallback to text parsing
-                        result = self._parse_llm_response(raw_result)
+                # Extract function call response
+                if response.choices[0].message.function_call:
+                    raw_result = json.loads(response.choices[0].message.function_call.arguments)
+                    logger.info(f"OpenAI function call result: {repr(raw_result)}")
                 else:
-                    logger.error(f"Unexpected tool response type: {type(raw_result)}")
-                    result = {
-                        "sql": str(raw_result) if raw_result else "",
-                        "explanation": "Generated SQL query",
-                        "tables_used": [],
-                        "estimated_complexity": "medium",
-                        "optimization_notes": ""
-                    }
-
-                # Final safety check - ensure result is a dict
-                if not isinstance(result, dict):
-                    logger.error(f"Result is still not a dict after processing: {type(result)}")
-                    result = {
-                        "sql": str(result) if result else "",
-                        "explanation": "Generated SQL query",
-                        "tables_used": [],
-                        "estimated_complexity": "medium",
-                        "optimization_notes": ""
-                    }
-                
-                logger.info("SQL generation completed successfully")
-                # Add confidence score based on complexity
-                result["confidence_score"] = self._calculate_confidence(result, table_schemas)
-                return result
+                    raise ValueError("No function call in OpenAI response")
             else:
-                # Fallback to text parsing if tool use fails
-                logger.warning("Tool use failed, falling back to text parsing")
-                if response.content and hasattr(response.content[0], 'text'):
-                    result = self._parse_llm_response(response.content[0].text)
-                    result["confidence_score"] = self._calculate_confidence(result, table_schemas)
-                    return result
+                # Anthropic format - use tools
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=2000,
+                    temperature=0,
+                    system=system_prompt,
+                    messages=[
+                        {"role": "user", "content": user_prompt + "\n\nPlease use the generate_sql_query tool to provide your response."}
+                    ],
+                    tools=[sql_generation_tool],
+                    tool_choice={"type": "tool", "name": "generate_sql_query"}
+                )
+
+                # Debug logging for response structure
+                logger.info(f"Response type: {type(response)}")
+                logger.info(f"Response content type: {type(response.content)}")
+                logger.info(f"Response content length: {len(response.content) if response.content else 'None'}")
+                if response.content:
+                    for i, content in enumerate(response.content):
+                        logger.info(f"Content[{i}] type: {type(content)}, content type: {getattr(content, 'type', 'no type attr')}")
+                        if hasattr(content, 'type') and content.type == "tool_use":
+                            logger.info(f"Tool use name: {getattr(content, 'name', 'no name')}")
+                            logger.info(f"Tool use input type: {type(getattr(content, 'input', 'no input'))}")
+                            logger.info(f"Tool use input: {repr(getattr(content, 'input', 'no input'))}")
+
+                # Extract the tool use response
+                tool_use = None
+                for content in response.content:
+                    if content.type == "tool_use" and content.name == "generate_sql_query":
+                        tool_use = content
+                        break
+
+                if tool_use and hasattr(tool_use, 'input'):
+                    raw_result = tool_use.input
+                    logger.info(f"Tool use raw result type: {type(raw_result)}")
+                    logger.info(f"Tool use raw result content: {repr(raw_result)}")
                 else:
-                    raise ValueError("No valid response from LLM")
-            
+                    raise ValueError("No tool use in Anthropic response")
+
+            # Handle different response formats (common for both providers)
+            if isinstance(raw_result, dict):
+                result = raw_result
+                logger.info("Tool returned dict - using directly")
+
+                # Normalize tables_used if it's a string (Claude 3 Opus compatibility)
+                if "tables_used" in result and isinstance(result["tables_used"], str):
+                    logger.info(f"Normalizing tables_used from string to list: {result['tables_used']}")
+                    tables_str = result["tables_used"]
+                    # Split by newlines and remove markdown bullet points
+                    tables_list = []
+                    for line in tables_str.split('\n'):
+                        line = line.strip()
+                        if line:
+                            # Remove markdown bullet points (-, *, etc.)
+                            line = line.lstrip('-*• ').strip()
+                            if line:
+                                tables_list.append(line)
+                    result["tables_used"] = tables_list
+                    logger.info(f"Normalized tables_used to: {result['tables_used']}")
+
+            elif isinstance(raw_result, str):
+                logger.warning("Tool returned string - attempting JSON parse")
+                try:
+                    result = json.loads(raw_result)
+                    logger.info("Successfully parsed JSON from string response")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON from tool response: {e}")
+                    # Fallback to text parsing
+                    result = self._parse_llm_response(raw_result)
+            else:
+                logger.error(f"Unexpected tool response type: {type(raw_result)}")
+                result = {
+                    "sql": str(raw_result) if raw_result else "",
+                    "explanation": "Generated SQL query",
+                    "tables_used": [],
+                    "estimated_complexity": "medium",
+                    "optimization_notes": ""
+                }
+
+            # Final safety check - ensure result is a dict
+            if not isinstance(result, dict):
+                logger.error(f"Result is still not a dict after processing: {type(result)}")
+                result = {
+                    "sql": str(result) if result else "",
+                    "explanation": "Generated SQL query",
+                    "tables_used": [],
+                    "estimated_complexity": "medium",
+                    "optimization_notes": ""
+                }
+
+            logger.info("SQL generation completed successfully")
+            # Add confidence score based on complexity
+            result["confidence_score"] = self._calculate_confidence(result, table_schemas)
+            return result
+
         except anthropic.RateLimitError as e:
             logger.warning(f"Rate limit hit: {e}")
             if retry_count < self.max_retries:
@@ -413,7 +448,23 @@ Rules:
     - Use Total_COGS for cost of goods sold, not manual calculations
     - Use COALESCE to handle NULL values in revenue and cost columns
     - Follow the column mapping: revenue queries should use revenue columns, not GL account amounts
-16. For GL account total amount queries:
+16. ⭐ CRITICAL - COLUMN SELECTION RULES (Only Select What's Requested) ⭐:
+    - ONLY include columns that are EXPLICITLY mentioned or clearly implied in the user's query
+    - DO NOT add "helpful" extra columns unless specifically requested
+    - Examples:
+      * "Show top customers by revenue" → SELECT Customer, Revenue (NOT profit, frequency, margin, etc.)
+      * "Show customers with names" → SELECT Customer, Customer_Name (NOT revenue, unless asked)
+      * "Show revenue and margin by customer" → SELECT Customer, Revenue, Margin (ONLY these)
+    - Exception: Primary key/identifier columns (like Customer ID) can be included if they're needed to identify the entity
+    - If user asks for "top customers", include the metric they're sorted by (e.g., revenue for "top by revenue")
+    - DO NOT add columns just because they're in the same table or might be interesting
+    - ⚠️ SPECIAL CASE - "Add X" queries (e.g., "add customer name to above results"):
+      * If user says "add X" or "include X", ONLY add that specific column X
+      * DO NOT add profit, margin, COGS, frequency, or any other metrics unless explicitly requested
+      * Example: "add customer name" → Add ONLY Customer_Name column (NOT profit, margin, etc.)
+      * Example: "add profit and margin" → Add ONLY Profit and Margin columns
+      * The word "add" means append ONE column, not rebuild the entire result set
+17. For GL account total amount queries:
     - Use dataset_25m_table as the primary table
     - Always include GL_Account in SELECT and GROUP BY
     - Use ROUND(SUM(GL_Amount_in_CC), 2) for total amounts
@@ -422,7 +473,7 @@ Rules:
     - IMPORTANT: GL accounts have format 'ACA1/XXXXXXXX' (e.g., 'ACA1/41000000')
     - When filtering specific GL accounts, use the full format: WHERE GL_Account = 'ACA1/41000000'
     - For partial matches, use: WHERE GL_Account LIKE '%41000000'
-17. CRITICAL - TABLE JOIN RULES (Data Format Transformations):
+18. CRITICAL - TABLE JOIN RULES (Data Format Transformations):
     - When joining dataset_25m_table with sales_order_cockpit_export:
       * COPA table (dataset_25m_table) has Sales_Order_KDAUF with leading zeros (e.g., '0000507250')
       * Cockpit table (sales_order_cockpit_export) has SalesDocument_VBELN without leading zeros (e.g., '507250')
@@ -437,7 +488,7 @@ Rules:
     - This applies to ALL queries joining these two tables
     - Expected match rate with LTRIM: ~85-95% of COPA records
 
-18. CRITICAL - COLUMN FORMATTING RULES (Make Results Readable):
+19. CRITICAL - COLUMN FORMATTING RULES (Make Results Readable):
     ⭐ ALWAYS FORMAT MONETARY VALUES, PERCENTAGES, AND COUNTS ⭐
 
     **Currency Columns** - Apply dollar sign AND thousand separators:
@@ -586,6 +637,10 @@ Financial Query Rules:
                     if source_col == "Sales_Order_KDAUF" and target_col == "SalesDocument_VBELN":
                         prompt_parts.append(f"  ⚠️ CRITICAL: JOIN ON LTRIM({source}.{source_col}, '0') = {target}.{target_col}")
                         prompt_parts.append(f"  (Leading zero transformation required!)")
+                    # Special handling for Customer/CustomerNumber JOIN with leading zero issue
+                    elif source_col == "Customer" and target_col == "CustomerNumber":
+                        prompt_parts.append(f"  ⚠️ CRITICAL: JOIN ON LTRIM({source}.{source_col}, '0') = {target}.{target_col}")
+                        prompt_parts.append(f"  (Leading zero transformation required for customer IDs!)")
                     else:
                         prompt_parts.append(f"  JOIN ON {source}.{source_col} = {target}.{target_col}")
                 prompt_parts.append(f"  JOIN TYPE: {join_type} JOIN")
@@ -865,17 +920,31 @@ Return a JSON object with:
     "estimated_improvement": "percentage or description",
     "additional_recommendations": ["other suggestions"]
 }}"""
-            
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                temperature=0,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            return self._parse_llm_response(response.content[0].text)
+
+            if self.use_openai:
+                # OpenAI format
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,
+                    max_tokens=2000
+                )
+                response_text = response.choices[0].message.content
+            else:
+                # Anthropic format
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=2000,
+                    temperature=0,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = response.content[0].text
+
+            return self._parse_llm_response(response_text)
             
         except Exception as e:
             logger.error(f"Failed to optimize query: {e}")
@@ -1119,18 +1188,33 @@ Please correct the SQL query to fix the error. Focus on:
 
 Return the corrected SQL in the same JSON format."""
 
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                temperature=0,
-                system=self._build_system_prompt(),
-                messages=[
-                    {"role": "user", "content": correction_prompt}
-                ]
-            )
-            
-            if response.content and hasattr(response.content[0], 'text'):
-                result = self._parse_llm_response(response.content[0].text)
+            if self.use_openai:
+                # OpenAI format
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._build_system_prompt()},
+                        {"role": "user", "content": correction_prompt}
+                    ],
+                    temperature=0,
+                    max_tokens=2000
+                )
+                response_text = response.choices[0].message.content
+            else:
+                # Anthropic format
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=2000,
+                    temperature=0,
+                    system=self._build_system_prompt(),
+                    messages=[
+                        {"role": "user", "content": correction_prompt}
+                    ]
+                )
+                response_text = response.content[0].text
+
+            if response_text:
+                result = self._parse_llm_response(response_text)
                 result["correction_applied"] = True
                 result["original_error"] = error_message
                 return result

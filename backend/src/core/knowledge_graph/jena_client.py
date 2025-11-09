@@ -23,14 +23,14 @@ class JenaKnowledgeGraph:
     
     def __init__(self, data_file: str = "financial_kg.ttl", use_cache: str = "redis"):
         """Initialize the RDF graph.
-        
+
         Args:
             data_file: Path to the TTL file
             use_cache: Cache strategy - "redis" (default), "memory", or "none"
         """
         self.data_file = data_file
         self.use_cache = use_cache
-        
+
         if use_cache == "redis":
             # Use Redis-cached store for multi-process sharing
             from .jena_redis_store import get_redis_graph
@@ -39,6 +39,8 @@ class JenaKnowledgeGraph:
             # Still need to define namespace
             self.FIN = Namespace("http://example.com/finance#")
             self._fin = lambda prop: self.FIN[prop]
+            # Load table metadata into cached graph
+            self._load_table_metadata()
             return
         elif use_cache == "memory":
             # Use singleton memory store for single-process performance
@@ -48,27 +50,29 @@ class JenaKnowledgeGraph:
             # Still need to define namespace
             self.FIN = Namespace("http://example.com/finance#")
             self._fin = lambda prop: self.FIN[prop]
+            # Load table metadata into cached graph
+            self._load_table_metadata()
             return
-        
+
         # Otherwise create new graph
         self.graph = Graph()
-        
+
         # Define namespaces
         self.FIN = Namespace("http://example.com/finance#")
         self.graph.bind("fin", self.FIN)
         self.graph.bind("rdfs", RDFS)
         self.graph.bind("owl", OWL)
         self.graph.bind("xsd", XSD)
-        
+
         # Create helper for property access
         self._fin = lambda prop: self.FIN[prop]
-        
+
         # Load ontology
         ontology_path = Path(__file__).parent.parent.parent.parent / "ontologies" / "financial-core.ttl"
         if ontology_path.exists():
             self.graph.parse(ontology_path, format="turtle")
             logger.info("Loaded financial ontology")
-        
+
         # Load existing data if available
         if os.path.exists(self.data_file):
             self.graph.parse(self.data_file, format="turtle")
@@ -76,6 +80,9 @@ class JenaKnowledgeGraph:
         else:
             logger.info("Starting with empty knowledge graph")
             self._load_from_sources()
+
+        # Load table metadata (always load this)
+        self._load_table_metadata()
     
     def _load_from_sources(self):
         """Load data from original Python/JSON source files."""
@@ -345,9 +352,31 @@ class JenaKnowledgeGraph:
                 revenue_metric = self.FIN["GROSS_MARGIN"]  # Or any revenue-related metric
                 if (revenue_metric, RDF.type, self.FIN["L1Metric"]) in self.graph:
                     self.graph.add((rule_uri, self.FIN["appliesTo"], revenue_metric))
-        
+
         logger.info(f"Loaded {len(rules)} business rules")
-    
+
+    def _load_table_metadata(self):
+        """Load table metadata from table_metadata_kg.ttl if available."""
+        table_metadata_file = "table_metadata_kg.ttl"
+
+        if not os.path.exists(table_metadata_file):
+            logger.warning(f"Table metadata file not found: {table_metadata_file}")
+            logger.info("Run 'python load_table_metadata_to_jena.py' to generate it")
+            return
+
+        try:
+            # Count triples before loading
+            triples_before = len(self.graph)
+
+            # Parse table metadata
+            self.graph.parse(table_metadata_file, format="turtle")
+
+            triples_added = len(self.graph) - triples_before
+            logger.info(f"Loaded table metadata: +{triples_added:,} triples from {table_metadata_file}")
+
+        except Exception as e:
+            logger.error(f"Failed to load table metadata: {e}")
+
     def query(self, sparql_query: str, **kwargs) -> List[Dict[str, Any]]:
         """Execute a SPARQL query and return results."""
         try:

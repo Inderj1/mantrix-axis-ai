@@ -67,6 +67,7 @@ import ContentHub from './components/ContentHub';
 import ProjectsHub from './components/ProjectsHub';
 import ChatSearchPage from './components/ChatSearchPage';
 import AdminHub from './components/AdminHub';
+import UserProfileManager from './components/UserProfileManager';
 import MarketsAIDashboard from './components/MarketsAIDashboard';
 import CoreAILanding from './components/CoreAILanding';
 import MargenAIDashboard from './components/margenai/MargenAIDashboard';
@@ -736,6 +737,9 @@ function App() {
               </Typography>
             </Box>
           )}
+
+          {/* AI Persona - Configure AI Response Personality */}
+          {selectedTab === 'persona' && <UserProfileManager />}
 
           {/* Admin - Settings & Administration */}
           {selectedTab === 'admin' && <AdminHub setSelectedTab={setSelectedTab} useSapTheme={useSapTheme} />}

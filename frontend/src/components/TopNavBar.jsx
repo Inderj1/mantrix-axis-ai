@@ -137,18 +137,6 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen }) =
 
         {/* Right: Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200, justifyContent: 'flex-end' }}>
-          {/* Notifications */}
-          <IconButton size="small">
-            <Badge badgeContent={3} color="error">
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
-
-          {/* Help */}
-          <IconButton size="small">
-            <HelpIcon />
-          </IconButton>
-
           {/* User Profile */}
           <IconButton onClick={handleProfileMenuOpen} size="small">
             <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>

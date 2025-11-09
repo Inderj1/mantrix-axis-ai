@@ -1434,63 +1434,158 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                       variant="body2"
                       component="div"
                       sx={{
-                        lineHeight: 1.7,
+                        lineHeight: 1.8,
                         color: 'text.primary',
+                        fontSize: '0.95rem',
                       }}
                     >
                       {(() => {
-                        // Split content into main text and numbered list items
-                        const parts = message.content.split(/(\d+\.\s+)/);
+                        // Helper function to format text with markdown-style bold
+                        const formatText = (text) => {
+                          if (!text) return null;
+
+                          // Split by **bold** or *bold* patterns
+                          const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+
+                          return parts.map((part, idx) => {
+                            // Check if this is bold text
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                              return (
+                                <Box key={idx} component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                  {part.slice(2, -2)}
+                                </Box>
+                              );
+                            } else if (part.startsWith('*') && part.endsWith('*')) {
+                              return (
+                                <Box key={idx} component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                  {part.slice(1, -1)}
+                                </Box>
+                              );
+                            }
+                            return part;
+                          });
+                        };
+
+                        // Split content into sections: headings, paragraphs, and lists
+                        const lines = message.content.split('\n');
                         const elements = [];
-                        let currentText = '';
+                        let currentParagraph = '';
+                        let inList = false;
 
-                        for (let i = 0; i < parts.length; i++) {
-                          const part = parts[i];
+                        lines.forEach((line, lineIdx) => {
+                          const trimmedLine = line.trim();
 
-                          // Check if this is a number followed by period (like "1. ")
-                          if (/^\d+\.\s+$/.test(part)) {
-                            // Add accumulated text before the list
-                            if (currentText.trim()) {
+                          // Check for markdown headings (### H3, ## H2, # H1)
+                          const h3Match = trimmedLine.match(/^###\s+(.+)$/);
+                          const h2Match = trimmedLine.match(/^##\s+(.+)$/);
+                          const h1Match = trimmedLine.match(/^#\s+(.+)$/);
+
+                          // Check if this is a list item (numbered, dashed, or bulleted)
+                          // Matches: "1. text", "1) text", "- text", "* text", "• text"
+                          const listMatch = trimmedLine.match(/^(?:\d+[\.\)]\s+|[-*•]\s+)(.+)$/);
+
+                          if (h3Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
                               elements.push(
-                                <Typography key={`text-${i}`} variant="body2" component="div" sx={{ mb: 1.5 }}>
-                                  {currentText.trim()}
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
                                 </Typography>
                               );
-                              currentText = '';
+                              currentParagraph = '';
                             }
-
-                            // Get the next part which is the list item content
-                            const nextPart = parts[i + 1] || '';
-                            const listItemText = nextPart.trim();
+                            inList = false;
 
                             elements.push(
-                              <Box key={`list-${i}`} component="div" sx={{ ml: 2, mb: 0.5, display: 'flex', alignItems: 'flex-start' }}>
-                                <Typography variant="body2" component="span" sx={{ mr: 1, fontWeight: 600, color: 'primary.main' }}>
-                                  •
-                                </Typography>
-                                <Typography variant="body2" component="span" sx={{ flex: 1 }}>
-                                  {listItemText}
-                                </Typography>
-                              </Box>
+                              <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 600, mt: 2.5, mb: 1, color: 'text.primary', fontSize: '0.95rem' }}>
+                                {formatText(h3Match[1])}
+                              </Typography>
                             );
+                          } else if (h2Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
 
-                            i++; // Skip the next part as we've already used it
-                          } else if (!/^\d+\.\s+$/.test(parts[i - 1] || '')) {
-                            // Only accumulate if the previous part wasn't a number
-                            currentText += part;
+                            elements.push(
+                              <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 650, mt: 3, mb: 1.25, color: 'text.primary', fontSize: '1.05rem' }}>
+                                {formatText(h2Match[1])}
+                              </Typography>
+                            );
+                          } else if (h1Match) {
+                            // Add accumulated paragraph before heading
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+
+                            elements.push(
+                              <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 700, mt: 3, mb: 1.5, color: 'primary.main', fontSize: '1.15rem' }}>
+                                {formatText(h1Match[1])}
+                              </Typography>
+                            );
+                          } else if (listMatch) {
+                            // Add accumulated paragraph before starting list
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+
+                            inList = true;
+                            // Extract text after the list marker (number, dash, asterisk, bullet)
+                            const listItemText = listMatch[1];
+
+                            elements.push(
+                              <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem', pl: 2 }}>
+                                {formatText(listItemText)}
+                              </Typography>
+                            );
+                          } else if (trimmedLine === '') {
+                            // Empty line - end current paragraph
+                            if (currentParagraph.trim()) {
+                              elements.push(
+                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
+                                  {formatText(currentParagraph.trim())}
+                                </Typography>
+                              );
+                              currentParagraph = '';
+                            }
+                            inList = false;
+                          } else {
+                            // Regular text line
+                            if (inList) {
+                              // If we were in a list and now we have regular text, close the list
+                              inList = false;
+                            }
+                            currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
                           }
-                        }
+                        });
 
-                        // Add any remaining text
-                        if (currentText.trim()) {
+                        // Add any remaining paragraph
+                        if (currentParagraph.trim()) {
                           elements.push(
-                            <Typography key="text-final" variant="body2" component="div">
-                              {currentText.trim()}
+                            <Typography key="para-final" variant="body2" component="div" sx={{ mb: 2 }}>
+                              {formatText(currentParagraph.trim())}
                             </Typography>
                           );
                         }
 
-                        return elements;
+                        return elements.length > 0 ? elements : formatText(message.content);
                       })()}
                     </Typography>
                     {message.error && (
@@ -1980,39 +2075,6 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                     : 'Conduct comprehensive analysis with AI'}
                 </Typography>
               </Box>
-            </Box>
-            
-            {/* Right section */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="center">
-                {/* Mode Toggle */}
-                <ToggleButtonGroup
-                  value={mode}
-                  exclusive
-                  onChange={(e, newMode) => {
-                    console.log('Mode changing from', mode, 'to', newMode);
-                    if (newMode !== null) {
-                      setMode(newMode);
-                    }
-                  }}
-                  size="small"
-                  sx={{
-                    '& .MuiToggleButton-root': {
-                      textTransform: 'none',
-                      px: 2,
-                    }
-                  }}
-                >
-                  <ToggleButton value="chat">
-                    <ChatIcon sx={{ mr: 1, fontSize: 18 }} />
-                    Chat
-                  </ToggleButton>
-                  <ToggleButton value="research">
-                    <ResearchIcon sx={{ mr: 1, fontSize: 18 }} />
-                    Research
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Stack>
             </Box>
           </Box>
         </Paper>

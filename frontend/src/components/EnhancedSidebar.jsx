@@ -23,6 +23,7 @@ import {
   Star as StarIcon,
   StarBorder as StarBorderIcon,
   SmartToy as AgentIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 
 const EnhancedSidebar = ({
@@ -81,6 +82,12 @@ const EnhancedSidebar = ({
       id: 'content',
       icon: <FolderIcon />,
       primary: 'Projects',
+      color: '#6a6d70',
+    },
+    {
+      id: 'persona',
+      icon: <PersonIcon />,
+      primary: 'AI Persona',
       color: '#6a6d70',
     },
   ];
@@ -152,14 +159,14 @@ const EnhancedSidebar = ({
                 justifyContent: 'flex-start',
                 borderRadius: '6px',
                 py: 1.25,
-                bgcolor: '#1a1a1a',
+                bgcolor: '#0a6ed1',
                 color: '#ffffff',
                 fontWeight: 500,
                 textTransform: 'none',
                 boxShadow: 'none',
                 transition: 'all 0.2s ease',
                 '&:hover': {
-                  bgcolor: '#2a2a2a',
+                  bgcolor: '#0854a0',
                   boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
                 },
               }}
@@ -180,11 +187,11 @@ const EnhancedSidebar = ({
                 sx={{
                   width: '100%',
                   borderRadius: '6px',
-                  bgcolor: '#1a1a1a',
+                  bgcolor: '#0a6ed1',
                   color: '#ffffff',
                   transition: 'all 0.2s ease',
                   '&:hover': {
-                    bgcolor: '#2a2a2a',
+                    bgcolor: '#0854a0',
                   },
                 }}
               >

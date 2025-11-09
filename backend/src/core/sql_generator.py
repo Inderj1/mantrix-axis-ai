@@ -23,10 +23,13 @@ try:
         get_jena_query_resolver
     )
     KNOWLEDGE_GRAPH_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    import traceback
+    print(f"❌ KNOWLEDGE GRAPH IMPORT FAILED: {e}")
+    traceback.print_exc()
     KNOWLEDGE_GRAPH_AVAILABLE = False
     GraphTraversalEngine = None
-    get_jena_knowledge_graph = lambda: None
+    get_jena_knowledge_graph = lambda redis_client=None: None
     get_jena_query_resolver = lambda: None
 from src.db.bigquery import BigQueryClient
 from src.db.weaviate_client import WeaviateClient
@@ -381,19 +384,51 @@ class SQLGenerator:
                 # If multiple tables are selected, add JOIN hints
                 if relevant_schemas and len(relevant_schemas) > 1:
                     selected_table_names = [s["table_name"] for s in relevant_schemas]
-                    
-                    # Get relationships between selected tables
-                    relationships = table_registry.find_relationships(selected_table_names)
-                    
-                    # Build join hints from relationships
-                    for rel in relationships:
-                        join_hints.append({
-                            "source": rel.source_table,
-                            "target": rel.target_table,
-                            "keys": rel.join_keys,
-                            "type": rel.join_type
-                        })
-                    
+
+                    # Try using Jena knowledge graph for intelligent JOIN path finding
+                    if self.knowledge_graph:
+                        try:
+                            from src.core.knowledge_graph.join_path_finder import JoinPathFinder
+
+                            finder = JoinPathFinder(self.knowledge_graph)
+                            join_order = finder.recommend_join_order(selected_table_names)
+
+                            # Convert JoinPath objects to join hints
+                            for join_path in join_order:
+                                join_hints.append({
+                                    "source": join_path.source_table,
+                                    "target": join_path.target_table,
+                                    "keys": [(join_path.join_column, join_path.join_column)],  # Both tables use same column name
+                                    "type": join_path.join_type,
+                                    "column_type": join_path.column_type
+                                })
+
+                            if join_hints:
+                                logger.info(f"Jena KG found {len(join_hints)} optimal JOIN paths for {len(selected_table_names)} tables")
+
+                        except Exception as e:
+                            logger.warning(f"Jena JOIN path finding failed: {e}, falling back to table_registry")
+                            # Fall back to table_registry
+                            relationships = table_registry.find_relationships(selected_table_names)
+                            for rel in relationships:
+                                join_hints.append({
+                                    "source": rel.source_table,
+                                    "target": rel.target_table,
+                                    "keys": rel.join_keys,
+                                    "type": rel.join_type
+                                })
+                    else:
+                        # No knowledge graph available, use table_registry
+                        logger.info("Using table_registry for JOIN hints (Jena KG not available)")
+                        relationships = table_registry.find_relationships(selected_table_names)
+                        for rel in relationships:
+                            join_hints.append({
+                                "source": rel.source_table,
+                                "target": rel.target_table,
+                                "keys": rel.join_keys,
+                                "type": rel.join_type
+                            })
+
                     if join_hints:
                         logger.info(f"Found {len(join_hints)} JOIN relationships for {len(selected_table_names)} tables")
                 
