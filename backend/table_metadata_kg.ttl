@@ -2581,17 +2581,49 @@ fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_3 a fin:ColumnSynonym ;
 
 fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0 a fin:ColumnSynonym ;
     fin:confidence "0.95"^^xsd:float ;
-    fin:description "Actual delivered quantity from sales order" ;
+    fin:description "Actual delivered quantity from sales order",
+        "Actual quantity delivered in sales units for sales orders" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
-    fin:term "delivered quantity sales order" .
+    fin:term "delivered quantity",
+        "delivered quantity sales order" .
 
 fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1 a fin:ColumnSynonym ;
     fin:confidence "0.95"^^xsd:float ;
-    fin:description "Actual delivered quantity from sales order" ;
+    fin:description "Actual delivered quantity from sales order",
+        "Actual quantity delivered in sales units for sales orders" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
-    fin:term "actual quantity delivered" .
+    fin:term "actual delivered quantity",
+        "actual quantity delivered" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Actual quantity delivered in sales units for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
+    fin:term "quantity delivered" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Sales order net value from sales order cockpit" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_SalesOrderNetValue ;
+    fin:term "net value" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Sales order net value from sales order cockpit" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_SalesOrderNetValue ;
+    fin:term "net order value" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Sales order net value from sales order cockpit" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_SalesOrderNetValue ;
+    fin:term "order value" .
 
 fin:Column_GL_Accounts_CM_SS_GLACCOUNT_BUCKET_Code a fin:Column ;
     fin:belongsToTable fin:Table_GL_Accounts ;
@@ -6589,12 +6621,6 @@ fin:Column_sales_order_cockpit_export_SalesOrderNetPrice a fin:Column ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
-fin:Column_sales_order_cockpit_export_SalesOrderNetValue a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "SalesOrderNetValue" ;
-    fin:dataType "NUMERIC" ;
-    fin:isNullable true .
-
 fin:Column_sales_order_cockpit_export_SalesOrderNumber a fin:Column ;
     fin:belongsToTable fin:Table_sales_order_cockpit_export ;
     fin:columnName "SalesOrderNumber" ;
@@ -8473,14 +8499,6 @@ fin:Column_dataset_25m_table_Division a fin:Column ;
         fin:ColumnSynonym_dataset_25m_table_Division_1 ;
     fin:isNullable true .
 
-fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
-    fin:dataType "NUMERIC" ;
-    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0,
-        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1 ;
-    fin:isNullable true .
-
 fin:Column_customer_master_analysis_Frequency a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "Frequency" ;
@@ -8632,6 +8650,24 @@ fin:Column_dataset_25m_table_Vendor_lifnr a fin:Column ;
     fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_0,
         fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_1,
         fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_2 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_2 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_SalesOrderNetValue a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "SalesOrderNetValue" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_1,
+        fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_2 ;
     fin:isNullable true .
 
 fin:Column_dataset_25m_table_Customer a fin:Column ;

@@ -1,6 +1,20 @@
 {
   "column_synonyms": [
     {
+      "user_terms": ["net value", "net order value", "order value"],
+      "target_column": "SalesOrderNetValue",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.95,
+      "description": "Sales order net value from sales order cockpit"
+    },
+    {
+      "user_terms": ["delivered quantity", "actual delivered quantity", "quantity delivered"],
+      "target_column": "ActualQuantityDelivered_InSalesUnits_LFIMG",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.95,
+      "description": "Actual quantity delivered in sales units for sales orders"
+    },
+    {
       "user_terms": ["delivered quantity", "delivered qty", "quantity delivered", "delivery quantity"],
       "target_column": "ZCS_Shipped_Quantity",
       "target_table": "dataset_25m_table",

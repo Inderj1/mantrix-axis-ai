@@ -440,7 +440,15 @@ Rules:
 8. Always include appropriate WHERE clauses to limit data scanned
 9. Do not include backticks or triple quotes around the SQL - just provide the raw SQL query
 10. For better performance, consider using materialized views when available
-11. Always validate column names against the provided schema
+11. ⚠️ CRITICAL - COLUMN NAME VALIDATION (NEVER GUESS OR HALLUCINATE):
+    - ONLY use column names that EXACTLY match the schema provided below
+    - NEVER invent, guess, or assume column names based on patterns (e.g., DO NOT create NetValue_NETWR if schema shows SalesOrderNetValue)
+    - If a column name has a suffix like _ERDAT or _VBELN, DO NOT assume other columns follow the same pattern
+    - CHECK EVERY column name against the schema before using it
+    - If you cannot find an appropriate column, return an error - DO NOT guess
+    - Example WRONG behavior: Schema has "SalesOrderNetValue" → You use "NetValue_NETWR" ❌
+    - Example CORRECT behavior: Schema has "SalesOrderNetValue" → You use "SalesOrderNetValue" ✅
+    - When in doubt about a column name, VERIFY IT EXISTS in the schema list
 12. CRITICAL: Check column data types before applying CAST:
     - DO NOT use CAST on numeric columns (FLOAT64, INT64, NUMERIC) for SUM/AVG operations
     - DO NOT use NULLIF(column, '') on numeric columns - they cannot contain empty strings
