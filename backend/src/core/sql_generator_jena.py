@@ -91,6 +91,9 @@ class JenaSQLGenerator(SQLGenerator):
             # Add suggested query if available
             if resolved.suggested_query:
                 financial_context["suggested_query"] = resolved.suggested_query
+                logger.info(f"✅ SQL template added to financial_context (length: {len(resolved.suggested_query)} chars)")
+            else:
+                logger.warning("⚠️ No SQL template retrieved from Jena resolver")
                 
             logger.info(f"Jena resolved query type: {resolved.query_type} with confidence: {resolved.confidence_score}")
             return financial_context

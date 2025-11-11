@@ -3,17 +3,41 @@
 Load table metadata and relationships into Jena RDF knowledge graph.
 """
 import sys
+import json
+from pathlib import Path
 from collections import defaultdict
 from rdflib import Graph, Namespace, Literal, URIRef
 from rdflib.namespace import RDF, RDFS, XSD
 from src.db.bigquery import BigQueryClient
 from src.config import settings
 import structlog
+import signal
+from contextlib import contextmanager
 
 logger = structlog.get_logger()
 
 # Define namespace
 FIN = Namespace("http://example.com/finance#")
+
+
+class TimeoutError(Exception):
+    pass
+
+
+@contextmanager
+def timeout(seconds):
+    """Context manager for timeout handling."""
+    def signal_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {seconds} seconds")
+
+    # Set the signal handler and alarm
+    old_handler = signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def main():
@@ -31,11 +55,16 @@ def main():
     graph.bind("xsd", XSD)
 
     try:
-        # Initialize BigQuery client
-        bq = BigQueryClient()
+        # Initialize BigQuery client with timeout
+        print("Initializing BigQuery client...")
+        with timeout(30):
+            bq = BigQueryClient()
+        print("✓ BigQuery client initialized")
 
-        # Get all tables
-        tables = bq.get_dataset_schema()
+        # Get all tables with timeout
+        print("\nFetching dataset schema...")
+        with timeout(60):
+            tables = bq.get_dataset_schema()
         tables = sorted(tables, key=lambda x: x['table_name'])
         print(f"Loading {len(tables)} tables into knowledge graph...")
         print()
@@ -165,6 +194,58 @@ def main():
             graph.add((table_uri, FIN["isDimensionTable"], Literal(True)))
             print(f"  ✓ Marked {table_name} as DIMENSION table")
 
+        # Step 4: Load column synonyms
+        print("\n" + "=" * 80)
+        print("STEP 4: Loading Column Synonyms")
+        print("=" * 80)
+
+        synonym_file = Path(__file__).parent / "column_synonyms.json"
+        if synonym_file.exists():
+            print(f"Loading synonyms from: {synonym_file}")
+            with open(synonym_file, 'r') as f:
+                synonym_data = json.load(f)
+
+            synonym_count = 0
+            for mapping in synonym_data.get('column_synonyms', []):
+                table_name = mapping['target_table']
+                column_name = mapping['target_column']
+                confidence = mapping['confidence']
+                description = mapping.get('description', '')
+
+                # Create column URI
+                col_uri = FIN[f"Column_{table_name}_{column_name}"]
+
+                # Check if column exists in graph
+                if (col_uri, RDF.type, FIN["Column"]) not in graph:
+                    print(f"  ⚠️  Column not found: {table_name}.{column_name} - skipping synonyms")
+                    continue
+
+                # Create synonym nodes for each user term
+                for idx, user_term in enumerate(mapping['user_terms']):
+                    synonym_id = f"{table_name}_{column_name}_{idx}"
+                    synonym_uri = FIN[f"ColumnSynonym_{synonym_id}"]
+
+                    graph.add((synonym_uri, RDF.type, FIN["ColumnSynonym"]))
+                    graph.add((synonym_uri, FIN["term"], Literal(user_term.lower())))
+                    graph.add((synonym_uri, FIN["isPrimary"], Literal(False)))
+                    graph.add((synonym_uri, FIN["synonymOf"], col_uri))
+                    graph.add((synonym_uri, FIN["confidence"], Literal(confidence, datatype=XSD.float)))
+
+                    if description:
+                        graph.add((synonym_uri, FIN["description"], Literal(description)))
+
+                    # Also link from column to synonym
+                    graph.add((col_uri, FIN["hasSynonym"], synonym_uri))
+
+                    synonym_count += 1
+
+                print(f"  ✓ {column_name}: {len(mapping['user_terms'])} synonyms")
+
+            print(f"\n✓ Loaded {synonym_count} column synonyms")
+        else:
+            print(f"⚠️  Synonym file not found: {synonym_file}")
+            print("  Skipping column synonym loading")
+
         # Save to file
         print("\n" + "=" * 80)
         print("SAVING KNOWLEDGE GRAPH")
@@ -184,10 +265,12 @@ def main():
         table_count = len(list(graph.subjects(RDF.type, FIN["Table"])))
         column_count = len(list(graph.subjects(RDF.type, FIN["Column"])))
         rel_count = len(list(graph.subjects(RDF.type, FIN["TableRelationship"])))
+        synonym_count = len(list(graph.subjects(RDF.type, FIN["ColumnSynonym"])))
 
         print(f"Tables: {table_count}")
         print(f"Columns: {column_count}")
         print(f"Relationships: {rel_count}")
+        print(f"Column Synonyms: {synonym_count}")
 
         # Test SPARQL query
         print("\n" + "=" * 80)
@@ -223,8 +306,20 @@ def main():
         print("2. Update Jena client to load from table_metadata_kg.ttl")
         print("3. Test query resolution with join discovery")
 
+    except TimeoutError as e:
+        print(f"\n✗ Timeout Error: {e}")
+        print("\nTroubleshooting:")
+        print("1. Check your internet connection")
+        print("2. Verify BigQuery permissions: gcloud auth application-default login")
+        print("3. Check if BigQuery API is enabled for your project")
+        print("4. Increase timeout values if dataset is very large")
+        sys.exit(1)
     except Exception as e:
         print(f"\n✗ Error: {e}")
+        print("\nTroubleshooting:")
+        print("1. Check BigQuery credentials: gcloud auth application-default login")
+        print("2. Verify project and dataset settings in .env file")
+        print("3. Ensure BigQuery API is enabled")
         import traceback
         traceback.print_exc()
         sys.exit(1)

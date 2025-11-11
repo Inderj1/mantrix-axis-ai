@@ -47,9 +47,53 @@ class ResolvedQuery:
 
 class JenaQueryResolver:
     """Query resolver using SPARQL against RDF knowledge graph."""
-    
+
     def __init__(self, graph_client: Optional[JenaKnowledgeGraph] = None):
         self.graph = graph_client or JenaKnowledgeGraph()
+
+    def get_column_mappings(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get all column synonym mappings for prompt enhancement.
+
+        Returns a dictionary mapping user terms to column information.
+        """
+        sparql = """
+        PREFIX fin: <http://example.com/finance#>
+        SELECT ?synonym_term ?column_name ?table_name ?confidence ?description
+        WHERE {
+            ?synonym a fin:ColumnSynonym ;
+                     fin:term ?synonym_term ;
+                     fin:synonymOf ?column ;
+                     fin:confidence ?confidence .
+            OPTIONAL { ?synonym fin:description ?description }
+            ?column fin:columnName ?column_name ;
+                    fin:belongsToTable ?table .
+            ?table fin:tableName ?table_name .
+        }
+        ORDER BY DESC(?confidence)
+        """
+
+        mappings = {}
+        results = self.graph.query(sparql)
+
+        for row in results:
+            syn_term = str(row["synonym_term"]).lower()
+            column_name = str(row["column_name"])
+            table_name = str(row["table_name"])
+            confidence = float(row["confidence"])
+            description = str(row.get("description", "")) if row.get("description") else ""
+
+            if syn_term not in mappings:
+                mappings[syn_term] = []
+
+            mappings[syn_term].append({
+                'column': column_name,
+                'table': table_name,
+                'confidence': confidence,
+                'description': description
+            })
+
+        logger.info(f"Loaded {len(mappings)} column synonym mappings from KG")
+        return mappings
         
     def resolve_query(self, query: str, context: Optional[Dict[str, Any]] = None) -> ResolvedQuery:
         """Resolve a natural language query using RDF mappings."""
@@ -85,12 +129,12 @@ class JenaQueryResolver:
         )
     
     def _resolve_synonyms(self, query: str) -> Dict[str, str]:
-        """Resolve synonyms from RDF."""
+        """Resolve synonyms from RDF (both metric and column synonyms)."""
         synonyms = {}
         query_lower = query.lower()
-        
-        # SPARQL query to find all synonyms
-        sparql = """
+
+        # SPARQL query to find metric synonyms
+        sparql_metrics = """
         PREFIX fin: <http://example.com/finance#>
         SELECT ?synonym_term ?primary_term
         WHERE {
@@ -102,15 +146,56 @@ class JenaQueryResolver:
                      fin:isPrimary true .
         }
         """
-        
-        results = self.graph.query(sparql)
-        
+
+        # SPARQL query to find column synonyms
+        sparql_columns = """
+        PREFIX fin: <http://example.com/finance#>
+        SELECT ?synonym_term ?column_name ?table_name ?confidence
+        WHERE {
+            ?synonym a fin:ColumnSynonym ;
+                     fin:term ?synonym_term ;
+                     fin:synonymOf ?column ;
+                     fin:confidence ?confidence .
+            ?column fin:columnName ?column_name ;
+                    fin:belongsToTable ?table .
+            ?table fin:tableName ?table_name .
+        }
+        ORDER BY DESC(?confidence)
+        """
+
+        # Resolve metric synonyms
+        results = self.graph.query(sparql_metrics)
         for row in results:
             syn_term = str(row["synonym_term"])
             primary_term = str(row["primary_term"])
             if syn_term.lower() in query_lower:
                 synonyms[syn_term] = primary_term
-                    
+
+        # Resolve column synonyms
+        column_synonyms = {}
+        results = self.graph.query(sparql_columns)
+        for row in results:
+            syn_term = str(row["synonym_term"])
+            column_name = str(row["column_name"])
+            table_name = str(row["table_name"])
+            confidence = float(row["confidence"])
+
+            if syn_term.lower() in query_lower:
+                # Store with confidence for later selection
+                if syn_term not in column_synonyms:
+                    column_synonyms[syn_term] = []
+                column_synonyms[syn_term].append({
+                    'column': column_name,
+                    'table': table_name,
+                    'confidence': confidence
+                })
+
+        # Select best column match (highest confidence)
+        for syn_term, matches in column_synonyms.items():
+            best_match = max(matches, key=lambda x: x['confidence'])
+            synonyms[syn_term] = best_match['column']
+            logger.info(f"Column synonym resolved: '{syn_term}' -> {best_match['table']}.{best_match['column']} (confidence: {best_match['confidence']})")
+
         logger.info(f"Resolved synonyms: {synonyms}")
         return synonyms
     
@@ -161,8 +246,9 @@ class JenaQueryResolver:
     def _get_relevant_metrics(self, query: str, query_type: str) -> List[MetricFormula]:
         """Get relevant metrics from RDF based on query."""
         metrics = []
-        
-        # SPARQL to find metrics mentioned in query
+        query_lower = query.lower()
+
+        # SPARQL to find all L1 metrics
         sparql = """
         PREFIX fin: <http://example.com/finance#>
         SELECT ?metric ?code ?name ?formula ?order
@@ -172,13 +258,33 @@ class JenaQueryResolver:
                     fin:name ?name ;
                     fin:formula ?formula ;
                     fin:calculationOrder ?order .
-            FILTER(CONTAINS(LCASE($query), LCASE(?name)) || 
-                   CONTAINS(LCASE($query), LCASE(?code)))
         }
         ORDER BY ?order
         """
-        
-        metric_results = self.graph.query(sparql, initBindings={"query": query})
+
+        metric_results = self.graph.query(sparql)
+
+        logger.info(f"Total L1 metrics in KG: {len(list(metric_results))}")
+
+        # Re-query since we consumed the generator
+        metric_results = self.graph.query(sparql)
+
+        # Filter metrics that match the query
+        matched_metrics = []
+        for row in metric_results:
+            code = str(row["code"]).lower()
+            name = str(row["name"]).lower()
+            logger.info(f"Checking metric: code='{code}', name='{name}' against query='{query_lower}'")
+            if code in query_lower or name in query_lower:
+                logger.info(f"✓ MATCHED metric: {code}")
+                matched_metrics.append(row)
+            else:
+                logger.debug(f"✗ No match for metric: {code}")
+
+        logger.info(f"Matched {len(matched_metrics)} metrics from query")
+
+        # Process matched metrics
+        metric_results = matched_metrics
         
         for row in metric_results:
             metric_uri = row["metric"]
@@ -339,27 +445,41 @@ class JenaQueryResolver:
                     
         return rules
     
-    def _generate_suggested_query(self, query_type: str, metrics: List[MetricFormula], 
+    def _generate_suggested_query(self, query_type: str, metrics: List[MetricFormula],
                                  gl_accounts: List[GLMapping]) -> Optional[str]:
         """Generate a suggested SQL query based on resolved components."""
+        # First, try to get SQL template from KG for the metric
+        if metrics:
+            metric = metrics[0]
+            logger.info(f"Attempting to retrieve SQL template for metric: {metric.metric_code}")
+            sql_template = self._get_sql_template_for_metric(metric.metric_code)
+            if sql_template:
+                logger.info(f"Successfully retrieved SQL template for {metric.metric_code}")
+                return sql_template
+            else:
+                logger.warning(f"No SQL template found for {metric.metric_code}")
+
+        # Fallback to generic template generation
         if query_type == "L1" and metrics:
             metric = metrics[0]
+
+            # Fallback to formula-based generation
             if metric.formula_components:
                 calc = list(metric.formula_components.values())[0]
                 return f"""
-SELECT 
+SELECT
     {calc} as {metric.metric_code.lower()},
     -- Add dimensions as needed
 FROM your_table
 GROUP BY dimension
 """
-        
+
         elif query_type == "L2" and metrics:
             metric = metrics[0]
             if metric.sub_buckets:
                 return f"""
-SELECT 
-    CASE 
+SELECT
+    CASE
         -- Add bucket categorization logic
         WHEN gl_account IN (/* bucket accounts */) THEN '{metric.sub_buckets[0]}'
         -- Add more buckets
@@ -368,19 +488,49 @@ SELECT
 FROM your_table
 GROUP BY bucket
 """
-        
+
         elif query_type == "L3" and gl_accounts:
             account_list = ", ".join([f"'{gl.account_number}'" for gl in gl_accounts[:5]])
             return f"""
-SELECT 
+SELECT
     gl_account,
     gl_description,
     SUM(amount) as total
-FROM your_table  
+FROM your_table
 WHERE gl_account IN ({account_list})
 GROUP BY gl_account, gl_description
 """
-        
+
+        return None
+
+    def _get_sql_template_for_metric(self, metric_code: str) -> Optional[str]:
+        """Retrieve SQL template from KG for a specific metric."""
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        SELECT ?template_name ?sql_template ?description
+        WHERE {{
+            ?metric a fin:L1Metric ;
+                    fin:code "{metric_code}" .
+            ?template a fin:QueryTemplate ;
+                      fin:forMetric ?metric ;
+                      fin:sqlTemplate ?sql_template ;
+                      fin:templateName ?template_name ;
+                      fin:description ?description .
+        }}
+        LIMIT 1
+        """
+
+        try:
+            results = list(self.graph.query(sparql))
+            if results:
+                row = results[0]
+                sql_template = str(row["sql_template"])
+                template_name = str(row["template_name"])
+                logger.info(f"Found SQL template for {metric_code} from KG: {template_name}")
+                return sql_template
+        except Exception as e:
+            logger.warning(f"Failed to retrieve SQL template for {metric_code}: {e}")
+
         return None
     
     def _calculate_confidence(self, query_type: str, metrics: List[MetricFormula], 

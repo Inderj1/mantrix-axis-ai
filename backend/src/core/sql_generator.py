@@ -323,8 +323,12 @@ class SQLGenerator:
                     
                     if kg_result.confidence_score > 0.5:
                         kg_enhanced_context['kg_confidence'] = kg_result.confidence_score
-                        if kg_result.suggested_query:
-                            kg_enhanced_context['kg_suggested_query'] = kg_result.suggested_query
+
+                    # ALWAYS add SQL template if available (not conditional on confidence)
+                    if kg_result.suggested_query:
+                        kg_enhanced_context['suggested_query'] = kg_result.suggested_query
+                        kg_enhanced_context['kg_suggested_query'] = kg_result.suggested_query  # Keep for backwards compatibility
+                        logger.info(f"✅ SQL template from KG added to context (length: {len(kg_result.suggested_query)} chars)")
                     
                     # Add formula components if found
                     for metric in kg_result.metrics:
@@ -480,7 +484,16 @@ class SQLGenerator:
             # Enhance schemas with industry metadata
             if settings.enable_industry_features and self.industry_manager.active_config:
                 relevant_schemas = self._enhance_schemas_with_industry_info(relevant_schemas)
-            
+
+            # Get column mappings from knowledge graph
+            column_mappings = None
+            if self.kg_query_resolver:
+                try:
+                    column_mappings = self.kg_query_resolver.get_column_mappings()
+                    logger.info(f"Loaded {len(column_mappings)} column synonym mappings from KG")
+                except Exception as e:
+                    logger.warning(f"Failed to load column mappings from KG: {e}")
+
             # Prepare kwargs for LLM client
             llm_kwargs = {}
             if financial_context:
@@ -491,6 +504,8 @@ class SQLGenerator:
                 llm_kwargs["join_hints"] = join_hints
             if conversation_context:
                 llm_kwargs["conversation_context"] = conversation_context
+            if column_mappings:
+                llm_kwargs["column_mappings"] = column_mappings
             
             # Debug relevant_schemas before passing to LLM
             logger.info(f"Relevant schemas type: {type(relevant_schemas)}")

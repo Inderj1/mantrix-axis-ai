@@ -3,360 +3,2595 @@
 
 fin:Relationship_GL_Accounts__dataset_25m_table__GL_Account a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "GL_Account" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_GL_Accounts ;
     fin:targetTable fin:Table_dataset_25m_table .
 
 fin:Relationship_GL_Accounts__transaction_data__GL_Account a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "GL_Account" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_GL_Accounts ;
     fin:targetTable fin:Table_transaction_data .
 
-fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__string_field_0 a fin:TableRelationship ;
-    fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "string_field_0" ;
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_1 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_1" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_cohort_avg_revenue_table ;
     fin:targetTable fin:Table_cohort_retention_table .
 
-fin:Relationship_cohort_sizes__segment_performance_summary__Customer_Count a fin:TableRelationship ;
-    fin:columnType "INTEGER" ;
-    fin:confidence "0.9"^^xsd:float ;
-    fin:joinColumn "Customer_Count" ;
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_10 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_10" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_cohort_sizes ;
-    fin:targetTable fin:Table_segment_performance_summary .
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_11 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_11" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_12 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_12" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_13 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_13" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_14 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_14" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_15 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_15" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_16 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_16" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_17 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_17" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_18 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_18" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_19 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_19" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_2 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_2" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_20 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_20" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_21 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_21" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_22 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_22" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_23 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_23" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_24 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_24" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_25 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_25" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_26 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_26" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_27 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_27" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_28 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_28" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_29 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_29" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_3 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_3" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_30 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_30" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_31 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_31" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_32 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_32" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_33 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_33" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_34 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_34" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_35 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_35" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_36 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_36" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_37 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_37" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_38 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_38" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_39 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_39" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_4 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_4" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_40 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_40" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_41 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_41" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_42 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_42" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_43 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_43" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_44 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_44" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_45 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_45" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_46 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_46" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_47 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_47" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_48 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_48" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_49 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_49" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_5 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_5" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_50 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_50" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_51 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_51" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_52 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_52" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_53 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_53" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_54 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_54" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_55 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_55" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_56 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_56" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_57 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_57" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_58 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_58" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_59 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_59" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_6 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_6" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_60 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_60" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_61 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_61" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_62 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_62" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_63 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_63" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_64 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_64" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_65 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_65" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_66 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_66" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_67 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_67" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_68 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_68" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_69 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_69" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_7 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_7" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_70 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_70" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_71 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_71" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_72 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_72" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_73 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_73" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_74 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_74" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_75 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_75" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_76 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_76" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_77 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_77" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_78 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_78" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_79 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_79" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_8 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_8" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_80 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_80" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_81 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_81" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_82 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_82" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_83 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_83" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_84 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_84" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_85 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_85" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_86 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_86" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_87 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_87" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_88 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_88" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_89 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_89" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_9 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_9" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_90 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_90" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__double_field_91 a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "double_field_91" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
+
+fin:Relationship_cohort_avg_revenue_table__cohort_retention_table__string_field_0 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "string_field_0" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_cohort_avg_revenue_table ;
+    fin:targetTable fin:Table_cohort_retention_table .
 
 fin:Relationship_customer_master_analysis__dataset_25m_table__Customer a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Customer" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_dataset_25m_table .
 
 fin:Relationship_customer_master_analysis__product_customer_matrix__RFM_Segment a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "RFM_Segment" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_product_customer_matrix .
 
 fin:Relationship_customer_master_analysis__regional_product_cluster_summary__Cluster a fin:TableRelationship ;
     fin:columnType "INTEGER" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Cluster" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_regional_product_cluster_summary .
 
 fin:Relationship_customer_master_analysis__regional_product_matrix__Cluster a fin:TableRelationship ;
     fin:columnType "INTEGER" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Cluster" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_regional_product_matrix .
 
-fin:Relationship_customer_master_analysis__segment_performance_summary__Revenue_Percentage a fin:TableRelationship ;
+fin:Relationship_customer_master_analysis__segment_performance_summary__Profit_Percentage a fin:TableRelationship ;
     fin:columnType "FLOAT" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Revenue_Percentage" ;
+    fin:joinColumn "Profit_Percentage" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_segment_performance_summary .
 
-fin:Relationship_customer_master_analysis__time_series_performance__Total_COGS a fin:TableRelationship ;
+fin:Relationship_customer_master_analysis__segment_performance_summary__Revenue_Percentage a fin:TableRelationship ;
     fin:columnType "FLOAT" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Total_COGS" ;
+    fin:joinColumn "Revenue_Percentage" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_segment_performance_summary .
+
+fin:Relationship_customer_master_analysis__time_series_performance__Margin_Percent a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Margin_Percent" ;
+    fin:joinType "LEFT" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_time_series_performance .
 
-fin:Relationship_customer_master_analysis__sales_order_cockpit_export__Customer a fin:TableRelationship ;
-    fin:castRequired "LTRIM(Customer, '0')" ;
+fin:Relationship_customer_master_analysis__time_series_performance__RFM_Segment a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:joinColumn "Customer" ;
+    fin:joinColumn "RFM_Segment" ;
     fin:joinType "LEFT" ;
-    fin:matchType "type_compatible" ;
-    fin:sourceColumn "Customer" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
-    fin:targetColumn "CustomerNumber" ;
-    fin:targetTable fin:Table_sales_order_cockpit_export .
+    fin:targetTable fin:Table_time_series_performance .
 
-fin:Relationship_customer_master_analysis__transaction_data__Customer a fin:TableRelationship ;
-    fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Customer" ;
+fin:Relationship_customer_master_analysis__time_series_performance__Total_COGS a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Total_COGS" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_time_series_performance .
+
+fin:Relationship_customer_master_analysis__transaction_data__ABC_Combined a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "ABC_Combined" ;
+    fin:joinType "LEFT" ;
     fin:sourceTable fin:Table_customer_master_analysis ;
     fin:targetTable fin:Table_transaction_data .
 
-fin:Relationship_dataset_25m_table__product_customer_matrix__Material_Number a fin:TableRelationship ;
+fin:Relationship_customer_master_analysis__transaction_data__ABC_Profit a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Material_Number" ;
+    fin:joinColumn "ABC_Profit" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_customer_master_analysis__transaction_data__ABC_Revenue a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "ABC_Revenue" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_customer_master_analysis__transaction_data__Advanced_Segment a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Advanced_Segment" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_customer_master_analysis__transaction_data__Customer a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Customer" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_customer_master_analysis__transaction_data__RFM_Segment a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "RFM_Segment" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_customer_master_analysis ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__product_customer_matrix__Inv_Quantity_Cases a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Inv_Quantity_Cases" ;
+    fin:joinType "LEFT" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_product_customer_matrix .
 
-fin:Relationship_dataset_25m_table__regional_product_cluster_summary__ShippedQty_InCases a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.8270270270270271"^^xsd:float ;
-    fin:joinColumn "ShippedQty_InCases" ;
+fin:Relationship_dataset_25m_table__product_customer_matrix__Material_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Number" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
-    fin:targetTable fin:Table_regional_product_cluster_summary .
+    fin:targetTable fin:Table_product_customer_matrix .
 
 fin:Relationship_dataset_25m_table__regional_product_matrix__Material_Number a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Material_Number" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_dataset_25m_table__regional_product_matrix__Plant_Region_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant_Region_Description" ;
+    fin:joinType "LEFT" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_regional_product_matrix .
 
 fin:Relationship_dataset_25m_table__regional_product_top_performers__Plant_Region_Description a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Plant_Region_Description" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_regional_product_top_performers .
 
+fin:Relationship_dataset_25m_table__sales_order_cockpit_export__Brand a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Brand" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_sales_order_cockpit_export .
+
 fin:Relationship_dataset_25m_table__sales_order_cockpit_export__Division a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Division" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_sales_order_cockpit_export .
 
 fin:Relationship_dataset_25m_table__time_series_performance__Inv_Quantity_Cases a fin:TableRelationship ;
     fin:columnType "FLOAT" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Inv_Quantity_Cases" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_time_series_performance .
 
-fin:Relationship_dataset_25m_table__transaction_data__Order_ID a fin:TableRelationship ;
+fin:Relationship_dataset_25m_table__transaction_data__ADDRESSID a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Order_ID" ;
+    fin:joinColumn "ADDRESSID" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_dataset_25m_table ;
     fin:targetTable fin:Table_transaction_data .
 
-fin:Relationship_product_customer_matrix__regional_product_cluster_summary__Gross_Margin a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.792"^^xsd:float ;
-    fin:joinColumn "Gross_Margin" ;
+fin:Relationship_dataset_25m_table__transaction_data__BILLINGDOCUMENT a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "BILLINGDOCUMENT" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_product_customer_matrix ;
-    fin:targetTable fin:Table_regional_product_cluster_summary .
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__BILLINGDOCUMENTITEM a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "BILLINGDOCUMENTITEM" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_1 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_1" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_2 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_2" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_2_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_2_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_3 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_3" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_3_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_3_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_4 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_4" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_4_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_4_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_5 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_5" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_5_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_5_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_CGRP_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_CGRP_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_Party a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_Party" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_Party_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_Party_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_Price_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_Price_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Bill_to_Price_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Bill_to_Price_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Billing_Delivery_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Billing_Delivery_Number" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Billing_Sales_Order a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Billing_Sales_Order" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Brand a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Brand" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Brand_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Brand_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Broker_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Broker_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Company_Code a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Company_Code" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Container_Size a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Container_Size" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Cost_Center_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Cost_Center_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Current_Division_Manager a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Current_Division_Manager" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Current_Division_Manager_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Current_Division_Manager_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Current_Sales_Rep_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Current_Sales_Rep_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Current_Sales_Representative a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Current_Sales_Representative" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Customer a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Customer" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Distribution_Channel a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Distribution_Channel" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Division a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Division" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Document_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Document_Type" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Fiscal_Year a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Fiscal_Year" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Fiscal_Year_Period a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Fiscal_Year_Period" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Flavor a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Flavor" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Flavor_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Flavor_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__GL_Account a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "GL_Account" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__GL_Account_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "GL_Account_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__GL_Account_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "GL_Account_Type" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Incoterms_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Incoterms_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Mat_Grp_Descr a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Mat_Grp_Descr" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Base_Unit a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Base_Unit" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Number" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Price_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Price_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Price_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Price_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Material_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Material_Type" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Offsetting_Account_GKONT a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Offsetting_Account_GKONT" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Offsetting_Account_Type_GKOAR a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Offsetting_Account_Type_GKOAR" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Order_ID a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Order_ID" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__PLANTCITY a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "PLANTCITY" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Partner_Cost_Center a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Partner_Cost_Center" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_1 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_1" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_2 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_2" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_2_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_2_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_3 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_3" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_3_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_3_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_4 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_4" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_4_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_4_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_5 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_5" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_5_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_5_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_CGRP_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_CGRP_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_Price_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_Price_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Payer_Price_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Payer_Price_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Plant a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__PlantCountry a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "PlantCountry" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__PlantState a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "PlantState" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Plant_Region a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant_Region" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Plant_Region_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant_Region_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Plant_werks a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant_werks" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Price_Group_Desc a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Price_Group_Desc" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_BU a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_BU" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_BU_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_BU_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_Category a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_Category" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_Category_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_Category_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_Sold_matnr_COPA a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_Sold_matnr_COPA" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_Type" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Product_Type_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Product_Type_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Purchasing_Document a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Purchasing_Document" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Purchasing_Document_Item a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Purchasing_Document_Item" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__REFERENCESDDOCUMENT a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "REFERENCESDDOCUMENT" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Raw_Material_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Raw_Material_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Reference_Doc a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Reference_Doc" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_Order_KDAUF a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_Order_KDAUF" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_Region a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_Region" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_Region_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_Region_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_Rep a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_Rep" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_Rep_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_Rep_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sales_order_item_KDPOS a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sales_order_item_KDPOS" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_1 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_1" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_2 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_2" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_2_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_2_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_3 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_3" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_3_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_3_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_4 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_4" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_4_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_4_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_5 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_5" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_5_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_5_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_CGRP_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_CGRP_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_City a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_City" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Country a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Country" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_District a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_District" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_District_Desc a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_District_Desc" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Number" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Price_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Price_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Price_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Price_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_Region a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_Region" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Ship_to_party a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Ship_to_party" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_1 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_1" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_2 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_2" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_2_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_2_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_3 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_3" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_3_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_3_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_4 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_4" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_4_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_4_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_5 a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_5" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_5_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_5_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_CGRP_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_CGRP_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_City a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_City" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Country a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Country" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_District a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_District" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_District_Desc a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_District_Desc" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Name a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Name" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Number" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Price_Group a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Price_Group" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Price_Group_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Price_Group_Description" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Sold_to_Region a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Sold_to_Region" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__State_Province_Country_Desc a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "State_Province_Country_Desc" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__VendorName a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "VendorName" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_dataset_25m_table__transaction_data__Vendor_lifnr a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Vendor_lifnr" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_dataset_25m_table ;
+    fin:targetTable fin:Table_transaction_data .
 
 fin:Relationship_product_customer_matrix__regional_product_matrix__Material_Number a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Material_Number" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_product_customer_matrix ;
     fin:targetTable fin:Table_regional_product_matrix .
 
-fin:Relationship_product_customer_matrix__regional_product_top_performers__Material_Number a fin:TableRelationship ;
-    fin:castRequired "CAST(Material_Number AS STRING)" ;
-    fin:columnType "STRING" ;
-    fin:confidence "0.9"^^xsd:float ;
-    fin:joinColumn "Material_Number" ;
+fin:Relationship_product_customer_matrix__time_series_performance__Customer a fin:TableRelationship ;
+    fin:columnType "INTEGER" ;
+    fin:joinColumn "Customer" ;
     fin:joinType "LEFT" ;
-    fin:matchType "type_compatible" ;
     fin:sourceTable fin:Table_product_customer_matrix ;
-    fin:targetTable fin:Table_regional_product_top_performers .
+    fin:targetTable fin:Table_time_series_performance .
 
-fin:Relationship_product_customer_matrix__sales_order_cockpit_export__Material_Number a fin:TableRelationship ;
-    fin:columnType "STRING" ;
-    fin:confidence "0.9"^^xsd:float ;
-    fin:joinColumn "Material_Number" ;
+fin:Relationship_product_customer_matrix__time_series_performance__Gross_Margin a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Gross_Margin" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
     fin:sourceTable fin:Table_product_customer_matrix ;
-    fin:targetTable fin:Table_sales_order_cockpit_export .
+    fin:targetTable fin:Table_time_series_performance .
+
+fin:Relationship_product_customer_matrix__time_series_performance__Inv_Quantity_Cases a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Inv_Quantity_Cases" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_product_customer_matrix ;
+    fin:targetTable fin:Table_time_series_performance .
+
+fin:Relationship_product_customer_matrix__time_series_performance__Net_Sales a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Net_Sales" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_product_customer_matrix ;
+    fin:targetTable fin:Table_time_series_performance .
 
 fin:Relationship_product_customer_matrix__time_series_performance__RFM_Segment a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "RFM_Segment" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_product_customer_matrix ;
     fin:targetTable fin:Table_time_series_performance .
 
 fin:Relationship_product_customer_matrix__transaction_data__Material_Number a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Material_Number" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_product_customer_matrix ;
     fin:targetTable fin:Table_transaction_data .
 
+fin:Relationship_product_customer_matrix__transaction_data__RFM_Segment a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "RFM_Segment" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_product_customer_matrix ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Analysis_Date a fin:TableRelationship ;
+    fin:columnType "DATE" ;
+    fin:joinColumn "Analysis_Date" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
 fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Cluster a fin:TableRelationship ;
     fin:columnType "INTEGER" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Cluster" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Gross_Margin_mean a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Gross_Margin_mean" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Gross_Revenue_mean a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Gross_Revenue_mean" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Gross_Sales_mean a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Gross_Sales_mean" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Net_Sales_mean a fin:TableRelationship ;
+    fin:columnType "FLOAT" ;
+    fin:joinColumn "Net_Sales_mean" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_cluster_summary ;
+    fin:targetTable fin:Table_regional_product_matrix .
+
+fin:Relationship_regional_product_cluster_summary__regional_product_matrix__Record_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Record_Type" ;
+    fin:joinType "LEFT" ;
     fin:sourceTable fin:Table_regional_product_cluster_summary ;
     fin:targetTable fin:Table_regional_product_matrix .
 
 fin:Relationship_regional_product_cluster_summary__regional_product_top_performers__Analysis_Date a fin:TableRelationship ;
     fin:columnType "DATE" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Analysis_Date" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_regional_product_cluster_summary ;
     fin:targetTable fin:Table_regional_product_top_performers .
 
-fin:Relationship_regional_product_cluster_summary__segment_performance_summary__Net_Margin_Percentage_median a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.7772727272727273"^^xsd:float ;
-    fin:joinColumn "Net_Margin_Percentage_median" ;
+fin:Relationship_regional_product_cluster_summary__regional_product_top_performers__Record_Type a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Record_Type" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
     fin:sourceTable fin:Table_regional_product_cluster_summary ;
-    fin:targetTable fin:Table_segment_performance_summary .
+    fin:targetTable fin:Table_regional_product_top_performers .
 
-fin:Relationship_regional_product_cluster_summary__time_series_performance__Gross_Margin_std a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.792"^^xsd:float ;
-    fin:joinColumn "Gross_Margin_std" ;
+fin:Relationship_regional_product_matrix__regional_product_top_performers__Analysis_Date a fin:TableRelationship ;
+    fin:columnType "DATE" ;
+    fin:joinColumn "Analysis_Date" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_regional_product_cluster_summary ;
-    fin:targetTable fin:Table_time_series_performance .
-
-fin:Relationship_regional_product_cluster_summary__transaction_data__Cluster a fin:TableRelationship ;
-    fin:castRequired "SAFE_CAST(Cluster AS INT64)" ;
-    fin:columnType "INTEGER" ;
-    fin:confidence "0.9"^^xsd:float ;
-    fin:joinColumn "Cluster" ;
-    fin:joinType "LEFT" ;
-    fin:matchType "type_compatible" ;
-    fin:sourceTable fin:Table_regional_product_cluster_summary ;
-    fin:targetTable fin:Table_transaction_data .
+    fin:sourceTable fin:Table_regional_product_matrix ;
+    fin:targetTable fin:Table_regional_product_top_performers .
 
 fin:Relationship_regional_product_matrix__regional_product_top_performers__Plant_Region_Description a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Plant_Region_Description" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_regional_product_matrix ;
     fin:targetTable fin:Table_regional_product_top_performers .
 
-fin:Relationship_regional_product_matrix__sales_order_cockpit_export__Material_Number a fin:TableRelationship ;
+fin:Relationship_regional_product_matrix__regional_product_top_performers__Record_Type a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "0.9"^^xsd:float ;
+    fin:joinColumn "Record_Type" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_regional_product_matrix ;
+    fin:targetTable fin:Table_regional_product_top_performers .
+
+fin:Relationship_regional_product_matrix__transaction_data__Material_Number a fin:TableRelationship ;
+    fin:columnType "STRING" ;
     fin:joinColumn "Material_Number" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_regional_product_matrix ;
-    fin:targetTable fin:Table_sales_order_cockpit_export .
-
-fin:Relationship_regional_product_matrix__time_series_performance__Gross_Margin_sum a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.792"^^xsd:float ;
-    fin:joinColumn "Gross_Margin_sum" ;
-    fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_regional_product_matrix ;
-    fin:targetTable fin:Table_time_series_performance .
-
-fin:Relationship_regional_product_matrix__transaction_data__Plant_Region_Description a fin:TableRelationship ;
-    fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
-    fin:joinColumn "Plant_Region_Description" ;
-    fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_regional_product_matrix ;
     fin:targetTable fin:Table_transaction_data .
 
-fin:Relationship_regional_product_top_performers__sales_order_cockpit_export__Material_Number a fin:TableRelationship ;
-    fin:castRequired "SAFE_CAST(Material_Number AS INT64)" ;
-    fin:columnType "INTEGER" ;
-    fin:confidence "0.9"^^xsd:float ;
-    fin:joinColumn "Material_Number" ;
+fin:Relationship_regional_product_matrix__transaction_data__Plant_Region_Description a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Plant_Region_Description" ;
     fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_regional_product_top_performers ;
-    fin:targetTable fin:Table_sales_order_cockpit_export .
+    fin:sourceTable fin:Table_regional_product_matrix ;
+    fin:targetTable fin:Table_transaction_data .
 
 fin:Relationship_regional_product_top_performers__transaction_data__Plant_Region_Description a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Plant_Region_Description" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_regional_product_top_performers ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_sales_order_cockpit_export__transaction_data__Brand a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Brand" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_sales_order_cockpit_export ;
     fin:targetTable fin:Table_transaction_data .
 
 fin:Relationship_sales_order_cockpit_export__transaction_data__Division a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "Division" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_sales_order_cockpit_export ;
     fin:targetTable fin:Table_transaction_data .
 
-fin:Relationship_segment_performance_summary__time_series_performance__Margin_Percent_mean a fin:TableRelationship ;
-    fin:columnType "FLOAT" ;
-    fin:confidence "0.78"^^xsd:float ;
-    fin:joinColumn "Margin_Percent_mean" ;
-    fin:joinType "LEFT" ;
-    fin:matchType "fuzzy" ;
-    fin:sourceTable fin:Table_segment_performance_summary ;
-    fin:targetTable fin:Table_time_series_performance .
-
 fin:Relationship_time_series_performance__transaction_data__RFM_Segment a fin:TableRelationship ;
     fin:columnType "STRING" ;
-    fin:confidence "1.0"^^xsd:float ;
     fin:joinColumn "RFM_Segment" ;
     fin:joinType "LEFT" ;
-    fin:matchType "exact" ;
     fin:sourceTable fin:Table_time_series_performance ;
     fin:targetTable fin:Table_transaction_data .
+
+fin:Relationship_time_series_performance__transaction_data__Year_Month a fin:TableRelationship ;
+    fin:columnType "STRING" ;
+    fin:joinColumn "Year_Month" ;
+    fin:joinType "LEFT" ;
+    fin:sourceTable fin:Table_time_series_performance ;
+    fin:targetTable fin:Table_transaction_data .
+
+fin:ColumnSynonym_customer_master_analysis_Frequency_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer purchase frequency" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Frequency ;
+    fin:term "frequency" .
+
+fin:ColumnSynonym_customer_master_analysis_Frequency_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer purchase frequency" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Frequency ;
+    fin:term "purchase frequency" .
+
+fin:ColumnSynonym_customer_master_analysis_Frequency_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer purchase frequency" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Frequency ;
+    fin:term "order frequency" .
+
+fin:ColumnSynonym_customer_master_analysis_Monetary_0 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer monetary value" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Monetary ;
+    fin:term "monetary" .
+
+fin:ColumnSynonym_customer_master_analysis_Monetary_1 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer monetary value" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Monetary ;
+    fin:term "customer revenue" .
+
+fin:ColumnSynonym_customer_master_analysis_Monetary_2 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer monetary value" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Monetary ;
+    fin:term "customer value" .
+
+fin:ColumnSynonym_customer_master_analysis_Profitability_0 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer profitability" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Profitability ;
+    fin:term "profitability" .
+
+fin:ColumnSynonym_customer_master_analysis_Profitability_1 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer profitability" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Profitability ;
+    fin:term "customer profit" .
+
+fin:ColumnSynonym_customer_master_analysis_Profitability_2 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Customer profitability" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Profitability ;
+    fin:term "profit" .
+
+fin:ColumnSynonym_customer_master_analysis_RFM_Segment_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "RFM customer segmentation" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_RFM_Segment ;
+    fin:term "rfm segment" .
+
+fin:ColumnSynonym_customer_master_analysis_RFM_Segment_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "RFM customer segmentation" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_RFM_Segment ;
+    fin:term "customer segment" .
+
+fin:ColumnSynonym_customer_master_analysis_RFM_Segment_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "RFM customer segmentation" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_RFM_Segment ;
+    fin:term "segment" .
+
+fin:ColumnSynonym_customer_master_analysis_Recency_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Days since last customer purchase" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Recency ;
+    fin:term "recency" .
+
+fin:ColumnSynonym_customer_master_analysis_Recency_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Days since last customer purchase" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Recency ;
+    fin:term "last purchase" .
+
+fin:ColumnSynonym_customer_master_analysis_Recency_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Days since last customer purchase" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_customer_master_analysis_Recency ;
+    fin:term "days since purchase" .
+
+fin:ColumnSynonym_dataset_25m_table_Customer_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Customer ;
+    fin:term "customer" .
+
+fin:ColumnSynonym_dataset_25m_table_Customer_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Customer ;
+    fin:term "customer name" .
+
+fin:ColumnSynonym_dataset_25m_table_Customer_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Customer ;
+    fin:term "account" .
+
+fin:ColumnSynonym_dataset_25m_table_Customer_3 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Customer ;
+    fin:term "client" .
+
+fin:ColumnSynonym_dataset_25m_table_Distribution_Channel_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Distribution channel" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Distribution_Channel ;
+    fin:term "distribution channel" .
+
+fin:ColumnSynonym_dataset_25m_table_Distribution_Channel_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Distribution channel" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Distribution_Channel ;
+    fin:term "channel" .
+
+fin:ColumnSynonym_dataset_25m_table_Division_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Business division" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Division ;
+    fin:term "division" .
+
+fin:ColumnSynonym_dataset_25m_table_Division_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Business division" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Division ;
+    fin:term "business division" .
+
+fin:ColumnSynonym_dataset_25m_table_GL_Account_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "General ledger account number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_GL_Account ;
+    fin:term "gl account" .
+
+fin:ColumnSynonym_dataset_25m_table_GL_Account_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "General ledger account number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_GL_Account ;
+    fin:term "account number" .
+
+fin:ColumnSynonym_dataset_25m_table_GL_Account_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "General ledger account number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_GL_Account ;
+    fin:term "ledger account" .
+
+fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Gross revenue/sales amount" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Gross_Revenue ;
+    fin:term "revenue" .
+
+fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Gross revenue/sales amount" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Gross_Revenue ;
+    fin:term "sales" .
+
+fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Gross revenue/sales amount" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Gross_Revenue ;
+    fin:term "sales amount" .
+
+fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_3 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Gross revenue/sales amount" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Gross_Revenue ;
+    fin:term "sales revenue" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_0 a fin:ColumnSynonym ;
+    fin:confidence "0.75"^^xsd:float,
+        "0.9"^^xsd:float ;
+    fin:description "General quantity term - defaults to inventory quantity",
+        "Inventory quantity in base units" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity ;
+    fin:term "inventory quantity",
+        "quantity" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_1 a fin:ColumnSynonym ;
+    fin:confidence "0.75"^^xsd:float,
+        "0.9"^^xsd:float ;
+    fin:description "General quantity term - defaults to inventory quantity",
+        "Inventory quantity in base units" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity ;
+    fin:term "inv quantity",
+        "qty" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_2 a fin:ColumnSynonym ;
+    fin:confidence "0.75"^^xsd:float,
+        "0.9"^^xsd:float ;
+    fin:description "General quantity term - defaults to inventory quantity",
+        "Inventory quantity in base units" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity ;
+    fin:term "stock quantity",
+        "volume" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_3 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Inventory quantity in base units" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity ;
+    fin:term "quantity on hand" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Inventory quantity in cases" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity_Cases ;
+    fin:term "quantity in cases" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Inventory quantity in cases" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity_Cases ;
+    fin:term "case quantity" .
+
+fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Inventory quantity in cases" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Inv_Quantity_Cases ;
+    fin:term "cases" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Description_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product/material description" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Description ;
+    fin:term "product" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Description_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product/material description" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Description ;
+    fin:term "product name" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Description_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product/material description" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Description ;
+    fin:term "item" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Description_3 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product/material description" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Description ;
+    fin:term "product description" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product category grouping" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Group_Description ;
+    fin:term "product category" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product category grouping" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Group_Description ;
+    fin:term "product group" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Product category grouping" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Group_Description ;
+    fin:term "category" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Number_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Material/SKU identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Number ;
+    fin:term "material" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Number_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Material/SKU identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Number ;
+    fin:term "material number" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Number_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Material/SKU identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Number ;
+    fin:term "sku" .
+
+fin:ColumnSynonym_dataset_25m_table_Material_Number_3 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Material/SKU identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Material_Number ;
+    fin:term "item number" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_0 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Plant/facility code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant ;
+    fin:term "plant" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_1 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Plant/facility code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant ;
+    fin:term "facility" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_2 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Plant/facility code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant ;
+    fin:term "warehouse" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_3 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Plant/facility code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant ;
+    fin:term "location" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_Region_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Plant/manufacturing region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant_Region ;
+    fin:term "plant region" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_Region_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Plant/manufacturing region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant_Region ;
+    fin:term "manufacturing region" .
+
+fin:ColumnSynonym_dataset_25m_table_Plant_Region_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Plant/manufacturing region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Plant_Region ;
+    fin:term "production region" .
+
+fin:ColumnSynonym_dataset_25m_table_Posting_Date_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Transaction posting date" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Posting_Date ;
+    fin:term "posting date" .
+
+fin:ColumnSynonym_dataset_25m_table_Posting_Date_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Transaction posting date" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Posting_Date ;
+    fin:term "transaction date" .
+
+fin:ColumnSynonym_dataset_25m_table_Posting_Date_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Transaction posting date" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Posting_Date ;
+    fin:term "date" .
+
+fin:ColumnSynonym_dataset_25m_table_Product_BU_0 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Product business unit code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Product_BU ;
+    fin:term "product bu" .
+
+fin:ColumnSynonym_dataset_25m_table_Product_BU_1 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Product business unit code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Product_BU ;
+    fin:term "business unit" .
+
+fin:ColumnSynonym_dataset_25m_table_Product_BU_2 a fin:ColumnSynonym ;
+    fin:confidence "0.8"^^xsd:float ;
+    fin:description "Product business unit code" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Product_BU ;
+    fin:term "product line" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Sales order number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Order_KDAUF ;
+    fin:term "order" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Sales order number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Order_KDAUF ;
+    fin:term "sales order" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Sales order number" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Order_KDAUF ;
+    fin:term "order number" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Rep_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Sales representative" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Rep ;
+    fin:term "sales rep" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Rep_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Sales representative" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Rep ;
+    fin:term "salesperson" .
+
+fin:ColumnSynonym_dataset_25m_table_Sales_Rep_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Sales representative" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sales_Rep ;
+    fin:term "sales representative" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer/sold-to party name" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Name ;
+    fin:term "customer name" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer/sold-to party name" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Name ;
+    fin:term "account name" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Customer/sold-to party name" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Name ;
+    fin:term "sold to name" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_0 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer/sold-to region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Region ;
+    fin:term "region" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_1 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer/sold-to region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Region ;
+    fin:term "sales region" .
+
+fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_2 a fin:ColumnSynonym ;
+    fin:confidence "0.85"^^xsd:float ;
+    fin:description "Customer/sold-to region" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Sold_to_Region ;
+    fin:term "customer region" .
+
+fin:ColumnSynonym_dataset_25m_table_Total_COGS_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Total cost of goods sold" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Total_COGS ;
+    fin:term "cogs" .
+
+fin:ColumnSynonym_dataset_25m_table_Total_COGS_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Total cost of goods sold" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Total_COGS ;
+    fin:term "cost of goods sold" .
+
+fin:ColumnSynonym_dataset_25m_table_Total_COGS_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Total cost of goods sold" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Total_COGS ;
+    fin:term "cost of sales" .
+
+fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Vendor/supplier identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Vendor_lifnr ;
+    fin:term "vendor" .
+
+fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Vendor/supplier identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Vendor_lifnr ;
+    fin:term "supplier" .
+
+fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_2 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Vendor/supplier identifier" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_Vendor_lifnr ;
+    fin:term "vendor name" .
+
+fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
+    fin:term "delivered quantity" .
+
+fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
+    fin:term "delivered qty" .
+
+fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
+    fin:term "quantity delivered" .
+
+fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_3 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
+    fin:term "delivery quantity" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Actual delivered quantity from sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
+    fin:term "delivered quantity sales order" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Actual delivered quantity from sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
+    fin:term "actual quantity delivered" .
 
 fin:Column_GL_Accounts_CM_SS_GLACCOUNT_BUCKET_Code a fin:Column ;
     fin:belongsToTable fin:Table_GL_Accounts ;
@@ -1570,12 +3805,6 @@ fin:Column_customer_master_analysis_F_Score a fin:Column ;
     fin:dataType "INTEGER" ;
     fin:isNullable true .
 
-fin:Column_customer_master_analysis_Frequency a fin:Column ;
-    fin:belongsToTable fin:Table_customer_master_analysis ;
-    fin:columnName "Frequency" ;
-    fin:dataType "INTEGER" ;
-    fin:isNullable true .
-
 fin:Column_customer_master_analysis_Frequency_Percentile a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "Frequency_Percentile" ;
@@ -1612,12 +3841,6 @@ fin:Column_customer_master_analysis_Margin_Percent a fin:Column ;
     fin:dataType "FLOAT" ;
     fin:isNullable true .
 
-fin:Column_customer_master_analysis_Monetary a fin:Column ;
-    fin:belongsToTable fin:Table_customer_master_analysis ;
-    fin:columnName "Monetary" ;
-    fin:dataType "FLOAT" ;
-    fin:isNullable true .
-
 fin:Column_customer_master_analysis_Profit_Percentage a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "Profit_Percentage" ;
@@ -1636,33 +3859,15 @@ fin:Column_customer_master_analysis_Profit_Rank a fin:Column ;
     fin:dataType "FLOAT" ;
     fin:isNullable true .
 
-fin:Column_customer_master_analysis_Profitability a fin:Column ;
-    fin:belongsToTable fin:Table_customer_master_analysis ;
-    fin:columnName "Profitability" ;
-    fin:dataType "FLOAT" ;
-    fin:isNullable true .
-
 fin:Column_customer_master_analysis_RFM_Score a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "RFM_Score" ;
     fin:dataType "INTEGER" ;
     fin:isNullable true .
 
-fin:Column_customer_master_analysis_RFM_Segment a fin:Column ;
-    fin:belongsToTable fin:Table_customer_master_analysis ;
-    fin:columnName "RFM_Segment" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_customer_master_analysis_R_Score a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "R_Score" ;
-    fin:dataType "INTEGER" ;
-    fin:isNullable true .
-
-fin:Column_customer_master_analysis_Recency a fin:Column ;
-    fin:belongsToTable fin:Table_customer_master_analysis ;
-    fin:columnName "Recency" ;
     fin:dataType "INTEGER" ;
     fin:isNullable true .
 
@@ -1954,24 +4159,6 @@ fin:Column_dataset_25m_table_Current_Sales_Representative a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Customer a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Customer" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Distribution_Channel a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Distribution_Channel" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Division a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Division" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Document_Type a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Document_Type" ;
@@ -2020,12 +4207,6 @@ fin:Column_dataset_25m_table_Fuel_Surcharge a fin:Column ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_GL_Account a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "GL_Account" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_GL_Account_Description a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "GL_Account_Description" ;
@@ -2041,12 +4222,6 @@ fin:Column_dataset_25m_table_GL_Account_Type a fin:Column ;
 fin:Column_dataset_25m_table_GL_Amount_in_CC a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "GL_Amount_in_CC" ;
-    fin:dataType "NUMERIC" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Gross_Revenue a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Gross_Revenue" ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
@@ -2098,18 +4273,6 @@ fin:Column_dataset_25m_table_Ingredients a fin:Column ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Inv_Quantity a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Inv_Quantity" ;
-    fin:dataType "NUMERIC" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Inv_Quantity_Cases a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Inv_Quantity_Cases" ;
-    fin:dataType "FLOAT" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Inventory_Differences a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Inventory_Differences" ;
@@ -2140,27 +4303,9 @@ fin:Column_dataset_25m_table_Material_Base_Unit a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Material_Description a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Material_Description" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Material_Group a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Material_Group" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Material_Group_Description a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Material_Group_Description" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Material_Number a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Material_Number" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2368,12 +4513,6 @@ fin:Column_dataset_25m_table_Payer_Price_Group_Description a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Plant a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Plant" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_PlantCountry a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "PlantCountry" ;
@@ -2383,12 +4522,6 @@ fin:Column_dataset_25m_table_PlantCountry a fin:Column ;
 fin:Column_dataset_25m_table_PlantState a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "PlantState" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Plant_Region a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Plant_Region" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2404,21 +4537,9 @@ fin:Column_dataset_25m_table_Plant_werks a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Posting_Date a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Posting_Date" ;
-    fin:dataType "DATE" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Price_Group_Desc a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Price_Group_Desc" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Product_BU a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Product_BU" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2602,12 +4723,6 @@ fin:Column_dataset_25m_table_Sales_Margin_of_Net_Sales a fin:Column ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Sales_Order_KDAUF a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Sales_Order_KDAUF" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Sales_Region a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Sales_Region" ;
@@ -2617,12 +4732,6 @@ fin:Column_dataset_25m_table_Sales_Region a fin:Column ;
 fin:Column_dataset_25m_table_Sales_Region_Description a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Sales_Region_Description" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Sales_Rep a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Sales_Rep" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2878,12 +4987,6 @@ fin:Column_dataset_25m_table_Sold_to_District_Desc a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Sold_to_Name a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Sold_to_Name" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Sold_to_Number a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Sold_to_Number" ;
@@ -2899,12 +5002,6 @@ fin:Column_dataset_25m_table_Sold_to_Price_Group a fin:Column ;
 fin:Column_dataset_25m_table_Sold_to_Price_Group_Description a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Sold_to_Price_Group_Description" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Sold_to_Region a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Sold_to_Region" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2956,12 +5053,6 @@ fin:Column_dataset_25m_table_Total_COGM a fin:Column ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_Total_COGS a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Total_COGS" ;
-    fin:dataType "NUMERIC" ;
-    fin:isNullable true .
-
 fin:Column_dataset_25m_table_Total_COS a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "Total_COS" ;
@@ -2971,12 +5062,6 @@ fin:Column_dataset_25m_table_Total_COS a fin:Column ;
 fin:Column_dataset_25m_table_VendorName a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "VendorName" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_Vendor_lifnr a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "Vendor_lifnr" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -2995,12 +5080,6 @@ fin:Column_dataset_25m_table_Warehouse_AND_Storage_Abs_Var a fin:Column ;
 fin:Column_dataset_25m_table_ZCS_INV_Quantity a fin:Column ;
     fin:belongsToTable fin:Table_dataset_25m_table ;
     fin:columnName "ZCS_INV_Quantity" ;
-    fin:dataType "FLOAT" ;
-    fin:isNullable true .
-
-fin:Column_dataset_25m_table_ZCS_Shipped_Quantity a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "ZCS_Shipped_Quantity" ;
     fin:dataType "FLOAT" ;
     fin:isNullable true .
 
@@ -3763,12 +5842,6 @@ fin:Column_sales_order_cockpit_export_ActualGoodsMovementDate_WADAT_IST a fin:Co
 fin:Column_sales_order_cockpit_export_ActualQuantityDeliveredInStockKeepingUnits_LGMNG a fin:Column ;
     fin:belongsToTable fin:Table_sales_order_cockpit_export ;
     fin:columnName "ActualQuantityDeliveredInStockKeepingUnits_LGMNG" ;
-    fin:dataType "NUMERIC" ;
-    fin:isNullable true .
-
-fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
     fin:dataType "NUMERIC" ;
     fin:isNullable true .
 
@@ -6384,6 +8457,253 @@ fin:Table_cohort_sizes a fin:Table ;
     fin:rowCount 91 ;
     fin:tableName "cohort_sizes" .
 
+fin:Column_dataset_25m_table_Distribution_Channel a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Distribution_Channel" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Distribution_Channel_0,
+        fin:ColumnSynonym_dataset_25m_table_Distribution_Channel_1 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Division a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Division" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Division_0,
+        fin:ColumnSynonym_dataset_25m_table_Division_1 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1 ;
+    fin:isNullable true .
+
+fin:Column_customer_master_analysis_Frequency a fin:Column ;
+    fin:belongsToTable fin:Table_customer_master_analysis ;
+    fin:columnName "Frequency" ;
+    fin:dataType "INTEGER" ;
+    fin:hasSynonym fin:ColumnSynonym_customer_master_analysis_Frequency_0,
+        fin:ColumnSynonym_customer_master_analysis_Frequency_1,
+        fin:ColumnSynonym_customer_master_analysis_Frequency_2 ;
+    fin:isNullable true .
+
+fin:Column_customer_master_analysis_Monetary a fin:Column ;
+    fin:belongsToTable fin:Table_customer_master_analysis ;
+    fin:columnName "Monetary" ;
+    fin:dataType "FLOAT" ;
+    fin:hasSynonym fin:ColumnSynonym_customer_master_analysis_Monetary_0,
+        fin:ColumnSynonym_customer_master_analysis_Monetary_1,
+        fin:ColumnSynonym_customer_master_analysis_Monetary_2 ;
+    fin:isNullable true .
+
+fin:Column_customer_master_analysis_Profitability a fin:Column ;
+    fin:belongsToTable fin:Table_customer_master_analysis ;
+    fin:columnName "Profitability" ;
+    fin:dataType "FLOAT" ;
+    fin:hasSynonym fin:ColumnSynonym_customer_master_analysis_Profitability_0,
+        fin:ColumnSynonym_customer_master_analysis_Profitability_1,
+        fin:ColumnSynonym_customer_master_analysis_Profitability_2 ;
+    fin:isNullable true .
+
+fin:Column_customer_master_analysis_RFM_Segment a fin:Column ;
+    fin:belongsToTable fin:Table_customer_master_analysis ;
+    fin:columnName "RFM_Segment" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_customer_master_analysis_RFM_Segment_0,
+        fin:ColumnSynonym_customer_master_analysis_RFM_Segment_1,
+        fin:ColumnSynonym_customer_master_analysis_RFM_Segment_2 ;
+    fin:isNullable true .
+
+fin:Column_customer_master_analysis_Recency a fin:Column ;
+    fin:belongsToTable fin:Table_customer_master_analysis ;
+    fin:columnName "Recency" ;
+    fin:dataType "INTEGER" ;
+    fin:hasSynonym fin:ColumnSynonym_customer_master_analysis_Recency_0,
+        fin:ColumnSynonym_customer_master_analysis_Recency_1,
+        fin:ColumnSynonym_customer_master_analysis_Recency_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_GL_Account a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "GL_Account" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_GL_Account_0,
+        fin:ColumnSynonym_dataset_25m_table_GL_Account_1,
+        fin:ColumnSynonym_dataset_25m_table_GL_Account_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Inv_Quantity_Cases a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Inv_Quantity_Cases" ;
+    fin:dataType "FLOAT" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_0,
+        fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_1,
+        fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_Cases_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Material_Group_Description a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Material_Group_Description" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_0,
+        fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_1,
+        fin:ColumnSynonym_dataset_25m_table_Material_Group_Description_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Plant_Region a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Plant_Region" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Plant_Region_0,
+        fin:ColumnSynonym_dataset_25m_table_Plant_Region_1,
+        fin:ColumnSynonym_dataset_25m_table_Plant_Region_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Posting_Date a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Posting_Date" ;
+    fin:dataType "DATE" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Posting_Date_0,
+        fin:ColumnSynonym_dataset_25m_table_Posting_Date_1,
+        fin:ColumnSynonym_dataset_25m_table_Posting_Date_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Product_BU a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Product_BU" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Product_BU_0,
+        fin:ColumnSynonym_dataset_25m_table_Product_BU_1,
+        fin:ColumnSynonym_dataset_25m_table_Product_BU_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Sales_Order_KDAUF a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Sales_Order_KDAUF" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_0,
+        fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_1,
+        fin:ColumnSynonym_dataset_25m_table_Sales_Order_KDAUF_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Sales_Rep a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Sales_Rep" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Sales_Rep_0,
+        fin:ColumnSynonym_dataset_25m_table_Sales_Rep_1,
+        fin:ColumnSynonym_dataset_25m_table_Sales_Rep_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Sold_to_Name a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Sold_to_Name" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_0,
+        fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_1,
+        fin:ColumnSynonym_dataset_25m_table_Sold_to_Name_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Sold_to_Region a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Sold_to_Region" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_0,
+        fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_1,
+        fin:ColumnSynonym_dataset_25m_table_Sold_to_Region_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Total_COGS a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Total_COGS" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Total_COGS_0,
+        fin:ColumnSynonym_dataset_25m_table_Total_COGS_1,
+        fin:ColumnSynonym_dataset_25m_table_Total_COGS_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Vendor_lifnr a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Vendor_lifnr" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_0,
+        fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_1,
+        fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_2 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Customer a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Customer" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Customer_0,
+        fin:ColumnSynonym_dataset_25m_table_Customer_1,
+        fin:ColumnSynonym_dataset_25m_table_Customer_2,
+        fin:ColumnSynonym_dataset_25m_table_Customer_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Gross_Revenue a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Gross_Revenue" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_0,
+        fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_1,
+        fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_2,
+        fin:ColumnSynonym_dataset_25m_table_Gross_Revenue_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Inv_Quantity a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Inv_Quantity" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_0,
+        fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_1,
+        fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_2,
+        fin:ColumnSynonym_dataset_25m_table_Inv_Quantity_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Material_Description a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Material_Description" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Material_Description_0,
+        fin:ColumnSynonym_dataset_25m_table_Material_Description_1,
+        fin:ColumnSynonym_dataset_25m_table_Material_Description_2,
+        fin:ColumnSynonym_dataset_25m_table_Material_Description_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Material_Number a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Material_Number" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Material_Number_0,
+        fin:ColumnSynonym_dataset_25m_table_Material_Number_1,
+        fin:ColumnSynonym_dataset_25m_table_Material_Number_2,
+        fin:ColumnSynonym_dataset_25m_table_Material_Number_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_Plant a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "Plant" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_Plant_0,
+        fin:ColumnSynonym_dataset_25m_table_Plant_1,
+        fin:ColumnSynonym_dataset_25m_table_Plant_2,
+        fin:ColumnSynonym_dataset_25m_table_Plant_3 ;
+    fin:isNullable true .
+
+fin:Column_dataset_25m_table_ZCS_Shipped_Quantity a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "ZCS_Shipped_Quantity" ;
+    fin:dataType "FLOAT" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_0,
+        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_1,
+        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_2,
+        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_3 ;
+    fin:isNullable true .
+
 fin:Table_GL_Accounts a fin:Table ;
     fin:dataset "copa_export_copa_data_000000000000" ;
     fin:entityType fin:GLAccount ;
@@ -6430,23 +8750,6 @@ fin:Table_product_customer_matrix a fin:Table ;
     fin:tableName "product_customer_matrix" ;
     fin:tableType "DIMENSION" .
 
-fin:Table_time_series_performance a fin:Table ;
-    fin:dataset "copa_export_copa_data_000000000000" ;
-    fin:hasColumn fin:Column_time_series_performance_Avg_Revenue_Per_Customer,
-        fin:Column_time_series_performance_Customer,
-        fin:Column_time_series_performance_Gross_Margin,
-        fin:Column_time_series_performance_Inv_Quantity_Cases,
-        fin:Column_time_series_performance_Margin_Percent,
-        fin:Column_time_series_performance_Month,
-        fin:Column_time_series_performance_Net_Sales,
-        fin:Column_time_series_performance_RFM_Segment,
-        fin:Column_time_series_performance_Total_COGS,
-        fin:Column_time_series_performance_Year,
-        fin:Column_time_series_performance_Year_Month ;
-    fin:project "arizona-poc" ;
-    fin:rowCount 576 ;
-    fin:tableName "time_series_performance" .
-
 fin:Table_segment_performance_summary a fin:Table ;
     fin:dataset "copa_export_copa_data_000000000000" ;
     fin:hasColumn fin:Column_segment_performance_summary_CLV_Proxy_mean,
@@ -6472,6 +8775,23 @@ fin:Table_segment_performance_summary a fin:Table ;
     fin:project "arizona-poc" ;
     fin:rowCount 25 ;
     fin:tableName "segment_performance_summary" .
+
+fin:Table_time_series_performance a fin:Table ;
+    fin:dataset "copa_export_copa_data_000000000000" ;
+    fin:hasColumn fin:Column_time_series_performance_Avg_Revenue_Per_Customer,
+        fin:Column_time_series_performance_Customer,
+        fin:Column_time_series_performance_Gross_Margin,
+        fin:Column_time_series_performance_Inv_Quantity_Cases,
+        fin:Column_time_series_performance_Margin_Percent,
+        fin:Column_time_series_performance_Month,
+        fin:Column_time_series_performance_Net_Sales,
+        fin:Column_time_series_performance_RFM_Segment,
+        fin:Column_time_series_performance_Total_COGS,
+        fin:Column_time_series_performance_Year,
+        fin:Column_time_series_performance_Year_Month ;
+    fin:project "arizona-poc" ;
+    fin:rowCount 576 ;
+    fin:tableName "time_series_performance" .
 
 fin:Table_regional_product_matrix a fin:Table ;
     fin:dataset "copa_export_copa_data_000000000000" ;
@@ -6631,6 +8951,176 @@ fin:Table_regional_product_cluster_summary a fin:Table ;
     fin:project "arizona-poc" ;
     fin:rowCount 4 ;
     fin:tableName "regional_product_cluster_summary" .
+
+fin:Table_sales_order_cockpit_export a fin:Table ;
+    fin:dataset "copa_export_copa_data_000000000000" ;
+    fin:hasColumn fin:Column_sales_order_cockpit_export_ActualGoodsMovementDate_WADAT_IST,
+        fin:Column_sales_order_cockpit_export_ActualQuantityDeliveredInStockKeepingUnits_LGMNG,
+        fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG,
+        fin:Column_sales_order_cockpit_export_AdjustedPrice,
+        fin:Column_sales_order_cockpit_export_AllocationIndicator_VPZUO,
+        fin:Column_sales_order_cockpit_export_BackOrder,
+        fin:Column_sales_order_cockpit_export_BaseUnitofMeasure_MEINS,
+        fin:Column_sales_order_cockpit_export_BaseUoM_MEINS,
+        fin:Column_sales_order_cockpit_export_BillToPartyHeaderName_KUNNR,
+        fin:Column_sales_order_cockpit_export_BillToPartyHeader_KUNNR,
+        fin:Column_sales_order_cockpit_export_BillToPartyItemName_KUNNR,
+        fin:Column_sales_order_cockpit_export_BillToPartyItem_KUNNR,
+        fin:Column_sales_order_cockpit_export_BilledQty,
+        fin:Column_sales_order_cockpit_export_Billed_Qty_in_SKU,
+        fin:Column_sales_order_cockpit_export_BillingBlockInSdDocument_FAKSK,
+        fin:Column_sales_order_cockpit_export_BillingDOcumentCurrency_WAERK,
+        fin:Column_sales_order_cockpit_export_BillingDateForBillingIndexAndPrintout_FKDAT,
+        fin:Column_sales_order_cockpit_export_BillingDate_FKDAT,
+        fin:Column_sales_order_cockpit_export_BillingDocument_VBELN,
+        fin:Column_sales_order_cockpit_export_BillingItem_POSNR,
+        fin:Column_sales_order_cockpit_export_BillingNetValue,
+        fin:Column_sales_order_cockpit_export_BillingVFStatus,
+        fin:Column_sales_order_cockpit_export_BlockedSalesOrder,
+        fin:Column_sales_order_cockpit_export_Brand,
+        fin:Column_sales_order_cockpit_export_CanceledOrder,
+        fin:Column_sales_order_cockpit_export_City,
+        fin:Column_sales_order_cockpit_export_Client_MANDT,
+        fin:Column_sales_order_cockpit_export_ConfirmedOrderQuantity_BMENG,
+        fin:Column_sales_order_cockpit_export_Country,
+        fin:Column_sales_order_cockpit_export_CreationDate_ERDAT,
+        fin:Column_sales_order_cockpit_export_CumulativeConfirmedQuantityInBaseUoM_KLMENG,
+        fin:Column_sales_order_cockpit_export_CumulativeConfirmedQuantity_KBMENG,
+        fin:Column_sales_order_cockpit_export_CumulativeTargetDeliveryQty_LSMENG,
+        fin:Column_sales_order_cockpit_export_CustomerAddress,
+        fin:Column_sales_order_cockpit_export_CustomerLanguage,
+        fin:Column_sales_order_cockpit_export_CustomerName1,
+        fin:Column_sales_order_cockpit_export_CustomerName2,
+        fin:Column_sales_order_cockpit_export_CustomerNumber,
+        fin:Column_sales_order_cockpit_export_CustomerPurchaseOrderNumber_BSTNK,
+        fin:Column_sales_order_cockpit_export_CustomerRegion,
+        fin:Column_sales_order_cockpit_export_Date__proofOfDelivery___PODAT,
+        fin:Column_sales_order_cockpit_export_DeliveryBlock_DocumentHeader_LIFSK,
+        fin:Column_sales_order_cockpit_export_DeliveryDate_LFDAT,
+        fin:Column_sales_order_cockpit_export_DeliveryDocumentCurrency_WAERK,
+        fin:Column_sales_order_cockpit_export_DeliveryItem_POSNR,
+        fin:Column_sales_order_cockpit_export_DeliveryType_LFART,
+        fin:Column_sales_order_cockpit_export_Delivery_Appointment_Date,
+        fin:Column_sales_order_cockpit_export_Delivery_Appointment_Date2,
+        fin:Column_sales_order_cockpit_export_Delivery_Arrival_Date,
+        fin:Column_sales_order_cockpit_export_Delivery_Block_Status,
+        fin:Column_sales_order_cockpit_export_Delivery_Creation_Date,
+        fin:Column_sales_order_cockpit_export_Delivery_Departure_Date,
+        fin:Column_sales_order_cockpit_export_Delivery_Document_VBBE,
+        fin:Column_sales_order_cockpit_export_Delivery_PGI_Date,
+        fin:Column_sales_order_cockpit_export_Delivery_VBELN,
+        fin:Column_sales_order_cockpit_export_Discount,
+        fin:Column_sales_order_cockpit_export_DistributionChannel,
+        fin:Column_sales_order_cockpit_export_DistributionChannelName,
+        fin:Column_sales_order_cockpit_export_Division,
+        fin:Column_sales_order_cockpit_export_DivisionDescription,
+        fin:Column_sales_order_cockpit_export_DocumentCategory_VBTYP,
+        fin:Column_sales_order_cockpit_export_DocumentDate_AUDAT,
+        fin:Column_sales_order_cockpit_export_Documentnumberofthereferencedocument_VGBEL,
+        fin:Column_sales_order_cockpit_export_ExchangeRateType_KURST,
+        fin:Column_sales_order_cockpit_export_FillRatePercent,
+        fin:Column_sales_order_cockpit_export_Fuel_Charge_Currency,
+        fin:Column_sales_order_cockpit_export_Fuel_Charge_item,
+        fin:Column_sales_order_cockpit_export_GoodsMovementStatus_WBSTK,
+        fin:Column_sales_order_cockpit_export_GrossWeight_BRGEW,
+        fin:Column_sales_order_cockpit_export_Header_Creation_Date,
+        fin:Column_sales_order_cockpit_export_InFullDelivery,
+        fin:Column_sales_order_cockpit_export_IncomingOrderNum,
+        fin:Column_sales_order_cockpit_export_InterCompanyPrice,
+        fin:Column_sales_order_cockpit_export_Item_POSNR,
+        fin:Column_sales_order_cockpit_export_KVGR1_Description,
+        fin:Column_sales_order_cockpit_export_KVGR2_Description,
+        fin:Column_sales_order_cockpit_export_KVGR3_Description,
+        fin:Column_sales_order_cockpit_export_KVGR4_Description,
+        fin:Column_sales_order_cockpit_export_KVGR5_Description,
+        fin:Column_sales_order_cockpit_export_Language_SPRAS,
+        fin:Column_sales_order_cockpit_export_LateDeliveries,
+        fin:Column_sales_order_cockpit_export_Line_Haul_Charge_Currency,
+        fin:Column_sales_order_cockpit_export_Line_haul_charge_item,
+        fin:Column_sales_order_cockpit_export_ListPrice,
+        fin:Column_sales_order_cockpit_export_Load_Status,
+        fin:Column_sales_order_cockpit_export_Management_Fee_Currency,
+        fin:Column_sales_order_cockpit_export_Management_Fee_item,
+        fin:Column_sales_order_cockpit_export_MaterialDescription,
+        fin:Column_sales_order_cockpit_export_MaterialNumber,
+        fin:Column_sales_order_cockpit_export_MaterialType,
+        fin:Column_sales_order_cockpit_export_Materialgroup_Matkl,
+        fin:Column_sales_order_cockpit_export_NetWeight_NTGEW,
+        fin:Column_sales_order_cockpit_export_OPEN_DELIVERY_QTY,
+        fin:Column_sales_order_cockpit_export_OTIF,
+        fin:Column_sales_order_cockpit_export_OnTimeDelivery,
+        fin:Column_sales_order_cockpit_export_OpenOrder,
+        fin:Column_sales_order_cockpit_export_Open_QTY,
+        fin:Column_sales_order_cockpit_export_Open_Qty_in_Stockkeeping_Units_for_Transfer_of_Reqmts_to_MRP,
+        fin:Column_sales_order_cockpit_export_OrderCycleTimeInDays,
+        fin:Column_sales_order_cockpit_export_OverallBillingProcessingStatus_GBSTK,
+        fin:Column_sales_order_cockpit_export_OverallBillingStatus_LSSTK,
+        fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK,
+        fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA,
+        fin:Column_sales_order_cockpit_export_PayerHeaderName_KUNNR,
+        fin:Column_sales_order_cockpit_export_PayerHeader_KUNNR,
+        fin:Column_sales_order_cockpit_export_PayerItemName_KUNNR,
+        fin:Column_sales_order_cockpit_export_PayerItem_KUNNR,
+        fin:Column_sales_order_cockpit_export_Pickup_Appointment_Date,
+        fin:Column_sales_order_cockpit_export_Pickup_Appointment_Date2,
+        fin:Column_sales_order_cockpit_export_Pickup_Arrival_Date,
+        fin:Column_sales_order_cockpit_export_Pickup_Departure_Date,
+        fin:Column_sales_order_cockpit_export_Planned_allocation_quantity_for_independent_requirements,
+        fin:Column_sales_order_cockpit_export_PostalCode,
+        fin:Column_sales_order_cockpit_export_PreAppt,
+        fin:Column_sales_order_cockpit_export_PrecedingDocCategory_VGTYP,
+        fin:Column_sales_order_cockpit_export_ProductCategory,
+        fin:Column_sales_order_cockpit_export_Rebate,
+        fin:Column_sales_order_cockpit_export_ReferenceItem_VGPOS,
+        fin:Column_sales_order_cockpit_export_RegionDescription,
+        fin:Column_sales_order_cockpit_export_RejectionReason_ABGRU,
+        fin:Column_sales_order_cockpit_export_Requesteddeliverydate_VDATU,
+        fin:Column_sales_order_cockpit_export_ReturnOrder,
+        fin:Column_sales_order_cockpit_export_SalesDocumentType_AUART,
+        fin:Column_sales_order_cockpit_export_SalesDocument_VBELN,
+        fin:Column_sales_order_cockpit_export_SalesOrderDeliveryStatus_LFGSK,
+        fin:Column_sales_order_cockpit_export_SalesOrderDocumentCurrency_WAERK,
+        fin:Column_sales_order_cockpit_export_SalesOrderNetPrice,
+        fin:Column_sales_order_cockpit_export_SalesOrderNetValue,
+        fin:Column_sales_order_cockpit_export_SalesOrderNumber,
+        fin:Column_sales_order_cockpit_export_SalesOrderProcessingStatus_GBSTK,
+        fin:Column_sales_order_cockpit_export_SalesOrderQty,
+        fin:Column_sales_order_cockpit_export_SalesOrderQuantity,
+        fin:Column_sales_order_cockpit_export_SalesOrderValue,
+        fin:Column_sales_order_cockpit_export_SalesOrder_PGI_Date,
+        fin:Column_sales_order_cockpit_export_SalesOrder_Route,
+        fin:Column_sales_order_cockpit_export_SalesOrganization,
+        fin:Column_sales_order_cockpit_export_SalesRepHeaderName_KUNNR,
+        fin:Column_sales_order_cockpit_export_SalesUnitMeasure,
+        fin:Column_sales_order_cockpit_export_Sales_District_Region,
+        fin:Column_sales_order_cockpit_export_Sales_Document_VBBE,
+        fin:Column_sales_order_cockpit_export_Sales_Order_Conversion,
+        fin:Column_sales_order_cockpit_export_ShipToPartyHeaderName_KUNNR,
+        fin:Column_sales_order_cockpit_export_ShipToPartyHeader_KUNNR,
+        fin:Column_sales_order_cockpit_export_ShipToPartyItemName_KUNNR,
+        fin:Column_sales_order_cockpit_export_ShipToPartyItem_KUNNR,
+        fin:Column_sales_order_cockpit_export_Shipment_Number,
+        fin:Column_sales_order_cockpit_export_Shipment_Type,
+        fin:Column_sales_order_cockpit_export_Shipment_Type_Desc,
+        fin:Column_sales_order_cockpit_export_Shippers_Exception,
+        fin:Column_sales_order_cockpit_export_ShippingLocation,
+        fin:Column_sales_order_cockpit_export_SoldToPartyHeaderName_KUNNR,
+        fin:Column_sales_order_cockpit_export_SoldToPartyHeader_KUNNR,
+        fin:Column_sales_order_cockpit_export_SoldToPartyItemName_KUNNR,
+        fin:Column_sales_order_cockpit_export_SoldToPartyItem_KUNNR,
+        fin:Column_sales_order_cockpit_export_SoldToParty_KUNNR,
+        fin:Column_sales_order_cockpit_export_TaxAmount_MWSBK,
+        fin:Column_sales_order_cockpit_export_TotalDeliveries,
+        fin:Column_sales_order_cockpit_export_TotalOrderItems,
+        fin:Column_sales_order_cockpit_export_TotalOrders,
+        fin:Column_sales_order_cockpit_export_Transport_Plan_Date,
+        fin:Column_sales_order_cockpit_export_Unhold_Date,
+        fin:Column_sales_order_cockpit_export_Volume_VOLUM ;
+    fin:isFactTable true ;
+    fin:project "arizona-poc" ;
+    fin:rowCount 3815338 ;
+    fin:tableName "sales_order_cockpit_export" ;
+    fin:tableType "FACT" .
 
 fin:Table_cohort_avg_revenue_table a fin:Table ;
     fin:dataset "copa_export_copa_data_000000000000" ;
@@ -6827,176 +9317,6 @@ fin:Table_cohort_retention_table a fin:Table ;
     fin:project "arizona-poc" ;
     fin:rowCount 91 ;
     fin:tableName "cohort_retention_table" .
-
-fin:Table_sales_order_cockpit_export a fin:Table ;
-    fin:dataset "copa_export_copa_data_000000000000" ;
-    fin:hasColumn fin:Column_sales_order_cockpit_export_ActualGoodsMovementDate_WADAT_IST,
-        fin:Column_sales_order_cockpit_export_ActualQuantityDeliveredInStockKeepingUnits_LGMNG,
-        fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG,
-        fin:Column_sales_order_cockpit_export_AdjustedPrice,
-        fin:Column_sales_order_cockpit_export_AllocationIndicator_VPZUO,
-        fin:Column_sales_order_cockpit_export_BackOrder,
-        fin:Column_sales_order_cockpit_export_BaseUnitofMeasure_MEINS,
-        fin:Column_sales_order_cockpit_export_BaseUoM_MEINS,
-        fin:Column_sales_order_cockpit_export_BillToPartyHeaderName_KUNNR,
-        fin:Column_sales_order_cockpit_export_BillToPartyHeader_KUNNR,
-        fin:Column_sales_order_cockpit_export_BillToPartyItemName_KUNNR,
-        fin:Column_sales_order_cockpit_export_BillToPartyItem_KUNNR,
-        fin:Column_sales_order_cockpit_export_BilledQty,
-        fin:Column_sales_order_cockpit_export_Billed_Qty_in_SKU,
-        fin:Column_sales_order_cockpit_export_BillingBlockInSdDocument_FAKSK,
-        fin:Column_sales_order_cockpit_export_BillingDOcumentCurrency_WAERK,
-        fin:Column_sales_order_cockpit_export_BillingDateForBillingIndexAndPrintout_FKDAT,
-        fin:Column_sales_order_cockpit_export_BillingDate_FKDAT,
-        fin:Column_sales_order_cockpit_export_BillingDocument_VBELN,
-        fin:Column_sales_order_cockpit_export_BillingItem_POSNR,
-        fin:Column_sales_order_cockpit_export_BillingNetValue,
-        fin:Column_sales_order_cockpit_export_BillingVFStatus,
-        fin:Column_sales_order_cockpit_export_BlockedSalesOrder,
-        fin:Column_sales_order_cockpit_export_Brand,
-        fin:Column_sales_order_cockpit_export_CanceledOrder,
-        fin:Column_sales_order_cockpit_export_City,
-        fin:Column_sales_order_cockpit_export_Client_MANDT,
-        fin:Column_sales_order_cockpit_export_ConfirmedOrderQuantity_BMENG,
-        fin:Column_sales_order_cockpit_export_Country,
-        fin:Column_sales_order_cockpit_export_CreationDate_ERDAT,
-        fin:Column_sales_order_cockpit_export_CumulativeConfirmedQuantityInBaseUoM_KLMENG,
-        fin:Column_sales_order_cockpit_export_CumulativeConfirmedQuantity_KBMENG,
-        fin:Column_sales_order_cockpit_export_CumulativeTargetDeliveryQty_LSMENG,
-        fin:Column_sales_order_cockpit_export_CustomerAddress,
-        fin:Column_sales_order_cockpit_export_CustomerLanguage,
-        fin:Column_sales_order_cockpit_export_CustomerName1,
-        fin:Column_sales_order_cockpit_export_CustomerName2,
-        fin:Column_sales_order_cockpit_export_CustomerNumber,
-        fin:Column_sales_order_cockpit_export_CustomerPurchaseOrderNumber_BSTNK,
-        fin:Column_sales_order_cockpit_export_CustomerRegion,
-        fin:Column_sales_order_cockpit_export_Date__proofOfDelivery___PODAT,
-        fin:Column_sales_order_cockpit_export_DeliveryBlock_DocumentHeader_LIFSK,
-        fin:Column_sales_order_cockpit_export_DeliveryDate_LFDAT,
-        fin:Column_sales_order_cockpit_export_DeliveryDocumentCurrency_WAERK,
-        fin:Column_sales_order_cockpit_export_DeliveryItem_POSNR,
-        fin:Column_sales_order_cockpit_export_DeliveryType_LFART,
-        fin:Column_sales_order_cockpit_export_Delivery_Appointment_Date,
-        fin:Column_sales_order_cockpit_export_Delivery_Appointment_Date2,
-        fin:Column_sales_order_cockpit_export_Delivery_Arrival_Date,
-        fin:Column_sales_order_cockpit_export_Delivery_Block_Status,
-        fin:Column_sales_order_cockpit_export_Delivery_Creation_Date,
-        fin:Column_sales_order_cockpit_export_Delivery_Departure_Date,
-        fin:Column_sales_order_cockpit_export_Delivery_Document_VBBE,
-        fin:Column_sales_order_cockpit_export_Delivery_PGI_Date,
-        fin:Column_sales_order_cockpit_export_Delivery_VBELN,
-        fin:Column_sales_order_cockpit_export_Discount,
-        fin:Column_sales_order_cockpit_export_DistributionChannel,
-        fin:Column_sales_order_cockpit_export_DistributionChannelName,
-        fin:Column_sales_order_cockpit_export_Division,
-        fin:Column_sales_order_cockpit_export_DivisionDescription,
-        fin:Column_sales_order_cockpit_export_DocumentCategory_VBTYP,
-        fin:Column_sales_order_cockpit_export_DocumentDate_AUDAT,
-        fin:Column_sales_order_cockpit_export_Documentnumberofthereferencedocument_VGBEL,
-        fin:Column_sales_order_cockpit_export_ExchangeRateType_KURST,
-        fin:Column_sales_order_cockpit_export_FillRatePercent,
-        fin:Column_sales_order_cockpit_export_Fuel_Charge_Currency,
-        fin:Column_sales_order_cockpit_export_Fuel_Charge_item,
-        fin:Column_sales_order_cockpit_export_GoodsMovementStatus_WBSTK,
-        fin:Column_sales_order_cockpit_export_GrossWeight_BRGEW,
-        fin:Column_sales_order_cockpit_export_Header_Creation_Date,
-        fin:Column_sales_order_cockpit_export_InFullDelivery,
-        fin:Column_sales_order_cockpit_export_IncomingOrderNum,
-        fin:Column_sales_order_cockpit_export_InterCompanyPrice,
-        fin:Column_sales_order_cockpit_export_Item_POSNR,
-        fin:Column_sales_order_cockpit_export_KVGR1_Description,
-        fin:Column_sales_order_cockpit_export_KVGR2_Description,
-        fin:Column_sales_order_cockpit_export_KVGR3_Description,
-        fin:Column_sales_order_cockpit_export_KVGR4_Description,
-        fin:Column_sales_order_cockpit_export_KVGR5_Description,
-        fin:Column_sales_order_cockpit_export_Language_SPRAS,
-        fin:Column_sales_order_cockpit_export_LateDeliveries,
-        fin:Column_sales_order_cockpit_export_Line_Haul_Charge_Currency,
-        fin:Column_sales_order_cockpit_export_Line_haul_charge_item,
-        fin:Column_sales_order_cockpit_export_ListPrice,
-        fin:Column_sales_order_cockpit_export_Load_Status,
-        fin:Column_sales_order_cockpit_export_Management_Fee_Currency,
-        fin:Column_sales_order_cockpit_export_Management_Fee_item,
-        fin:Column_sales_order_cockpit_export_MaterialDescription,
-        fin:Column_sales_order_cockpit_export_MaterialNumber,
-        fin:Column_sales_order_cockpit_export_MaterialType,
-        fin:Column_sales_order_cockpit_export_Materialgroup_Matkl,
-        fin:Column_sales_order_cockpit_export_NetWeight_NTGEW,
-        fin:Column_sales_order_cockpit_export_OPEN_DELIVERY_QTY,
-        fin:Column_sales_order_cockpit_export_OTIF,
-        fin:Column_sales_order_cockpit_export_OnTimeDelivery,
-        fin:Column_sales_order_cockpit_export_OpenOrder,
-        fin:Column_sales_order_cockpit_export_Open_QTY,
-        fin:Column_sales_order_cockpit_export_Open_Qty_in_Stockkeeping_Units_for_Transfer_of_Reqmts_to_MRP,
-        fin:Column_sales_order_cockpit_export_OrderCycleTimeInDays,
-        fin:Column_sales_order_cockpit_export_OverallBillingProcessingStatus_GBSTK,
-        fin:Column_sales_order_cockpit_export_OverallBillingStatus_LSSTK,
-        fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK,
-        fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA,
-        fin:Column_sales_order_cockpit_export_PayerHeaderName_KUNNR,
-        fin:Column_sales_order_cockpit_export_PayerHeader_KUNNR,
-        fin:Column_sales_order_cockpit_export_PayerItemName_KUNNR,
-        fin:Column_sales_order_cockpit_export_PayerItem_KUNNR,
-        fin:Column_sales_order_cockpit_export_Pickup_Appointment_Date,
-        fin:Column_sales_order_cockpit_export_Pickup_Appointment_Date2,
-        fin:Column_sales_order_cockpit_export_Pickup_Arrival_Date,
-        fin:Column_sales_order_cockpit_export_Pickup_Departure_Date,
-        fin:Column_sales_order_cockpit_export_Planned_allocation_quantity_for_independent_requirements,
-        fin:Column_sales_order_cockpit_export_PostalCode,
-        fin:Column_sales_order_cockpit_export_PreAppt,
-        fin:Column_sales_order_cockpit_export_PrecedingDocCategory_VGTYP,
-        fin:Column_sales_order_cockpit_export_ProductCategory,
-        fin:Column_sales_order_cockpit_export_Rebate,
-        fin:Column_sales_order_cockpit_export_ReferenceItem_VGPOS,
-        fin:Column_sales_order_cockpit_export_RegionDescription,
-        fin:Column_sales_order_cockpit_export_RejectionReason_ABGRU,
-        fin:Column_sales_order_cockpit_export_Requesteddeliverydate_VDATU,
-        fin:Column_sales_order_cockpit_export_ReturnOrder,
-        fin:Column_sales_order_cockpit_export_SalesDocumentType_AUART,
-        fin:Column_sales_order_cockpit_export_SalesDocument_VBELN,
-        fin:Column_sales_order_cockpit_export_SalesOrderDeliveryStatus_LFGSK,
-        fin:Column_sales_order_cockpit_export_SalesOrderDocumentCurrency_WAERK,
-        fin:Column_sales_order_cockpit_export_SalesOrderNetPrice,
-        fin:Column_sales_order_cockpit_export_SalesOrderNetValue,
-        fin:Column_sales_order_cockpit_export_SalesOrderNumber,
-        fin:Column_sales_order_cockpit_export_SalesOrderProcessingStatus_GBSTK,
-        fin:Column_sales_order_cockpit_export_SalesOrderQty,
-        fin:Column_sales_order_cockpit_export_SalesOrderQuantity,
-        fin:Column_sales_order_cockpit_export_SalesOrderValue,
-        fin:Column_sales_order_cockpit_export_SalesOrder_PGI_Date,
-        fin:Column_sales_order_cockpit_export_SalesOrder_Route,
-        fin:Column_sales_order_cockpit_export_SalesOrganization,
-        fin:Column_sales_order_cockpit_export_SalesRepHeaderName_KUNNR,
-        fin:Column_sales_order_cockpit_export_SalesUnitMeasure,
-        fin:Column_sales_order_cockpit_export_Sales_District_Region,
-        fin:Column_sales_order_cockpit_export_Sales_Document_VBBE,
-        fin:Column_sales_order_cockpit_export_Sales_Order_Conversion,
-        fin:Column_sales_order_cockpit_export_ShipToPartyHeaderName_KUNNR,
-        fin:Column_sales_order_cockpit_export_ShipToPartyHeader_KUNNR,
-        fin:Column_sales_order_cockpit_export_ShipToPartyItemName_KUNNR,
-        fin:Column_sales_order_cockpit_export_ShipToPartyItem_KUNNR,
-        fin:Column_sales_order_cockpit_export_Shipment_Number,
-        fin:Column_sales_order_cockpit_export_Shipment_Type,
-        fin:Column_sales_order_cockpit_export_Shipment_Type_Desc,
-        fin:Column_sales_order_cockpit_export_Shippers_Exception,
-        fin:Column_sales_order_cockpit_export_ShippingLocation,
-        fin:Column_sales_order_cockpit_export_SoldToPartyHeaderName_KUNNR,
-        fin:Column_sales_order_cockpit_export_SoldToPartyHeader_KUNNR,
-        fin:Column_sales_order_cockpit_export_SoldToPartyItemName_KUNNR,
-        fin:Column_sales_order_cockpit_export_SoldToPartyItem_KUNNR,
-        fin:Column_sales_order_cockpit_export_SoldToParty_KUNNR,
-        fin:Column_sales_order_cockpit_export_TaxAmount_MWSBK,
-        fin:Column_sales_order_cockpit_export_TotalDeliveries,
-        fin:Column_sales_order_cockpit_export_TotalOrderItems,
-        fin:Column_sales_order_cockpit_export_TotalOrders,
-        fin:Column_sales_order_cockpit_export_Transport_Plan_Date,
-        fin:Column_sales_order_cockpit_export_Unhold_Date,
-        fin:Column_sales_order_cockpit_export_Volume_VOLUM ;
-    fin:isFactTable true ;
-    fin:project "arizona-poc" ;
-    fin:rowCount 3815338 ;
-    fin:tableName "sales_order_cockpit_export" ;
-    fin:tableType "FACT" .
 
 fin:Table_dataset_25m_table a fin:Table ;
     fin:dataset "copa_export_copa_data_000000000000" ;

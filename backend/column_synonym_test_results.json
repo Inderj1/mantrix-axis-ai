@@ -1,0 +1,83 @@
+{
+  "timestamp": "2025-11-11T15:06:26.746524",
+  "summary": {
+    "total_queries": 8,
+    "successful": 8,
+    "correct_columns": 6,
+    "success_rate": 100.0
+  },
+  "results": [
+    {
+      "id": 1,
+      "question": "Show me delivered quantity by material for last 6 months through June 2025",
+      "success": true,
+      "row_count": 2058,
+      "column_used_correctly": true,
+      "expected_column": "ZCS_Shipped_Quantity",
+      "sql_preview": "SELECT \n  Material_Number,\n  FORMAT('%\\'d', CAST(SUM(COALESCE(ZCS_Shipped_Quantity, 0)) AS INT64)) as delivered_quantity\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\nWHERE P..."
+    },
+    {
+      "id": 2,
+      "question": "What's the aging inventory report for products through June 2025",
+      "success": true,
+      "row_count": 1,
+      "column_used_correctly": false,
+      "expected_column": "Inv_Quantity",
+      "sql_preview": "SELECT \n  'Aging Inventory Report' as report_type,\n  'Data Not Available' as status,\n  'The available tables do not contain inventory aging data' as message,\n  'Available tables: GL_Accounts, cohort t..."
+    },
+    {
+      "id": 3,
+      "question": "Show inventory movement by product for first half of 2025",
+      "success": true,
+      "row_count": 1714,
+      "column_used_correctly": true,
+      "expected_column": "Material_Description",
+      "sql_preview": "SELECT \n  Material_Description as product,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(COALESCE(Gross_Revenue, 0)) - FLOOR(SUM(..."
+    },
+    {
+      "id": 4,
+      "question": "Which products are showing declining sales trends in first 6 months of 2025",
+      "success": true,
+      "row_count": 50,
+      "column_used_correctly": true,
+      "expected_column": "Material_Description",
+      "sql_preview": "WITH MonthlyProductSales AS (\n  SELECT \n    Material_Description as product,\n    EXTRACT(MONTH FROM Posting_Date) as month,\n    SUM(COALESCE(Gross_Revenue, 0)) as monthly_sales\n  FROM `arizona-poc.cop..."
+    },
+    {
+      "id": 5,
+      "question": "Show me sales by product and region for Q1 2025",
+      "success": true,
+      "row_count": 8718,
+      "column_used_correctly": true,
+      "expected_column": "Material_Description",
+      "sql_preview": "SELECT \n  Material_Description as product,\n  Sold_to_Region as region,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(COALESCE(Gro..."
+    },
+    {
+      "id": 6,
+      "question": "Who are the top 10 customers by revenue through June 2025",
+      "success": true,
+      "row_count": 10,
+      "column_used_correctly": false,
+      "expected_column": "Customer_Name",
+      "sql_preview": "SELECT \n  Customer,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(COALESCE(Gross_Revenue, 0)) - FLOOR(SUM(COALESCE(Gross_Revenue,..."
+    },
+    {
+      "id": 7,
+      "question": "What's the total quantity delivered by region in 2025 so far through June",
+      "success": true,
+      "row_count": 70,
+      "column_used_correctly": true,
+      "expected_column": "ZCS_Shipped_Quantity",
+      "sql_preview": "SELECT \n  Sold_to_Region as region,\n  FORMAT('%\\'d', CAST(SUM(COALESCE(ZCS_Shipped_Quantity, 0)) AS INT64)) as total_quantity_delivered\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m..."
+    },
+    {
+      "id": 8,
+      "question": "Show me inventory levels by material category as of June 2025",
+      "success": true,
+      "row_count": 2439,
+      "column_used_correctly": true,
+      "expected_column": "Material_Number",
+      "sql_preview": "SELECT \n  Material_Group_Description as category,\n  Material_Number as material,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(CO..."
+    }
+  ]
+}

@@ -96,7 +96,8 @@ ORDER BY current_inventory ASC"""
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
         join_hints: Optional[List[Dict[str, Any]]] = None,
-        conversation_context: Optional[Dict[str, Any]] = None
+        conversation_context: Optional[Dict[str, Any]] = None,
+        column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> Dict[str, Any]:
         """Generate SQL query from natural language using table schemas."""
         logger.info(f"=== Starting SQL generation ===")
@@ -131,7 +132,8 @@ ORDER BY current_inventory ASC"""
                 financial_context,
                 business_context,
                 join_hints,
-                conversation_context
+                conversation_context,
+                column_mappings
             )
             logger.info("User prompt built successfully")
             if join_hints:
@@ -594,12 +596,36 @@ Financial Query Rules:
 14. Apply the appropriate hierarchy level (L1, L2, or L3) based on the query intent
 15. For time-based financial queries, use fiscal periods when available
 16. Group financial data appropriately based on the requested dimensions"""
-            
+
+            # CRITICAL: If a SQL template is provided from the Knowledge Graph, USE IT!
+            if financial_context.get("suggested_query"):
+                financial_rules += """
+
+⚠️ CRITICAL - SQL TEMPLATE FROM KNOWLEDGE GRAPH ⚠️
+A pre-validated SQL template has been retrieved from the Knowledge Graph for this metric.
+This template contains the CORRECT formula and calculation logic.
+
+**YOU MUST USE THIS TEMPLATE AS YOUR PRIMARY SOURCE**
+
+Instructions:
+1. Use the provided SQL template as the foundation for your query
+2. Adapt ONLY the following elements to match the user's request:
+   - Table name (if different from template)
+   - Column names (map to actual schema)
+   - LIMIT clause (e.g., "top 10" → LIMIT 10)
+   - ORDER BY clause (if user specifies different sorting)
+   - Additional filters (e.g., time period, specific customers)
+3. DO NOT CHANGE the metric calculation logic in the template
+4. DO NOT CREATE your own formula - the template contains the validated formula
+5. The template formulas are from validated financial test suites - they are CORRECT
+
+If you deviate from the template's calculation logic, you WILL generate incorrect results."""
+
             if financial_context.get("formulas"):
                 financial_rules += "\n\nAvailable Financial Formulas:"
                 for metric, formula in financial_context["formulas"].items():
                     financial_rules += f"\n- {metric}: {list(formula.values())[0] if formula else 'N/A'}"
-            
+
             base_prompt += financial_rules
         
         return base_prompt
@@ -612,7 +638,8 @@ Financial Query Rules:
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
         join_hints: Optional[List[Dict[str, Any]]] = None,
-        conversation_context: Optional[Dict[str, Any]] = None
+        conversation_context: Optional[Dict[str, Any]] = None,
+        column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> str:
         prompt_parts = []
 
@@ -630,6 +657,41 @@ Financial Query Rules:
 
             prompt_parts.append(context_prompt)
             prompt_parts.append("\n" + "=" * 80 + "\n")
+
+        # Add column name mappings if available
+        if column_mappings:
+            prompt_parts.append("## COLUMN NAME MAPPINGS\n")
+            prompt_parts.append("When the user requests these terms, use the specified column names:\n\n")
+
+            # Filter mappings that appear in the query (case-insensitive)
+            query_lower = query.lower()
+            relevant_mappings = {}
+            for term, mappings in column_mappings.items():
+                if term in query_lower:
+                    relevant_mappings[term] = mappings
+
+            # If we found relevant mappings, show them prominently
+            if relevant_mappings:
+                prompt_parts.append("### 🎯 Mappings for YOUR query:\n")
+                for term, mappings in relevant_mappings.items():
+                    best = mappings[0]  # Highest confidence
+                    prompt_parts.append(f'- **"{term}"** → use column `{best["column"]}` from table `{best["table"]}`\n')
+                prompt_parts.append("\n")
+
+            # Also show top general mappings for reference
+            prompt_parts.append("### Common column mappings:\n")
+            shown = 0
+            for term, mappings in list(column_mappings.items())[:15]:
+                if term not in relevant_mappings:  # Don't duplicate
+                    best = mappings[0]
+                    prompt_parts.append(f'- "{term}" → `{best["column"]}`\n')
+                    shown += 1
+                    if shown >= 10:
+                        break
+
+            prompt_parts.append("\n⚠️ **CRITICAL**: Use ONLY columns that exist in the schema below. ")
+            prompt_parts.append("If a user term matches a mapping above, use that exact column name.\n\n")
+            prompt_parts.append("=" * 80 + "\n\n")
 
         # Add table schemas
         prompt_parts.append("Available tables and their schemas:")
@@ -721,6 +783,20 @@ Financial Query Rules:
             prompt_parts.append("\n\nFinancial Query Context:")
             prompt_parts.append(f"Hierarchy Level: {financial_context.get('hierarchy_level', 'Unknown')}")
             prompt_parts.append(f"Query Intent: {financial_context.get('intent', 'Unknown')}")
+
+            # Add SQL template if provided from Knowledge Graph
+            if financial_context.get("suggested_query"):
+                logger.info(f"✅ Adding SQL template to user prompt (length: {len(financial_context['suggested_query'])} chars)")
+                prompt_parts.append("\n\n🔥 VALIDATED SQL TEMPLATE FROM KNOWLEDGE GRAPH 🔥")
+                prompt_parts.append("This template contains the CORRECT formulas and calculation logic.")
+                prompt_parts.append("Adapt this template to match the user's request:")
+                prompt_parts.append("\n```sql")
+                prompt_parts.append(financial_context["suggested_query"])
+                prompt_parts.append("```")
+                prompt_parts.append("\n⚠️ DO NOT create your own formulas - USE THE TEMPLATE LOGIC!")
+                prompt_parts.append("Only adapt: table names, column names, LIMIT, filters, ORDER BY")
+            else:
+                logger.warning("❌ No SQL template in financial_context")
             
             if financial_context.get("metrics"):
                 prompt_parts.append("\nRequested Metrics:")

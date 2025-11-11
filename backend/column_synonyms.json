@@ -1,0 +1,227 @@
+{
+  "column_synonyms": [
+    {
+      "user_terms": ["delivered quantity", "delivered qty", "quantity delivered", "delivery quantity"],
+      "target_column": "ZCS_Shipped_Quantity",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.95,
+      "description": "Primary column for shipped/delivered quantities"
+    },
+    {
+      "user_terms": ["inventory quantity", "inv quantity", "stock quantity", "quantity on hand"],
+      "target_column": "Inv_Quantity",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Inventory quantity in base units"
+    },
+    {
+      "user_terms": ["quantity in cases", "case quantity", "cases"],
+      "target_column": "Inv_Quantity_Cases",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Inventory quantity in cases"
+    },
+    {
+      "user_terms": ["quantity", "qty", "volume"],
+      "target_column": "Inv_Quantity",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.75,
+      "description": "General quantity term - defaults to inventory quantity"
+    },
+    {
+      "user_terms": ["product", "product name", "item", "product description"],
+      "target_column": "Material_Description",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.85,
+      "description": "Product/material description"
+    },
+    {
+      "user_terms": ["product category", "product group", "category"],
+      "target_column": "Material_Group_Description",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.85,
+      "description": "Product category grouping"
+    },
+    {
+      "user_terms": ["product bu", "business unit", "product line"],
+      "target_column": "Product_BU",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.80,
+      "description": "Product business unit code"
+    },
+    {
+      "user_terms": ["material", "material number", "sku", "item number"],
+      "target_column": "Material_Number",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Material/SKU identifier"
+    },
+    {
+      "user_terms": ["region", "sales region", "customer region"],
+      "target_column": "Sold_to_Region",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.85,
+      "description": "Customer/sold-to region"
+    },
+    {
+      "user_terms": ["plant region", "manufacturing region", "production region"],
+      "target_column": "Plant_Region",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.85,
+      "description": "Plant/manufacturing region"
+    },
+    {
+      "user_terms": ["plant", "facility", "warehouse", "location"],
+      "target_column": "Plant",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.80,
+      "description": "Plant/facility code"
+    },
+    {
+      "user_terms": ["customer", "customer name", "account", "client"],
+      "target_column": "Customer",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Customer identifier"
+    },
+    {
+      "user_terms": ["customer name", "account name", "sold to name"],
+      "target_column": "Sold_to_Name",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Customer/sold-to party name"
+    },
+    {
+      "user_terms": ["revenue", "sales", "sales amount", "sales revenue"],
+      "target_column": "Gross_Revenue",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Gross revenue/sales amount"
+    },
+    {
+      "user_terms": ["cogs", "cost of goods sold", "cost of sales"],
+      "target_column": "Total_COGS",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.95,
+      "description": "Total cost of goods sold"
+    },
+    {
+      "user_terms": ["posting date", "transaction date", "date"],
+      "target_column": "Posting_Date",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Transaction posting date"
+    },
+    {
+      "user_terms": ["order", "sales order", "order number"],
+      "target_column": "Sales_Order_KDAUF",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.85,
+      "description": "Sales order number"
+    },
+    {
+      "user_terms": ["gl account", "account number", "ledger account"],
+      "target_column": "GL_Account",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.95,
+      "description": "General ledger account number"
+    },
+    {
+      "user_terms": ["vendor", "supplier", "vendor name"],
+      "target_column": "Vendor_lifnr",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Vendor/supplier identifier"
+    },
+    {
+      "user_terms": ["division", "business division"],
+      "target_column": "Division",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Business division"
+    },
+    {
+      "user_terms": ["distribution channel", "channel"],
+      "target_column": "Distribution_Channel",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Distribution channel"
+    },
+    {
+      "user_terms": ["sales rep", "salesperson", "sales representative"],
+      "target_column": "Sales_Rep",
+      "target_table": "dataset_25m_table",
+      "confidence": 0.90,
+      "description": "Sales representative"
+    },
+    {
+      "user_terms": ["order quantity", "ordered quantity", "quantity ordered"],
+      "target_column": "OrderQuantity_KWMENG",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.90,
+      "description": "Order quantity from sales order"
+    },
+    {
+      "user_terms": ["delivered quantity sales order", "actual quantity delivered"],
+      "target_column": "ActualQuantityDelivered_InSalesUnits_LFIMG",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.95,
+      "description": "Actual delivered quantity from sales order"
+    },
+    {
+      "user_terms": ["net value", "order value", "net amount"],
+      "target_column": "NetValue_NETWR",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.90,
+      "description": "Net value of sales order"
+    },
+    {
+      "user_terms": ["created date", "creation date", "order date"],
+      "target_column": "CreatedOn_ERDAT",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.85,
+      "description": "Order creation date"
+    },
+    {
+      "user_terms": ["rfm segment", "customer segment", "segment"],
+      "target_column": "RFM_Segment",
+      "target_table": "customer_master_analysis",
+      "confidence": 0.85,
+      "description": "RFM customer segmentation"
+    },
+    {
+      "user_terms": ["monetary", "customer revenue", "customer value"],
+      "target_column": "Monetary",
+      "target_table": "customer_master_analysis",
+      "confidence": 0.80,
+      "description": "Customer monetary value"
+    },
+    {
+      "user_terms": ["frequency", "purchase frequency", "order frequency"],
+      "target_column": "Frequency",
+      "target_table": "customer_master_analysis",
+      "confidence": 0.85,
+      "description": "Customer purchase frequency"
+    },
+    {
+      "user_terms": ["recency", "last purchase", "days since purchase"],
+      "target_column": "Recency",
+      "target_table": "customer_master_analysis",
+      "confidence": 0.85,
+      "description": "Days since last customer purchase"
+    },
+    {
+      "user_terms": ["profitability", "customer profit", "profit"],
+      "target_column": "Profitability",
+      "target_table": "customer_master_analysis",
+      "confidence": 0.80,
+      "description": "Customer profitability"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created_date": "2025-11-11",
+    "description": "Column synonym mappings for semantic query resolution",
+    "total_mappings": 31
+  }
+}
