@@ -5,6 +5,7 @@ from openai import OpenAI
 import structlog
 import json
 import time
+from pathlib import Path
 from src.config import settings
 from src.core.error_handler import QueryErrorHandler, ErrorType
 from src.core.schema_aware_generator import SchemaAwareGenerator
@@ -627,9 +628,20 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
                     financial_rules += f"\n- {metric}: {list(formula.values())[0] if formula else 'N/A'}"
 
             base_prompt += financial_rules
-        
+
         return base_prompt
-    
+
+    def _load_temporal_context(self) -> Optional[Dict[str, Any]]:
+        """Load temporal context from JSON file."""
+        try:
+            temporal_file = Path(__file__).parent.parent.parent / "temporal_context.json"
+            if temporal_file.exists():
+                with open(temporal_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load temporal context: {e}")
+        return None
+
     def _build_user_prompt(
         self,
         query: str,
@@ -642,6 +654,19 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> str:
         prompt_parts = []
+
+        # Load temporal context for date handling
+        temporal_context = self._load_temporal_context()
+        if temporal_context:
+            prompt_parts.append("## ⏰ TEMPORAL CONTEXT & DATA AVAILABILITY\n")
+            prompt_parts.append(f"**CRITICAL**: Data is available through **{temporal_context['data_availability']['dataset_25m_table']['max_date']}** ONLY.\n\n")
+            prompt_parts.append("### Date Handling Instructions:\n")
+            for hint in temporal_context['prompt_hints']['important']:
+                prompt_parts.append(f"- {hint}\n")
+            prompt_parts.append("\n### Relative Date Mappings:\n")
+            for term, mapping in temporal_context['temporal_guidance']['relative_date_handling'].items():
+                prompt_parts.append(f"- **'{term}'**: {mapping}\n")
+            prompt_parts.append("\n" + "=" * 80 + "\n\n")
 
         # If this is a follow-up query, prepend context-aware prompt
         if conversation_context and conversation_context.get("is_follow_up"):

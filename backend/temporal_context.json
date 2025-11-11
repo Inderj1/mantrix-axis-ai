@@ -1,0 +1,52 @@
+{
+  "description": "Temporal context for data availability - helps LLM understand data date ranges",
+  "current_analysis_date": "2025-11-11",
+  "data_availability": {
+    "dataset_25m_table": {
+      "min_date": "2023-08-02",
+      "max_date": "2025-06-30",
+      "total_rows": 72159301,
+      "description": "Primary transaction dataset with DATE-type Posting_Date",
+      "date_columns": {
+        "Posting_Date": {
+          "type": "DATE",
+          "format": "native",
+          "usage": "Direct comparison and extraction (e.g., WHERE Posting_Date >= '2025-01-01', EXTRACT(MONTH FROM Posting_Date))"
+        }
+      }
+    },
+    "transaction_data": {
+      "min_date": "2017-12-31",
+      "max_date": "2025-06-18",
+      "total_rows": 250000,
+      "description": "Transaction dataset with STRING-type Posting_Date",
+      "date_columns": {
+        "Posting_Date": {
+          "type": "STRING",
+          "format": "YYYY-MM-DD",
+          "parse_pattern": "%Y-%m-%d",
+          "usage": "Must use PARSE_DATE('%Y-%m-%d', Posting_Date) for date operations or direct string comparison (e.g., WHERE Posting_Date >= '2025-01-01')"
+        }
+      }
+    }
+  },
+  "temporal_guidance": {
+    "latest_complete_quarter": "Q2 2025 (April-June 2025)",
+    "latest_data_date": "2025-06-30",
+    "relative_date_handling": {
+      "last_quarter": "Use Q2 2025 (2025-04-01 to 2025-06-30) as data ends June 2025",
+      "last_6_months": "Use 2025-01-01 to 2025-06-30 as data ends June 2025",
+      "year_to_date": "Use 2025-01-01 to 2025-06-30 for 2025 YTD",
+      "current_quarter": "Use Q2 2025 (2025-04-01 to 2025-06-30) as latest available"
+    }
+  },
+  "prompt_hints": {
+    "important": [
+      "Data is available through June 30, 2025 ONLY",
+      "When queries ask for 'last quarter', 'current quarter', 'recent', use Q2 2025 (April-June 2025)",
+      "For transaction_data table, Posting_Date is STRING format 'YYYY-MM-DD' - use PARSE_DATE('%Y-%m-%d', Posting_Date) or direct string comparison",
+      "For dataset_25m_table, Posting_Date is DATE type - use direct date operations",
+      "Avoid CURRENT_DATE() in WHERE clauses - use explicit dates based on data availability"
+    ]
+  }
+}
