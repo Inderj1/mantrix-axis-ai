@@ -433,7 +433,12 @@ Rules:
 1. Generate valid BigQuery SQL syntax
 2. ALWAYS qualify table names with the dataset: `{settings.google_cloud_project}.{settings.bigquery_dataset}.table_name`
 3. IMPORTANT: If a table name contains hyphens or special characters, wrap the ENTIRE qualified table name in backticks
-4. Optimize queries for performance (use appropriate JOINs, filters, and aggregations)
+4. ⚠️ CRITICAL - AVOID UNNECESSARY JOINS:
+    - ONLY join tables if the required columns exist in DIFFERENT tables
+    - If ALL required columns exist in a SINGLE table, query ONLY that table
+    - JOINs on large tables (>1M rows) are expensive - avoid unless absolutely necessary
+    - Example: If sales_order_cockpit_export has SalesDocument, CreationDate, DeliveredQuantity, and NetValue, DO NOT join with dataset_25m_table
+    - Before adding a JOIN, verify that columns from the second table are actually needed and don't exist in the first table
 5. Use CTEs for complex queries to improve readability
 6. Consider using APPROX functions for large datasets when exact results aren't required
 7. Use proper date/timestamp functions for time-based queries
