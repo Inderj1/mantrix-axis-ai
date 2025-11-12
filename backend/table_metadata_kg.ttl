@@ -2552,57 +2552,136 @@ fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_2 a fin:ColumnSynonym ;
     fin:term "vendor name" .
 
 fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_0 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Shipped quantity from transaction data - use only when sales order table is not involved" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
-    fin:term "delivered quantity" .
+    fin:term "shipped quantity" .
 
 fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_1 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:description "Primary column for shipped/delivered quantities" ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Shipped quantity from transaction data - use only when sales order table is not involved" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
-    fin:term "delivered qty" .
-
-fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_2 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:description "Primary column for shipped/delivered quantities" ;
-    fin:isPrimary false ;
-    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
-    fin:term "quantity delivered" .
-
-fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_3 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:description "Primary column for shipped/delivered quantities" ;
-    fin:isPrimary false ;
-    fin:synonymOf fin:Column_dataset_25m_table_ZCS_Shipped_Quantity ;
-    fin:term "delivery quantity" .
+    fin:term "quantity shipped" .
 
 fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
+    fin:confidence "0.95"^^xsd:float,
+        "0.98"^^xsd:float ;
     fin:description "Actual delivered quantity from sales order",
-        "Actual quantity delivered in sales units for sales orders" ;
+        "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
     fin:term "delivered quantity",
         "delivered quantity sales order" .
 
 fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
+    fin:confidence "0.95"^^xsd:float,
+        "0.98"^^xsd:float ;
     fin:description "Actual delivered quantity from sales order",
-        "Actual quantity delivered in sales units for sales orders" ;
+        "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
     fin:term "actual delivered quantity",
         "actual quantity delivered" .
 
 fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_2 a fin:ColumnSynonym ;
-    fin:confidence "0.95"^^xsd:float ;
-    fin:description "Actual quantity delivered in sales units for sales orders" ;
+    fin:confidence "0.98"^^xsd:float ;
+    fin:description "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export" ;
     fin:isPrimary false ;
     fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
     fin:term "quantity delivered" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_3 a fin:ColumnSynonym ;
+    fin:confidence "0.98"^^xsd:float ;
+    fin:description "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
+    fin:term "delivered qty" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_4 a fin:ColumnSynonym ;
+    fin:confidence "0.98"^^xsd:float ;
+    fin:description "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG ;
+    fin:term "delivery quantity" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Order creation/document date - PRIMARY date field for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_CreationDate_ERDAT ;
+    fin:term "created date" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Order creation/document date - PRIMARY date field for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_CreationDate_ERDAT ;
+    fin:term "creation date" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Order creation/document date - PRIMARY date field for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_CreationDate_ERDAT ;
+    fin:term "order date" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_3 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Order creation/document date - PRIMARY date field for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_CreationDate_ERDAT ;
+    fin:term "sales document date" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_4 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Order creation/document date - PRIMARY date field for sales orders" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_CreationDate_ERDAT ;
+    fin:term "document date" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK_0 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Overall delivery status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK ;
+    fin:term "delivery status" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK_1 a fin:ColumnSynonym ;
+    fin:confidence "0.9"^^xsd:float ;
+    fin:description "Overall delivery status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK ;
+    fin:term "overall delivery status" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_0 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Overall processing status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA ;
+    fin:term "overall status" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_1 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Overall processing status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA ;
+    fin:term "processing status" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_2 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Overall processing status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA ;
+    fin:term "order status" .
+
+fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_3 a fin:ColumnSynonym ;
+    fin:confidence "0.95"^^xsd:float ;
+    fin:description "Overall processing status of the sales order" ;
+    fin:isPrimary false ;
+    fin:synonymOf fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA ;
+    fin:term "overall processing status" .
 
 fin:ColumnSynonym_sales_order_cockpit_export_SalesOrderNetValue_0 a fin:ColumnSynonym ;
     fin:confidence "0.95"^^xsd:float ;
@@ -6033,12 +6112,6 @@ fin:Column_sales_order_cockpit_export_Country a fin:Column ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
-fin:Column_sales_order_cockpit_export_CreationDate_ERDAT a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "CreationDate_ERDAT" ;
-    fin:dataType "DATE" ;
-    fin:isNullable true .
-
 fin:Column_sales_order_cockpit_export_CumulativeConfirmedQuantityInBaseUoM_KLMENG a fin:Column ;
     fin:belongsToTable fin:Table_sales_order_cockpit_export ;
     fin:columnName "CumulativeConfirmedQuantityInBaseUoM_KLMENG" ;
@@ -6462,18 +6535,6 @@ fin:Column_sales_order_cockpit_export_OverallBillingProcessingStatus_GBSTK a fin
 fin:Column_sales_order_cockpit_export_OverallBillingStatus_LSSTK a fin:Column ;
     fin:belongsToTable fin:Table_sales_order_cockpit_export ;
     fin:columnName "OverallBillingStatus_LSSTK" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "OverallDeliveryStatus_GBSTK" ;
-    fin:dataType "STRING" ;
-    fin:isNullable true .
-
-fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "OverallProcessingStatus_GBSTA" ;
     fin:dataType "STRING" ;
     fin:isNullable true .
 
@@ -8499,6 +8560,22 @@ fin:Column_dataset_25m_table_Division a fin:Column ;
         fin:ColumnSynonym_dataset_25m_table_Division_1 ;
     fin:isNullable true .
 
+fin:Column_dataset_25m_table_ZCS_Shipped_Quantity a fin:Column ;
+    fin:belongsToTable fin:Table_dataset_25m_table ;
+    fin:columnName "ZCS_Shipped_Quantity" ;
+    fin:dataType "FLOAT" ;
+    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_0,
+        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_1 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "OverallDeliveryStatus_GBSTK" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_OverallDeliveryStatus_GBSTK_1 ;
+    fin:isNullable true .
+
 fin:Column_customer_master_analysis_Frequency a fin:Column ;
     fin:belongsToTable fin:Table_customer_master_analysis ;
     fin:columnName "Frequency" ;
@@ -8652,15 +8729,6 @@ fin:Column_dataset_25m_table_Vendor_lifnr a fin:Column ;
         fin:ColumnSynonym_dataset_25m_table_Vendor_lifnr_2 ;
     fin:isNullable true .
 
-fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
-    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
-    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
-    fin:dataType "NUMERIC" ;
-    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0,
-        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1,
-        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_2 ;
-    fin:isNullable true .
-
 fin:Column_sales_order_cockpit_export_SalesOrderNetValue a fin:Column ;
     fin:belongsToTable fin:Table_sales_order_cockpit_export ;
     fin:columnName "SalesOrderNetValue" ;
@@ -8730,14 +8798,36 @@ fin:Column_dataset_25m_table_Plant a fin:Column ;
         fin:ColumnSynonym_dataset_25m_table_Plant_3 ;
     fin:isNullable true .
 
-fin:Column_dataset_25m_table_ZCS_Shipped_Quantity a fin:Column ;
-    fin:belongsToTable fin:Table_dataset_25m_table ;
-    fin:columnName "ZCS_Shipped_Quantity" ;
-    fin:dataType "FLOAT" ;
-    fin:hasSynonym fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_0,
-        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_1,
-        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_2,
-        fin:ColumnSynonym_dataset_25m_table_ZCS_Shipped_Quantity_3 ;
+fin:Column_sales_order_cockpit_export_OverallProcessingStatus_GBSTA a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "OverallProcessingStatus_GBSTA" ;
+    fin:dataType "STRING" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_1,
+        fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_2,
+        fin:ColumnSynonym_sales_order_cockpit_export_OverallProcessingStatus_GBSTA_3 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "ActualQuantityDelivered_InSalesUnits_LFIMG" ;
+    fin:dataType "NUMERIC" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_1,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_2,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_3,
+        fin:ColumnSynonym_sales_order_cockpit_export_ActualQuantityDelivered_InSalesUnits_LFIMG_4 ;
+    fin:isNullable true .
+
+fin:Column_sales_order_cockpit_export_CreationDate_ERDAT a fin:Column ;
+    fin:belongsToTable fin:Table_sales_order_cockpit_export ;
+    fin:columnName "CreationDate_ERDAT" ;
+    fin:dataType "DATE" ;
+    fin:hasSynonym fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_0,
+        fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_1,
+        fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_2,
+        fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_3,
+        fin:ColumnSynonym_sales_order_cockpit_export_CreationDate_ERDAT_4 ;
     fin:isNullable true .
 
 fin:Table_GL_Accounts a fin:Table ;

@@ -66,17 +66,57 @@ class BigQueryClient:
             logger.error(f"Failed to initialize BigQuery client: {e}")
             raise
     
+    def _qualify_table_names(self, query: str) -> str:
+        """Auto-qualify unqualified table names with project.dataset prefix, excluding CTEs."""
+        import re
+
+        # Extract CTE names from WITH clauses to avoid qualifying them
+        cte_pattern = r'\bWITH\s+(\w+)\s+AS\s*\(|,\s*(\w+)\s+AS\s*\('
+        cte_names = set()
+        for match in re.finditer(cte_pattern, query, re.IGNORECASE):
+            cte_name = match.group(1) or match.group(2)
+            if cte_name:
+                cte_names.add(cte_name.lower())
+
+        logger.info(f"Found {len(cte_names)} CTEs: {cte_names}")
+
+        # Pattern to match unqualified table names (no backticks or dots before them)
+        # Matches: FROM tablename, JOIN tablename, but not FROM `project.dataset.table` or dataset.table
+        pattern = r'\b(FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b'
+
+        def replacer(match):
+            keyword = match.group(1)
+            table_name = match.group(2)
+
+            # Don't qualify if it's a CTE name
+            if table_name.lower() in cte_names:
+                return match.group(0)  # Return unchanged
+
+            # Don't qualify if already qualified (contains backtick or will be qualified)
+            qualified_name = f"`{self.project_id}.{self.dataset_id}.{table_name}`"
+            return f"{keyword} {qualified_name}"
+
+        qualified_query = re.sub(pattern, replacer, query, flags=re.IGNORECASE)
+
+        if qualified_query != query:
+            logger.info(f"Auto-qualified table names in query")
+
+        return qualified_query
+
     def execute_query(self, query: str) -> List[Dict[str, Any]]:
         """Execute a SQL query and return results as list of dictionaries."""
         try:
+            # Auto-qualify unqualified table names
+            query = self._qualify_table_names(query)
+
             logger.info(f"Executing query: {query[:100]}...")
             query_job = self.client.query(query)
             results = query_job.result()
-            
+
             rows = []
             for row in results:
                 rows.append(dict(row))
-            
+
             logger.info(f"Query returned {len(rows)} rows")
             return rows
         except Exception as e:

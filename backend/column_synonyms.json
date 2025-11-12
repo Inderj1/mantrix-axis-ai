@@ -8,18 +8,18 @@
       "description": "Sales order net value from sales order cockpit"
     },
     {
-      "user_terms": ["delivered quantity", "actual delivered quantity", "quantity delivered"],
+      "user_terms": ["delivered quantity", "actual delivered quantity", "quantity delivered", "delivered qty", "delivery quantity"],
       "target_column": "ActualQuantityDelivered_InSalesUnits_LFIMG",
       "target_table": "sales_order_cockpit_export",
-      "confidence": 0.95,
-      "description": "Actual quantity delivered in sales units for sales orders"
+      "confidence": 0.98,
+      "description": "PRIMARY: Actual quantity delivered for sales order queries - use this for sales_order_cockpit_export"
     },
     {
-      "user_terms": ["delivered quantity", "delivered qty", "quantity delivered", "delivery quantity"],
+      "user_terms": ["shipped quantity", "quantity shipped"],
       "target_column": "ZCS_Shipped_Quantity",
       "target_table": "dataset_25m_table",
-      "confidence": 0.95,
-      "description": "Primary column for shipped/delivered quantities"
+      "confidence": 0.90,
+      "description": "Shipped quantity from transaction data - use only when sales order table is not involved"
     },
     {
       "user_terms": ["inventory quantity", "inv quantity", "stock quantity", "quantity on hand"],
@@ -190,11 +190,25 @@
       "description": "Net value of sales order"
     },
     {
-      "user_terms": ["created date", "creation date", "order date"],
-      "target_column": "CreatedOn_ERDAT",
+      "user_terms": ["created date", "creation date", "order date", "sales document date", "document date"],
+      "target_column": "CreationDate_ERDAT",
       "target_table": "sales_order_cockpit_export",
-      "confidence": 0.85,
-      "description": "Order creation date"
+      "confidence": 0.95,
+      "description": "Order creation/document date - PRIMARY date field for sales orders"
+    },
+    {
+      "user_terms": ["overall status", "processing status", "order status", "overall processing status"],
+      "target_column": "OverallProcessingStatus_GBSTA",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.95,
+      "description": "Overall processing status of the sales order"
+    },
+    {
+      "user_terms": ["delivery status", "overall delivery status"],
+      "target_column": "OverallDeliveryStatus_GBSTK",
+      "target_table": "sales_order_cockpit_export",
+      "confidence": 0.90,
+      "description": "Overall delivery status of the sales order"
     },
     {
       "user_terms": ["rfm segment", "customer segment", "segment"],

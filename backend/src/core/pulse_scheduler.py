@@ -115,16 +115,18 @@ class PulseScheduler:
 
         frequency = result[0]['frequency']
 
-        # Calculate next run using the SQL function
+        # Calculate next run using the Python method
+        next_run = self.pulse_service._calculate_next_run(frequency)
+
         update_query = """
         UPDATE pulse_monitors
         SET
-            next_run = calculate_next_run(%s, CURRENT_TIMESTAMP),
+            next_run = %s,
             last_run = CURRENT_TIMESTAMP
         WHERE id = %s
         """
 
-        self.pg_client.execute_query(update_query, (frequency, monitor_id))
+        self.pg_client.execute_query(update_query, (next_run, monitor_id))
         logger.info(f"Updated next_run for monitor {monitor_id} with frequency {frequency}")
 
 

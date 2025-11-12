@@ -133,8 +133,7 @@ ORDER BY current_inventory ASC"""
                 financial_context,
                 business_context,
                 join_hints,
-                conversation_context,
-                column_mappings
+                conversation_context
             )
             logger.info("User prompt built successfully")
             if join_hints:
@@ -433,27 +432,40 @@ Rules:
 1. Generate valid BigQuery SQL syntax
 2. ALWAYS qualify table names with the dataset: `{settings.google_cloud_project}.{settings.bigquery_dataset}.table_name`
 3. IMPORTANT: If a table name contains hyphens or special characters, wrap the ENTIRE qualified table name in backticks
-4. ⚠️ CRITICAL - AVOID UNNECESSARY JOINS:
-    - ONLY join tables if the required columns exist in DIFFERENT tables
-    - If ALL required columns exist in a SINGLE table, query ONLY that table
-    - JOINs on large tables (>1M rows) are expensive - avoid unless absolutely necessary
-    - Example: If sales_order_cockpit_export has SalesDocument, CreationDate, DeliveredQuantity, and NetValue, DO NOT join with dataset_25m_table
-    - Before adding a JOIN, verify that columns from the second table are actually needed and don't exist in the first table
+4. ⚠️ CRITICAL - AVOID UNNECESSARY JOINS & PREFER SINGLE-TABLE QUERIES:
+    - FIRST: Check if ALL required columns exist in a SINGLE table - if yes, use ONLY that table (no joins!)
+    - If columns exist in multiple tables, prefer the SMALLEST/MOST SPECIFIC table:
+      * For sales order queries → use sales_order_cockpit_export (3.8M rows) NOT dataset_25m_table (72M rows)
+      * For customer analysis → use customer_master_analysis (2.9K rows) NOT dataset_25m_table
+      * For product queries → use product_customer_matrix first, then dataset_25m_table if needed
+    - JOINs on large tables (>1M rows) are EXTREMELY EXPENSIVE - avoid unless absolutely necessary
+    - Example scenario:
+      * Query: "List sales orders where delivered quantity is 0"
+      * Check: sales_order_cockpit_export has ActualQuantityDelivered_InSalesUnits_LFIMG ✅
+      * Result: Use ONLY sales_order_cockpit_export, NO JOIN to dataset_25m_table ✅
+    - Before adding a JOIN, ask yourself: "Do I really need data from the second table, or does the first table have everything?"
+    - If you're tempted to join dataset_25m_table (72M rows), STOP and verify the columns don't exist elsewhere
 5. Use CTEs for complex queries to improve readability
 6. Consider using APPROX functions for large datasets when exact results aren't required
 7. Use proper date/timestamp functions for time-based queries
 8. Always include appropriate WHERE clauses to limit data scanned
 9. Do not include backticks or triple quotes around the SQL - just provide the raw SQL query
 10. For better performance, consider using materialized views when available
-11. ⚠️ CRITICAL - COLUMN NAME VALIDATION (NEVER GUESS OR HALLUCINATE):
-    - ONLY use column names that EXACTLY match the schema provided below
-    - NEVER invent, guess, or assume column names based on patterns (e.g., DO NOT create NetValue_NETWR if schema shows SalesOrderNetValue)
+11. ⚠️ CRITICAL - COLUMN NAME VALIDATION (NEVER GUESS, INVENT, OR HALLUCINATE):
+    - **THE SCHEMA BELOW IS THE SINGLE SOURCE OF TRUTH** - No exceptions!
+    - ONLY use column names that EXACTLY match character-for-character in the schema below
+    - NEVER invent, guess, or assume column names based on SAP naming patterns you see
+    - ❌ COMMON MISTAKE: Seeing "DocumentDate_AUDAT" and inventing "SalesDocumentDate_ERDAT"
+    - ✅ CORRECT APPROACH: If you need a date column, search the schema for columns containing "Date" or "ERDAT"
     - If a column name has a suffix like _ERDAT or _VBELN, DO NOT assume other columns follow the same pattern
-    - CHECK EVERY column name against the schema before using it
-    - If you cannot find an appropriate column, return an error - DO NOT guess
-    - Example WRONG behavior: Schema has "SalesOrderNetValue" → You use "NetValue_NETWR" ❌
-    - Example CORRECT behavior: Schema has "SalesOrderNetValue" → You use "SalesOrderNetValue" ✅
-    - When in doubt about a column name, VERIFY IT EXISTS in the schema list
+    - DO NOT combine table names with column names (e.g., NO "SalesDocument" + "Date" = "SalesDocumentDate")
+    - CHECK EVERY column name against the schema list below before writing it in your SQL
+    - If you cannot find an appropriate column in the schema, return an error with "Column not found: [name]" - DO NOT guess
+    - Example scenarios:
+      * Schema has "CreationDate_ERDAT" → You must use "CreationDate_ERDAT" (NOT "SalesDocumentDate_ERDAT", NOT "DocumentDate_ERDAT")
+      * Schema has "OverallProcessingStatus_GBSTA" → You must use "OverallProcessingStatus_GBSTA" (NOT "OverallSDProcessStatus_GBSTK")
+      * Schema has "SalesOrderNetValue" → You must use "SalesOrderNetValue" (NOT "NetValue_NETWR")
+    - When in doubt, CTRL+F search the schema below for the column - if it's not there, it doesn't exist
 12. CRITICAL: Check column data types before applying CAST:
     - DO NOT use CAST on numeric columns (FLOAT64, INT64, NUMERIC) for SUM/AVG operations
     - DO NOT use NULLIF(column, '') on numeric columns - they cannot contain empty strings
@@ -520,15 +532,12 @@ Rules:
 19. CRITICAL - COLUMN FORMATTING RULES (Make Results Readable):
     ⭐ ALWAYS FORMAT MONETARY VALUES, PERCENTAGES, AND COUNTS ⭐
 
-    **Currency Columns** - Apply dollar sign AND thousand separators:
+    **Currency Columns** - Round to 2 decimals, frontend will add $ and commas:
 
-    CRITICAL FORMAT PATTERN (BigQuery-compatible with thousand separators):
-    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(column_value) AS INT64)), FORMAT('.%02d', CAST(ROUND((column_value - FLOOR(column_value)) * 100) AS INT64)))
+    CRITICAL: BigQuery FORMAT() does NOT support comma separators.
+    Return numeric values rounded appropriately - frontend handles formatting.
 
-    This pattern ensures exactly 2 decimal places and thousand separators.
-
-    The first parameter MUST be the string '$' (DOLLAR SIGN character)
-    NOT comma, NOT other punctuation, ONLY dollar sign: $
+    For currency columns, use: ROUND(column_value, 2)
 
     Apply to:
     - Revenue, Sales, Gross_Revenue, Net_Sales, Gross_Sales
@@ -541,17 +550,14 @@ Rules:
     - Tax (when not rate), Asset, Liability, Equity
     - SAP value fields: VV001, VV002, VV003, etc.
 
-    CORRECT Example (with thousand separators):
-    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(COALESCE(Gross_Revenue, 0)) - FLOOR(SUM(COALESCE(Gross_Revenue, 0)))) * 100) AS INT64))) as revenue
+    CORRECT Example:
+    ROUND(SUM(COALESCE(Gross_Revenue, 0)), 2) as revenue
 
     WRONG - DO NOT USE:
-    CONCAT(',', FORMAT(...))                    -- WRONG: comma instead of dollar
-    CONCAT('', FORMAT(...))                     -- WRONG: empty string
-    FORMAT('%\\', d', ...)                       -- WRONG: missing dollar sign
-    CAST(ROUND(..., 2) AS STRING)               -- WRONG: no thousand separators
-    FORMAT('%,.2f', ...)                        -- WRONG: BigQuery doesn't support this
-
-    The character between CONCAT(' and ' MUST be: $
+    FORMAT('%,d', ...)                          -- WRONG: BigQuery doesn't support comma formatting
+    FORMAT('%,.2f', ...)                        -- WRONG: BigQuery doesn't support comma formatting
+    FORMAT('%\'d', ...)                         -- WRONG: invalid BigQuery syntax
+    CONCAT('$', ...)                            -- WRONG: frontend adds currency symbols
 
     **Percentage Columns** - Apply `CONCAT(CAST(ROUND(column_name, 2) AS STRING), '%')` to:
     - Margin_Percent, Margin_Pct, Growth_Rate, Change_Percent
@@ -560,19 +566,19 @@ Rules:
 
     Example: `CONCAT(CAST(ROUND(margin_percent, 2) AS STRING), '%') as margin`
 
-    **Numeric Columns** (integers with commas) - Apply `FORMAT('%\\'d', CAST(column_value AS INT64))` to:
+    **Numeric Columns** - Return as integers, frontend will add commas:
     - Quantity, Qty, Count, Number, Volume
     - Units, Cases, Items, Orders, Transactions
 
-    Example: `FORMAT('%\\'d', CAST(COUNT(DISTINCT customer_id) AS INT64)) as customer_count`
+    Example: `CAST(COUNT(DISTINCT customer_id) AS INT64) as customer_count`
 
     **IMPORTANT**:
-    - Format EVERY applicable column in SELECT clause
-    - Apply to BOTH raw columns AND calculated fields
-    - The formatting pattern is complex but ensures thousand separators appear correctly
-    - Use COALESCE before formatting: SUM(COALESCE(Gross_Revenue, 0))
+    - Return clean numeric values - BigQuery cannot format with commas
+    - Use COALESCE to handle NULLs: SUM(COALESCE(Gross_Revenue, 0))
+    - Round currency to 2 decimals, quantities to integers
+    - Only add '%' suffix for percentages - all other formatting happens frontend
 
-    **Good Example** - Copy this formatting pattern exactly:
+    **Good Example** - Return clean numeric values:
 
     WITH CustomerMetrics AS (
       SELECT
@@ -585,19 +591,54 @@ Rules:
     )
     SELECT
       Customer,
-      CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_revenue) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_revenue - FLOOR(total_revenue)) * 100) AS INT64))) as revenue,
-      CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_cogs) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_cogs - FLOOR(total_cogs)) * 100) AS INT64))) as cogs,
-      FORMAT('%\\'d', CAST(order_count AS INT64)) as order_count
+      ROUND(total_revenue, 2) as revenue,
+      ROUND(total_cogs, 2) as cogs,
+      CAST(order_count AS INT64) as order_count
     FROM CustomerMetrics
 
-    NOTE: First character in CONCAT must be '$' (dollar sign, ASCII 36)
+    ⚠️ Frontend will format: 1234567.89 → $1,234,567.89 and 1234 → 1,234
 
-    **User Expectation**:
-    - Revenue: $1,234,567.89 (NOT 1234567.89)
-    - Margin: 25.5% (NOT 0.255 or 25.5)
-    - Count: 1,234 (NOT 1234)
+20. CRITICAL - TEMPORAL AGGREGATION PATTERNS (Multi-Period Comparisons):
 
-    ⚠️ DO NOT skip formatting - users expect presentation-ready results!"""
+    **When comparing periods (e.g., "average of previous 3 months"), MUST aggregate by period FIRST, THEN average:**
+
+    ❌ WRONG - Averaging individual rows:
+    ```sql
+    SELECT MaterialNumber, AVG(quantity) as avg_qty
+    FROM sales
+    WHERE date >= '2025-02-01' AND date <= '2025-04-30'
+    GROUP BY MaterialNumber  -- This averages ALL individual rows
+    ```
+
+    ✅ CORRECT - Aggregate by period first, then average:
+    ```sql
+    WITH MonthlyTotals AS (
+      SELECT
+        MaterialNumber,
+        DATE_TRUNC(date, MONTH) as month,
+        SUM(quantity) as monthly_qty
+      FROM sales
+      WHERE date >= '2025-02-01' AND date <= '2025-04-30'
+      GROUP BY MaterialNumber, month  -- Aggregate by month FIRST
+    )
+    SELECT
+      MaterialNumber,
+      AVG(monthly_qty) as avg_monthly_qty  -- THEN average the monthly totals
+    FROM MonthlyTotals
+    GROUP BY MaterialNumber
+    ```
+
+    **Key Pattern**: Period comparison queries require TWO levels of aggregation:
+    1. First level: Aggregate to period granularity (daily → monthly, monthly → quarterly)
+    2. Second level: Calculate average/comparison across periods
+
+    This applies to:
+    - "Average of previous N months/quarters"
+    - "Compare to same period last year"
+    - "Month-over-month growth"
+    - Any query comparing aggregated periods
+
+    ⚠️ Failing to use two-level aggregation produces mathematically incorrect results!"""
 
         # Add financial context if provided
         if financial_context:
@@ -663,8 +704,7 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
         join_hints: Optional[List[Dict[str, Any]]] = None,
-        conversation_context: Optional[Dict[str, Any]] = None,
-        column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        conversation_context: Optional[Dict[str, Any]] = None
     ) -> str:
         prompt_parts = []
 
@@ -695,41 +735,6 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
 
             prompt_parts.append(context_prompt)
             prompt_parts.append("\n" + "=" * 80 + "\n")
-
-        # Add column name mappings if available
-        if column_mappings:
-            prompt_parts.append("## COLUMN NAME MAPPINGS\n")
-            prompt_parts.append("When the user requests these terms, use the specified column names:\n\n")
-
-            # Filter mappings that appear in the query (case-insensitive)
-            query_lower = query.lower()
-            relevant_mappings = {}
-            for term, mappings in column_mappings.items():
-                if term in query_lower:
-                    relevant_mappings[term] = mappings
-
-            # If we found relevant mappings, show them prominently
-            if relevant_mappings:
-                prompt_parts.append("### 🎯 Mappings for YOUR query:\n")
-                for term, mappings in relevant_mappings.items():
-                    best = mappings[0]  # Highest confidence
-                    prompt_parts.append(f'- **"{term}"** → use column `{best["column"]}` from table `{best["table"]}`\n')
-                prompt_parts.append("\n")
-
-            # Also show top general mappings for reference
-            prompt_parts.append("### Common column mappings:\n")
-            shown = 0
-            for term, mappings in list(column_mappings.items())[:15]:
-                if term not in relevant_mappings:  # Don't duplicate
-                    best = mappings[0]
-                    prompt_parts.append(f'- "{term}" → `{best["column"]}`\n')
-                    shown += 1
-                    if shown >= 10:
-                        break
-
-            prompt_parts.append("\n⚠️ **CRITICAL**: Use ONLY columns that exist in the schema below. ")
-            prompt_parts.append("If a user term matches a mapping above, use that exact column name.\n\n")
-            prompt_parts.append("=" * 80 + "\n\n")
 
         # Add table schemas
         prompt_parts.append("Available tables and their schemas:")

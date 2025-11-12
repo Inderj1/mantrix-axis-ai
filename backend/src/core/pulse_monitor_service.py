@@ -6,6 +6,7 @@ import uuid
 import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
+from decimal import Decimal
 import structlog
 from ..db.postgresql_client import PostgreSQLClient
 from ..db.bigquery import BigQueryClient
@@ -13,6 +14,13 @@ from .sql_generator import SQLGenerator
 from .llm_client import LLMClient
 
 logger = structlog.get_logger()
+
+
+def decimal_serializer(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 class PulseMonitorService:
@@ -487,7 +495,7 @@ class PulseMonitorService:
             monitor['severity'],
             title,
             message,
-            json.dumps(alert_data),
+            json.dumps(alert_data, default=decimal_serializer),
             'active'
         )
 
@@ -632,7 +640,7 @@ class PulseMonitorService:
         """
         self.pg_client.execute_query(
             query,
-            (next_run, json.dumps(results[:5]), monitor_id)  # Store first 5 results
+            (next_run, json.dumps(results[:5], default=decimal_serializer), monitor_id)  # Store first 5 results
         )
 
     def _log_execution(
