@@ -645,15 +645,15 @@ function App() {
         }}
         onLoadConversation={(convId) => {
           console.log('Loading conversation:', convId);
-          setConversationId(convId);
           setChatView('chat');
           setSelectedTab('chat');
           // Load the conversation in the chat interface
+          // Don't set conversationId here - let loadConversation handle it
           setTimeout(() => {
             if (chatInterfaceRef.current?.loadConversation) {
               chatInterfaceRef.current.loadConversation(convId);
             }
-          }, 100);
+          }, 150);
         }}
         onDeleteConversation={(convId) => {
           if (chatInterfaceRef.current?.handleDeleteConversation) {

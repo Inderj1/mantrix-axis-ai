@@ -73,6 +73,7 @@ import QueryLogger from './QueryLogger';
 import EnhancedAnalyticsModal from './EnhancedAnalyticsModal';
 import MantraxResultsView from './MantraxResultsView';
 import FollowUpSuggestions from './FollowUpSuggestions';
+import PlotlyVisualization from './PlotlyVisualization';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-sql';
 import 'ace-builds/src-noconflict/theme-monokai';
@@ -198,6 +199,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [showVisualization, setShowVisualization] = useState({});
   const [conversations, setConversations] = useState([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1789,59 +1791,32 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                   />
                 )}
 
-                {/* Visualization Toggle */}
-                {(() => {
-                  const chartData = prepareChartData(message.results);
-                  console.log('Visualization toggle check:', {
-                    messageId: message.id,
-                    hasResults: !!message.results,
-                    resultsLength: message.results?.length,
-                    chartData: chartData,
-                    hasNumericData: chartData?.hasNumericData
-                  });
-                  return chartData?.hasNumericData;
-                })() && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 2 }}>
-                    <ToggleButtonGroup
-                      value={visualizationType[message.id] || 'table'}
-                      exclusive
-                      onChange={(e, v) => v && setVisualizationType(prev => ({ ...prev, [message.id]: v }))}
-                      size="small"
+                {/* Visualization Toggle - Single Button */}
+                {message.results && message.results.length > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 3, mb: 2, gap: 2 }}>
+                    <Button
+                      variant={showVisualization[message.id] ? 'contained' : 'outlined'}
+                      startIcon={showVisualization[message.id] ? <TableChartIcon /> : <AutoGraphIcon />}
+                      onClick={() => setShowVisualization(prev => ({ ...prev, [message.id]: !prev[message.id] }))}
+                      size="medium"
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        px: 3,
+                        py: 1
+                      }}
                     >
-                      <ToggleButton value="table">
-                        <MuiTooltip title="Table View"><TableChartIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="bar">
-                        <MuiTooltip title="Bar Chart"><BarChartIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="line">
-                        <MuiTooltip title="Line Chart"><TimelineIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="pie">
-                        <MuiTooltip title="Pie Chart"><PieChartIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="area">
-                        <MuiTooltip title="Area Chart"><AnalyticsIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="scatter">
-                        <MuiTooltip title="Scatter Plot"><ScatterPlotIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="radar">
-                        <MuiTooltip title="Radar Chart"><RadarIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="treemap">
-                        <MuiTooltip title="Treemap"><ViewModuleIcon /></MuiTooltip>
-                      </ToggleButton>
-                      <ToggleButton value="funnel">
-                        <MuiTooltip title="Funnel Chart"><FilterListIcon /></MuiTooltip>
-                      </ToggleButton>
-                    </ToggleButtonGroup>
+                      {showVisualization[message.id] ? 'Show Table' : 'Visualize Data'}
+                    </Button>
                   </Box>
                 )}
-                
-                <Box sx={{ height: 400, width: '100%' }}>
-                  {visualizationType[message.id] && visualizationType[message.id] !== 'table' ? (
-                    renderVisualization(message.id, message.results)
+
+                <Box sx={{ width: '100%' }}>
+                  {showVisualization[message.id] ? (
+                    <PlotlyVisualization
+                      data={message.results}
+                      title={message.question || 'Query Results Visualization'}
+                    />
                   ) : (
                     (() => {
                       try {

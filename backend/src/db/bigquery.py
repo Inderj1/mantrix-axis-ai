@@ -103,9 +103,21 @@ class BigQueryClient:
 
         return qualified_query
 
-    def execute_query(self, query: str) -> List[Dict[str, Any]]:
-        """Execute a SQL query and return results as list of dictionaries."""
+    def execute_query(self, query: str, max_rows: Optional[int] = None) -> Dict[str, Any]:
+        """Execute a SQL query and return results with metadata.
+
+        Args:
+            query: SQL query to execute
+            max_rows: Maximum number of rows to fetch (default: 10000 for safety)
+
+        Returns:
+            Dictionary with 'rows', 'total_rows', 'truncated' keys
+        """
         try:
+            # Safety limit - prevent memory issues
+            if max_rows is None:
+                max_rows = 10000  # Default max
+
             # Auto-qualify unqualified table names
             query = self._qualify_table_names(query)
 
@@ -113,12 +125,27 @@ class BigQueryClient:
             query_job = self.client.query(query)
             results = query_job.result()
 
+            # Get total row count
+            total_rows = results.total_rows
+
             rows = []
-            for row in results:
+            truncated = False
+
+            for i, row in enumerate(results):
+                if i >= max_rows:
+                    truncated = True
+                    logger.warning(f"Result set truncated at {max_rows} rows (total: {total_rows})")
+                    break
                 rows.append(dict(row))
 
-            logger.info(f"Query returned {len(rows)} rows")
-            return rows
+            logger.info(f"Query returned {len(rows)} rows (total available: {total_rows}, truncated: {truncated})")
+
+            return {
+                'rows': rows,
+                'total_rows': total_rows,
+                'truncated': truncated,
+                'fetched_rows': len(rows)
+            }
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
             raise
