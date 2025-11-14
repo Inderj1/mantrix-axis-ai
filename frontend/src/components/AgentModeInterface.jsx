@@ -35,6 +35,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Collapse,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -106,7 +107,7 @@ import {
 } from 'recharts';
 
 // Chart colors
-const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0', '#ffb347', '#67b7dc'];
+const COLORS = ['#8884d8', '#60a5fa', '#ffc658', '#ff7c7c', '#a78bfa', '#d084d0', '#ffb347', '#67b7dc'];
 
 // Helper function: Debounce utility
 const useDebounce = (value, delay) => {
@@ -276,13 +277,35 @@ const AgentModeInterface = forwardRef((props, ref) => {
   const [tableViewMode, setTableViewMode] = useState({}); // Track view mode per query index
   const [tableChartType, setTableChartType] = useState({}); // Track chart type per query index
   const [tablePivotState, setTablePivotState] = useState({}); // Track pivot state per query index
+  const [expandedSteps, setExpandedSteps] = useState({}); // Track which execution steps are expanded
   const initializationRef = useRef(false);
 
   console.log('AgentModeInterface rendering, mode:', mode, 'userId:', userId);
 
+  // Load cached messages on mount
+  useEffect(() => {
+    const cachedMessages = localStorage.getItem(`agentMode_messages_${userId}`);
+    if (cachedMessages) {
+      try {
+        const parsed = JSON.parse(cachedMessages);
+        // Convert timestamp strings back to Date objects
+        const messagesWithDates = parsed.map(msg => ({
+          ...msg,
+          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+        }));
+        setMessages(messagesWithDates);
+      } catch (error) {
+        console.error('Failed to load cached messages:', error);
+      }
+    }
+  }, [userId]);
 
-  // No initialization needed - Agent Mode has no conversation persistence
-  // Messages are kept only in current session memory
+  // Save messages to cache whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem(`agentMode_messages_${userId}`, JSON.stringify(messages));
+    }
+  }, [messages, userId]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -1302,7 +1325,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
               >
                 {/* Collapsed Header */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                  <CheckCircleIcon sx={{ color: '#10b981', fontSize: 18 }} />
+                  <CheckCircleIcon sx={{ color: '#3b82f6', fontSize: 18 }} />
                   <Box sx={{ flex: 1 }}>
                     <Typography
                       variant="subtitle1"
@@ -1390,7 +1413,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     left: 0,
                     height: '100%',
                     width: message.streaming ? `${Math.min((message.statusMessages.length / 8) * 100, 100)}%` : '100%',
-                    background: message.streaming ? 'linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)' : 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                    background: message.streaming ? 'linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)' : 'linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)',
                     borderRadius: 1,
                     transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&::after': message.streaming ? {
@@ -1406,112 +1429,315 @@ const AgentModeInterface = forwardRef((props, ref) => {
                   }} />
                 </Box>
 
-                {/* Horizontal Stepper - Show all steps with status */}
-                <Box sx={{ position: 'relative' }}>
-                  <Stack spacing={2.5}>
-                    {message.statusMessages.map((status, idx) => {
-                      // If streaming is done, mark all as completed. Otherwise, show active state for last item
-                      const isCompleted = !message.streaming || idx < message.statusMessages.length - 1;
-                      const isActive = message.streaming && idx === message.statusMessages.length - 1;
+                {/* Timeline-style Stepper with connecting line */}
+                <Box sx={{ position: 'relative', pl: 2, mb: !message.streaming && message.content ? 4 : 0 }}>
+                  {/* Vertical connecting line */}
+                  <Box sx={{
+                    position: 'absolute',
+                    left: '30px',
+                    top: '16px',
+                    bottom: message.streaming ? '16px' : (!message.content ? '0px' : '-32px'),
+                    width: '2px',
+                    background: message.streaming
+                      ? 'linear-gradient(180deg, #2563eb 0%, #3b82f6 50%, transparent 100%)'
+                      : 'linear-gradient(180deg, #2563eb 0%, #2563eb 80%, transparent 100%)',
+                    transition: 'all 0.8s ease-out',
+                    zIndex: 0
+                  }} />
+
+                  <Stack spacing={0}>
+                    {/* Deduplicate status messages */}
+                    {Array.from(new Set(message.statusMessages)).map((status, idx) => {
+                      // Mark steps as completed if streaming is done OR if they're not the last step
+                      const uniqueSteps = Array.from(new Set(message.statusMessages));
+                      const isLastStep = idx === uniqueSteps.length - 1;
+                      const isCompleted = !message.streaming || idx < uniqueSteps.length - 1;
+                      const isActive = message.streaming && isLastStep;
                       const stepNumber = idx + 1;
+                      const isLast = isLastStep;
+
+                      // No animation delay - show steps immediately
+                      const animationDelay = 0;
+
+                      // Find corresponding query results for this step
+                      // Map "Executing query on SAP data..." to query results
+                      const hasQueryResults = !message.streaming && message.allSqlQueries && message.allSqlQueries.length > 0;
+                      const queryDataForStep = hasQueryResults && status.includes('Retrieved')
+                        ? message.allSqlQueries.find(q => q.row_count > 0)
+                        : null;
+
+                      // Create unique key for this step
+                      const stepKey = `${message.timestamp}-${idx}`;
+                      const stepExpanded = expandedSteps[stepKey] || false;
+                      const toggleStep = () => {
+                        setExpandedSteps(prev => ({
+                          ...prev,
+                          [stepKey]: !prev[stepKey]
+                        }));
+                      };
 
                       return (
                         <Box
                           key={idx}
                           sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                            opacity: isActive ? 1 : 0.7,
-                            transform: isActive ? 'scale(1.02)' : 'scale(1)',
+                            opacity: 1,
                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            animation: `fadeInUp 0.5s ease-out ${animationDelay}s both`,
+                            position: 'relative',
+                            zIndex: 1,
+                            pb: isLast ? 0 : (queryDataForStep && stepExpanded ? 2 : 3),
                           }}
                         >
-                          {/* Step Number */}
-                          <Box sx={{
-                            minWidth: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            bgcolor: isCompleted ? '#10b981' : isActive ? '#1e3a8a' : '#e2e8f0',
-                            color: isCompleted || isActive ? 'white' : '#94a3b8',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.875rem',
-                            fontWeight: 700,
-                            flexShrink: 0,
-                            boxShadow: isActive ? '0 4px 12px rgba(30, 58, 138, 0.3)' : 'none',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
-                            position: 'relative',
-                            '&::after': isActive ? {
-                              content: '""',
-                              position: 'absolute',
-                              inset: '-4px',
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: 2,
+                              cursor: queryDataForStep ? 'pointer' : 'default',
+                              '&:hover': queryDataForStep ? {
+                                bgcolor: 'rgba(16, 185, 129, 0.05)',
+                                borderRadius: 1,
+                                mx: -1,
+                                px: 1
+                              } : {}
+                            }}
+                            onClick={() => queryDataForStep && toggleStep()}
+                          >
+                            {/* Step Number */}
+                            <Box sx={{
+                              minWidth: '32px',
+                              height: '32px',
                               borderRadius: '50%',
-                              padding: '2px',
-                              background: 'linear-gradient(90deg, #3b82f6, #1e3a8a, #3b82f6)',
-                              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                              WebkitMaskComposite: 'xor',
-                              maskComposite: 'exclude',
-                              animation: 'spin 2s linear infinite',
-                              opacity: 0.6
-                            } : {}
-                          }}>
-                            {stepNumber}
+                              bgcolor: isCompleted ? '#3b82f6' : isActive ? '#1e3a8a' : '#e2e8f0',
+                              color: isCompleted || isActive ? 'white' : '#94a3b8',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.875rem',
+                              fontWeight: 700,
+                              flexShrink: 0,
+                              boxShadow: isActive ? '0 4px 12px rgba(30, 58, 138, 0.3)' : 'none',
+                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                              fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
+                              position: 'relative',
+                              animation: isActive ? 'stepPulse 1.5s ease-in-out infinite' : 'none',
+                              '&::before': isActive ? {
+                                content: '""',
+                                position: 'absolute',
+                                inset: '-6px',
+                                borderRadius: '50%',
+                                border: '2px solid #3b82f6',
+                                animation: 'ripple 1.5s ease-out infinite',
+                                opacity: 0
+                              } : {},
+                              '&::after': isActive ? {
+                                content: '""',
+                                position: 'absolute',
+                                inset: '-4px',
+                                borderRadius: '50%',
+                                padding: '2px',
+                                background: 'linear-gradient(90deg, #3b82f6, #1e3a8a, #3b82f6)',
+                                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                                WebkitMaskComposite: 'xor',
+                                maskComposite: 'exclude',
+                                animation: 'spin 2s linear infinite',
+                                opacity: 0.6
+                              } : {}
+                            }}>
+                              {stepNumber}
+                            </Box>
+
+                            {/* Step Content */}
+                            <Box sx={{ flex: 1 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontSize: '0.875rem',
+                                    color: isActive ? '#1e293b' : '#64748b',
+                                    fontWeight: isActive ? 600 : 500,
+                                    lineHeight: 1.5,
+                                    fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
+                                  }}
+                                >
+                                  {status}{isActive ? '...' : ''}
+                                </Typography>
+                                {queryDataForStep && (
+                                  <ExpandMoreIcon
+                                    sx={{
+                                      fontSize: 18,
+                                      color: '#3b82f6',
+                                      transform: stepExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                      transition: 'transform 0.3s'
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                            </Box>
+
+                            {/* Status Badge */}
+                            {isCompleted && (
+                              <Chip
+                                label="Done"
+                                size="small"
+                                sx={{
+                                  bgcolor: '#d1fae5',
+                                  color: '#065f46',
+                                  fontWeight: 600,
+                                  fontSize: '0.7rem',
+                                  height: 20,
+                                  '& .MuiChip-label': { px: 1 },
+                                  fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
+                                }}
+                              />
+                            )}
+                            {isActive && (
+                              <Chip
+                                label="Processing..."
+                                size="small"
+                                sx={{
+                                  bgcolor: '#dbeafe',
+                                  color: '#1e3a8a',
+                                  fontWeight: 600,
+                                  fontSize: '0.7rem',
+                                  height: 20,
+                                  '& .MuiChip-label': { px: 1 },
+                                  fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
+                                  animation: 'chipBlink 1.5s ease-in-out infinite'
+                                }}
+                              />
+                            )}
                           </Box>
 
-                          {/* Step Content */}
-                          <Box sx={{ flex: 1 }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                fontSize: '0.875rem',
-                                color: isActive ? '#1e293b' : '#64748b',
-                                fontWeight: isActive ? 600 : 500,
-                                lineHeight: 1.5,
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            >
-                              {status}{isActive ? '...' : ''}
-                            </Typography>
-                          </Box>
+                          {/* Collapsible Query Results */}
+                          {queryDataForStep && (
+                            <Collapse in={stepExpanded}>
+                              <Box sx={{ ml: 6, mt: 2, mb: 2 }}>
+                                <Paper sx={{ p: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                  {/* Query Info */}
+                                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1 }}>
+                                    Retrieved {queryDataForStep.row_count?.toLocaleString()} rows
+                                  </Typography>
 
-                          {/* Status Badge */}
-                          {isCompleted && (
-                            <Chip
-                              label="Done"
-                              size="small"
-                              sx={{
-                                bgcolor: '#d1fae5',
-                                color: '#065f46',
-                                fontWeight: 600,
-                                fontSize: '0.7rem',
-                                height: 20,
-                                '& .MuiChip-label': { px: 1 },
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            />
-                          )}
-                          {isActive && (
-                            <Chip
-                              label="Processing..."
-                              size="small"
-                              sx={{
-                                bgcolor: '#dbeafe',
-                                color: '#1e3a8a',
-                                fontWeight: 600,
-                                fontSize: '0.7rem',
-                                height: 20,
-                                '& .MuiChip-label': { px: 1 },
-                                fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
-                              }}
-                            />
+                                  {/* SQL Query */}
+                                  <Accordion sx={{ bgcolor: 'white', mb: 1 }}>
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                      <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
+                                        View SQL Query
+                                      </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails>
+                                      <Box
+                                        component="pre"
+                                        sx={{
+                                          fontSize: '0.75rem',
+                                          bgcolor: '#1e293b',
+                                          color: '#e2e8f0',
+                                          p: 1.5,
+                                          borderRadius: 1,
+                                          overflow: 'auto',
+                                          m: 0,
+                                          fontFamily: 'monospace'
+                                        }}
+                                      >
+                                        {queryDataForStep.sql}
+                                      </Box>
+                                    </AccordionDetails>
+                                  </Accordion>
+
+                                  {/* Data Preview */}
+                                  {queryDataForStep.results && queryDataForStep.results.length > 0 && (
+                                    <Box sx={{ mt: 1 }}>
+                                      <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.75rem', mb: 0.5, display: 'block' }}>
+                                        Data Preview (first 3 rows)
+                                      </Typography>
+                                      <Box sx={{
+                                        maxHeight: 200,
+                                        overflow: 'auto',
+                                        border: '1px solid #e2e8f0',
+                                        borderRadius: 1,
+                                        bgcolor: 'white'
+                                      }}>
+                                        <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+                                          <thead>
+                                            <tr style={{ bgcolor: '#f1f5f9' }}>
+                                              {Object.keys(queryDataForStep.results[0]).map(key => (
+                                                <th key={key} style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #e2e8f0', fontWeight: 600 }}>
+                                                  {key}
+                                                </th>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {queryDataForStep.results.slice(0, 3).map((row, ridx) => (
+                                              <tr key={ridx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                {Object.values(row).map((val, vidx) => (
+                                                  <td key={vidx} style={{ padding: '6px 8px' }}>
+                                                    {val !== null && val !== undefined ? String(val) : '-'}
+                                                  </td>
+                                                ))}
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </Box>
+                                    </Box>
+                                  )}
+                                </Paper>
+                              </Box>
+                            </Collapse>
                           )}
                         </Box>
                       );
                     })}
                   </Stack>
+
+                  {/* Completion Indicator - shown when streaming is done */}
+                  {!message.streaming && message.content && (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        mt: 4,
+                        pl: 0,
+                        animation: 'fadeInUp 0.5s ease-out both',
+                        position: 'relative',
+                        zIndex: 1
+                      }}
+                    >
+                      <Box sx={{
+                        minWidth: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        bgcolor: '#3b82f6',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                        fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
+                        animation: 'completionPulse 2s ease-in-out 3',
+                      }}>
+                        ✓
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: '0.875rem',
+                          color: '#3b82f6',
+                          fontWeight: 600,
+                          lineHeight: 1.5,
+                          fontFamily: "'Inter', -apple-system, system-ui, sans-serif"
+                        }}
+                      >
+                        Analysis complete — View insights below
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
               </AccordionDetails>
             </Accordion>
@@ -1531,6 +1757,68 @@ const AgentModeInterface = forwardRef((props, ref) => {
                   from { transform: rotate(0deg); }
                   to { transform: rotate(360deg); }
                 }
+                @keyframes fadeInSlide {
+                  0% {
+                    opacity: 0;
+                    transform: translateX(-20px);
+                  }
+                  100% {
+                    opacity: 1;
+                    transform: translateX(0);
+                  }
+                }
+                @keyframes fadeInUp {
+                  0% {
+                    opacity: 0;
+                    transform: translateY(10px);
+                  }
+                  100% {
+                    opacity: 1;
+                    transform: translateY(0);
+                  }
+                }
+                @keyframes completionPulse {
+                  0%, 100% {
+                    transform: scale(1);
+                    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+                  }
+                  50% {
+                    transform: scale(1.05);
+                    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+                  }
+                }
+                @keyframes stepPulse {
+                  0%, 100% {
+                    transform: scale(1);
+                    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3);
+                    background-color: #1e3a8a;
+                  }
+                  50% {
+                    transform: scale(1.15);
+                    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.6);
+                    background-color: #3b82f6;
+                  }
+                }
+                @keyframes ripple {
+                  0% {
+                    transform: scale(1);
+                    opacity: 0.8;
+                  }
+                  100% {
+                    transform: scale(2.2);
+                    opacity: 0;
+                  }
+                }
+                @keyframes chipBlink {
+                  0%, 100% {
+                    opacity: 1;
+                    background-color: #dbeafe;
+                  }
+                  50% {
+                    opacity: 0.5;
+                    background-color: #93c5fd;
+                  }
+                }
               `}
             </style>
 
@@ -1541,6 +1829,13 @@ const AgentModeInterface = forwardRef((props, ref) => {
               sx={{
                 mb: 2,
                 bgcolor: 'background.paper',
+                position: 'relative',
+                // Calculate delay based on number of execution steps (0.5s per step + 0.5s buffer)
+                animation: message.statusMessages && message.statusMessages.length > 0
+                  ? `fadeInUp 0.6s ease-out ${Array.from(new Set(message.statusMessages)).length * 0.5 + 0.5}s both`
+                  : 'fadeInUp 0.6s ease-out both',
+                ml: message.statusMessages && message.statusMessages.length > 0 ? 5 : 0,
+                borderLeft: message.statusMessages && message.statusMessages.length > 0 ? '3px solid #3b82f6' : 'none',
               }}
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -2736,6 +3031,33 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     : 'Conduct comprehensive analysis with AI Agent'}
                 </Typography>
               </Box>
+            </Box>
+
+            {/* Right section - New Chat Button */}
+            <Box>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => {
+                  const welcomeMessage = [{
+                    id: Date.now(),
+                    type: 'assistant',
+                    content: 'Welcome to Agent Mode! I\'m your autonomous AI agent capable of multi-step reasoning, planning, and execution. Describe complex tasks and I\'ll break them down into steps, execute them, and provide comprehensive insights.',
+                    timestamp: new Date(),
+                  }];
+                  setMessages(welcomeMessage);
+                  setInputMessage('');
+                  localStorage.setItem(`agentMode_messages_${userId}`, JSON.stringify(welcomeMessage));
+                }}
+                sx={{
+                  bgcolor: '#3b82f6',
+                  '&:hover': { bgcolor: '#2563eb' },
+                  textTransform: 'none',
+                  fontWeight: 600
+                }}
+              >
+                New
+              </Button>
             </Box>
           </Box>
         </Paper>
