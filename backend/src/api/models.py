@@ -94,6 +94,8 @@ class DocumentListResponse(BaseModel):
 class ExecutionResponse(BaseModel):
     results: Optional[List[Dict[str, Any]]] = None
     row_count: Optional[int] = None
+    total_rows: Optional[int] = None
+    truncated: Optional[bool] = None
     validation: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None

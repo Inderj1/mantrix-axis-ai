@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Plot from 'react-plotly.js';
-import { Box, Paper, Typography, Grid, Chip, Alert, useTheme } from '@mui/material';
+import { Box, Paper, Typography, Grid, Chip, Alert, useTheme, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
@@ -17,9 +17,10 @@ import { sapChartColors } from '../themes/sapFioriTheme';
  */
 const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
   const theme = useTheme();
+  const [selectedChartType, setSelectedChartType] = useState('auto');
 
   // Analyze data and select best visualization
-  const analysis = useMemo(() => analyzeData(data, theme), [data, theme]);
+  const analysis = useMemo(() => analyzeData(data, theme, selectedChartType), [data, theme, selectedChartType]);
 
   if (!data || data.length === 0) {
     return (
@@ -49,6 +50,30 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
         boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
       }}
     >
+      {/* Chart Type Selector */}
+      <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="chart-type-label">Chart Type</InputLabel>
+          <Select
+            labelId="chart-type-label"
+            id="chart-type-select"
+            value={selectedChartType}
+            label="Chart Type"
+            onChange={(e) => setSelectedChartType(e.target.value)}
+          >
+            <MenuItem value="auto">🤖 Auto-Select</MenuItem>
+            <MenuItem value="bar">📊 Bar Chart</MenuItem>
+            <MenuItem value="line">📈 Line Chart</MenuItem>
+            <MenuItem value="pie">🥧 Pie Chart</MenuItem>
+            <MenuItem value="scatter">⚫ Scatter Plot</MenuItem>
+            <MenuItem value="area">📉 Area Chart</MenuItem>
+          </Select>
+        </FormControl>
+        <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+          {selectedChartType === 'auto' ? `Auto-selected: ${chartType}` : 'Manual override active'}
+        </Typography>
+      </Box>
+
       {/* Chart Wrapper with Grid Layout */}
       <Box sx={{ display: 'grid', gridTemplateColumns: '220px 1fr 260px', gap: 3 }}>
 
@@ -106,10 +131,21 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
           {analysis.labelColumn && (
             <>
               <Typography variant="caption" sx={{ color: theme.palette.text.secondary, display: 'block', mt: 2, mb: 0.5 }}>
-                <strong>Label Column:</strong>
+                <strong>Primary Axis:</strong>
               </Typography>
               <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontWeight: 600, fontSize: '0.8rem' }}>
                 {analysis.labelColumn}
+              </Typography>
+            </>
+          )}
+
+          {analysis.groupColumn && (
+            <>
+              <Typography variant="caption" sx={{ color: theme.palette.text.secondary, display: 'block', mt: 2, mb: 0.5 }}>
+                <strong>Grouped By:</strong>
+              </Typography>
+              <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontWeight: 600, fontSize: '0.8rem' }}>
+                {analysis.groupColumn}
               </Typography>
             </>
           )}
@@ -259,9 +295,24 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
 };
 
 /**
+ * Get display name for chart type
+ */
+function getChartDisplayName(chartType) {
+  const names = {
+    'bar': 'Bar Chart',
+    'line': 'Line Chart',
+    'pie': 'Pie Chart',
+    'scatter': 'Scatter Plot',
+    'area': 'Area Chart',
+    'multi-axis': 'Multi-Axis Chart'
+  };
+  return names[chartType] || 'Chart';
+}
+
+/**
  * Analyze data and determine the best visualization approach
  */
-function analyzeData(data, theme) {
+function analyzeData(data, theme, selectedChartType = 'auto') {
   if (!data || data.length === 0) {
     return { hasNumericData: false };
   }
@@ -277,8 +328,10 @@ function analyzeData(data, theme) {
     });
   });
 
-  // Identify categorical/label columns
-  const labelColumn = keys.find(k => !numericColumns.includes(k)) || keys[0];
+  // Identify categorical/label columns (support multiple categorical dimensions)
+  const categoricalColumns = keys.filter(k => !numericColumns.includes(k));
+  const labelColumn = categoricalColumns[0] || keys[0];
+  const groupColumn = categoricalColumns.length > 1 ? categoricalColumns[1] : null;
 
   if (numericColumns.length === 0) {
     return { hasNumericData: false };
@@ -298,14 +351,16 @@ function analyzeData(data, theme) {
     return sanitized;
   });
 
-  // Determine best chart type based on data characteristics
-  const chartDecision = selectBestChartType(sanitizedData, labelColumn, numericColumns);
+  // Determine chart type - use manual selection or auto-select
+  const chartDecision = selectedChartType === 'auto'
+    ? selectBestChartType(sanitizedData, labelColumn, numericColumns, groupColumn)
+    : { type: selectedChartType, displayName: getChartDisplayName(selectedChartType), reason: 'User selected' };
 
   // Generate traces based on chart type
-  const traces = generateTraces(sanitizedData, labelColumn, numericColumns, chartDecision.type, theme);
+  const traces = generateTraces(sanitizedData, labelColumn, numericColumns, chartDecision.type, theme, groupColumn);
 
   // Generate layout
-  const layout = generateLayout(chartDecision.type, labelColumn, numericColumns, theme);
+  const layout = generateLayout(chartDecision.type, labelColumn, numericColumns, theme, groupColumn);
 
   // Generate insights
   const insights = generateInsights(sanitizedData, labelColumn, numericColumns, chartDecision);
@@ -325,14 +380,15 @@ function analyzeData(data, theme) {
     statistics,
     overallInsight,
     numericColumns,
-    labelColumn
+    labelColumn,
+    groupColumn
   };
 }
 
 /**
  * Select the best chart type based on data characteristics
  */
-function selectBestChartType(data, labelColumn, numericColumns) {
+function selectBestChartType(data, labelColumn, numericColumns, groupColumn = null) {
   const rowCount = data.length;
   const numericCount = numericColumns.length;
   const uniqueLabels = new Set(data.map(row => row[labelColumn])).size;
@@ -343,13 +399,18 @@ function selectBestChartType(data, labelColumn, numericColumns) {
     return !isNaN(Date.parse(label)) || /^\d{4}/.test(String(label));
   });
 
-  // Decision logic
+  // Decision logic (prioritize categorical breakdowns over scatter plots)
   if (isTimeSeries && rowCount > 5) {
     return { type: 'line', displayName: 'Line Chart (Time Series)', reason: 'Time-based data detected' };
   }
 
   if (uniqueLabels <= 10 && numericCount === 1 && rowCount <= 10) {
     return { type: 'pie', displayName: 'Pie Chart', reason: 'Few categories, single metric' };
+  }
+
+  // Bar chart for categorical breakdowns (small number of categories, multiple metrics)
+  if (uniqueLabels <= 20 && rowCount <= 50 && numericCount >= 1) {
+    return { type: 'bar', displayName: 'Bar Chart', reason: 'Categorical breakdown with metrics' };
   }
 
   if (numericCount >= 2 && rowCount <= 100) {
@@ -371,7 +432,7 @@ function selectBestChartType(data, labelColumn, numericColumns) {
 /**
  * Generate Plotly traces based on chart type
  */
-function generateTraces(data, labelColumn, numericColumns, chartType, theme) {
+function generateTraces(data, labelColumn, numericColumns, chartType, theme, groupColumn = null) {
   const colors = sapChartColors;
 
   // Limit data for better performance
@@ -461,6 +522,28 @@ function generateTraces(data, labelColumn, numericColumns, chartType, theme) {
 
     case 'bar':
     default:
+      // If we have a groupColumn (e.g., Location), create grouped bars
+      if (groupColumn) {
+        const primaryMetric = numericColumns[0]; // Use first numeric column
+        const groups = [...new Set(limitedData.map(row => row[groupColumn]))];
+
+        return groups.map((group, idx) => {
+          const groupData = limitedData.filter(row => row[groupColumn] === group);
+          return {
+            type: 'bar',
+            name: group,
+            x: groupData.map(row => row[labelColumn]),
+            y: groupData.map(row => row[primaryMetric]),
+            marker: {
+              color: colors[idx % colors.length],
+              line: { width: 1, color: 'white' }
+            },
+            hovertemplate: `<b>${group}</b><br>%{x}<br>${primaryMetric}: %{y:,.2f}<extra></extra>`
+          };
+        });
+      }
+
+      // Standard bar chart - one trace per numeric column
       return numericColumns.slice(0, 3).map((col, idx) => ({
         type: 'bar',
         name: col,
@@ -478,7 +561,7 @@ function generateTraces(data, labelColumn, numericColumns, chartType, theme) {
 /**
  * Generate Plotly layout based on chart type
  */
-function generateLayout(chartType, labelColumn, numericColumns, theme) {
+function generateLayout(chartType, labelColumn, numericColumns, theme, groupColumn = null) {
   const baseLayout = {
     paper_bgcolor: theme?.palette?.background?.paper || 'white',
     plot_bgcolor: theme?.palette?.background?.default || '#f7f7f7',
@@ -539,19 +622,38 @@ function generateLayout(chartType, labelColumn, numericColumns, theme) {
   }
 
   // Default layout for bar, line, area
+  // Use the actual metric name for Y-axis (first numeric column if available)
+  const yAxisTitle = numericColumns.length > 0 ? numericColumns[0] : 'Value';
+
   return {
     ...baseLayout,
     xaxis: {
-      title: labelColumn,
+      title: {
+        text: labelColumn,
+        font: { size: 13, weight: 600 }
+      },
       gridcolor: theme?.palette?.divider || '#e0e0e0',
-      tickangle: -45
+      tickangle: -45,
+      tickfont: { size: 11 }
     },
     yaxis: {
-      title: 'Value',
+      title: {
+        text: yAxisTitle,
+        font: { size: 13, weight: 600 }
+      },
       gridcolor: theme?.palette?.divider || '#e0e0e0',
-      showgrid: true
+      showgrid: true,
+      tickfont: { size: 11 }
     },
-    barmode: chartType === 'bar' && numericColumns.length > 1 ? 'group' : undefined
+    barmode: chartType === 'bar' && (numericColumns.length > 1 || groupColumn) ? 'group' : undefined,
+    showlegend: true,
+    legend: {
+      orientation: 'h',
+      y: -0.15,
+      x: 0.5,
+      xanchor: 'center',
+      font: { size: 11 }
+    }
   };
 }
 

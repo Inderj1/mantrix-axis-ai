@@ -960,12 +960,19 @@ class SQLGenerator:
             
             # Execute query with performance tracking
             start_time = time.time()
-            results = self.bq_client.execute_query(sql)
+            execution_result = self.bq_client.execute_query(sql)
             execution_time = (time.time() - start_time) * 1000  # ms
-            
+
+            # Extract results from the new Dict format
+            results = execution_result.get('rows', [])
+            total_rows = execution_result.get('total_rows', len(results))
+            truncated = execution_result.get('truncated', False)
+
             return {
                 "results": results,
                 "row_count": len(results),
+                "total_rows": total_rows,
+                "truncated": truncated,
                 "validation": validation,
                 "performance_stats": {
                     "execution_time_ms": execution_time,

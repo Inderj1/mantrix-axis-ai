@@ -118,10 +118,18 @@ async def analyze_financial_query(request: AgentAnalysisRequest) -> AgentAnalysi
                 logger.info("Executing SQL query", sql=sql_query[:200])
                 execution_result = bq.execute_query(sql_query)
 
+                # Extract results from the new Dict format
+                results = execution_result.get('rows', [])
+                row_count = execution_result.get('fetched_rows', len(results))
+                total_rows = execution_result.get('total_rows', row_count)
+                truncated = execution_result.get('truncated', False)
+
                 return {
                     "sql": sql_query,
-                    "results": execution_result.get("results", []) if isinstance(execution_result, dict) else execution_result,
-                    "row_count": execution_result.get("row_count", 0) if isinstance(execution_result, dict) else len(execution_result) if isinstance(execution_result, list) else 0,
+                    "results": results,
+                    "row_count": row_count,
+                    "total_rows": total_rows,
+                    "truncated": truncated,
                     "explanation": sql_result.get("explanation", "")
                 }
 
@@ -270,16 +278,24 @@ async def analyze_financial_query_stream(request: AgentAnalysisRequest):
 
                     execution_result = bq.execute_query(sql_query)
 
+                    # Extract results from the new Dict format
+                    results = execution_result.get('rows', [])
+                    row_count = execution_result.get('fetched_rows', len(results))
+                    total_rows = execution_result.get('total_rows', row_count)
+                    truncated = execution_result.get('truncated', False)
+
                     result_data = {
                         "sql": sql_query,
-                        "results": execution_result.get("results", []) if isinstance(execution_result, dict) else execution_result,
-                        "row_count": execution_result.get("row_count", 0) if isinstance(execution_result, dict) else len(execution_result) if isinstance(execution_result, list) else 0,
+                        "results": results,
+                        "row_count": row_count,
+                        "total_rows": total_rows,
+                        "truncated": truncated,
                         "explanation": sql_result.get("explanation", "")
                     }
 
                     # Send query results with success message
-                    row_count = result_data["row_count"]
-                    await event_queue.put({'type': 'status', 'message': f'Retrieved {row_count:,} rows of financial data'})
+                    truncation_note = f" (showing {row_count:,} of {total_rows:,})" if truncated else ""
+                    await event_queue.put({'type': 'status', 'message': f'Retrieved {row_count:,} rows of financial data{truncation_note}'})
                     await event_queue.put({'type': 'query_results', 'data': result_data})
 
                     return result_data
