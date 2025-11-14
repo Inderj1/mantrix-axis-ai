@@ -222,7 +222,11 @@ const UserProfileManager = () => {
                   fullWidth
                   label="Name"
                   value={formData.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  disabled
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  helperText="Managed by your account settings"
                 />
               </Grid>
               <Grid item xs={12} md={6}>
@@ -231,30 +235,12 @@ const UserProfileManager = () => {
                   label="Email"
                   type="email"
                   value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  disabled
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  helperText="Managed by your account settings"
                 />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Department"
-                  value={formData.department}
-                  onChange={(e) => handleInputChange('department', e.target.value)}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Reporting Frequency</InputLabel>
-                  <Select
-                    value={formData.reporting_frequency}
-                    label="Reporting Frequency"
-                    onChange={(e) => handleInputChange('reporting_frequency', e.target.value)}
-                  >
-                    <MenuItem value="daily">Daily</MenuItem>
-                    <MenuItem value="weekly">Weekly</MenuItem>
-                    <MenuItem value="monthly">Monthly</MenuItem>
-                  </Select>
-                </FormControl>
               </Grid>
             </Grid>
           </CardContent>

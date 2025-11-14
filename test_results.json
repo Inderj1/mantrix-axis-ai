@@ -1,0 +1,105 @@
+{
+  "session": {
+    "timestamp": "2025-11-11T13:38:02.144066",
+    "user_id": "test_user_1762889596",
+    "total_queries": 8
+  },
+  "results": [
+    {
+      "name": "Beer Portfolio Performance",
+      "query": "how's my beer product portfolio been doing over the year (show details)",
+      "category": "Context Maintenance",
+      "status": "FAILED",
+      "error": "Invalid query even after correction: 400 POST https://bigquery.googleapis.com/bigquery/v2/projects/arizona-poc/jobs?prettyPrint=false: Unrecognized name: Product; Did you mean Product_BU? at [17:15]\n\nLocation: None\nJob ID: e7ce8f59-7802-4ceb-8ae1-27e6c78b18ca\n",
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 42.21426820755005,
+      "sql": "WITH ProductPerformance AS (\n  SELECT\n    Product,\n    Product_Name,\n    SUM(COALESCE(Gross_Revenue, 0)) as total_revenue,\n    SUM(COALESCE(Net_Sales, 0)) as total_net_sales,\n    SUM(COALESCE(Total_COGS, 0)) as total_cogs,\n    SUM(COALESCE(Gross_Revenue, 0)) - SUM(COALESCE(Total_COGS, 0)) as gross_profit,\n    SAFE_DIVIDE(\n      SUM(COALESCE(Gross_Revenue, 0)) - SUM(COALESCE(Total_COGS, 0)),\n      SUM(COALESCE(Gross_Revenue, 0))\n    ) * 100 as margin_percent,\n    SUM(COALESCE(Quantity, 0)) as total_volume,\n    COUNT(DISTINCT Sales_Order_KDAUF) as order_count,\n    COUNT(DISTINCT Customer) as customer_count\n  FROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n  WHERE EXTRACT(YEAR FROM Posting_Date) = EXTRACT(YEAR FROM CURRENT_DATE())\n    AND UPPER(Product_Name) LIKE '%BEER%'\n  GROUP BY Product, Product_Name\n)\nSELECT\n  Product,\n  Product_Name,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_revenue) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_revenue - FLOOR(total_revenue)) * 100) AS INT64))) as revenue,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_net_sales) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_net_sales - FLOOR(total_net_sales)) * 100) AS INT64))) as net_sales,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_cogs) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_cogs - FLOOR(total_cogs)) * 100) AS INT64))) as cogs,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(gross_profit) AS INT64)), FORMAT('.%02d', CAST(ROUND((gross_profit - FLOOR(gross_profit)) * 100) AS INT64))) as gross_profit,\n  CONCAT(CAST(ROUND(margin_percent, 2) AS STRING), '%') as margin_percent,\n  FORMAT('%\\'d', CAST(total_volume AS INT64)) as volume,\n  FORMAT('%\\'d', CAST(order_count AS INT64)) as order_count,\n  FORMAT('%\\'d', CAST(customer_count AS INT64)) as customer_count\nFROM ProductPerformance\nORDER BY total_revenue DESC",
+      "explanation": "Analyzes beer product portfolio performance for the current year, showing detailed metrics including revenue, net sales, COGS, gross profit, margin percentage, volume, order count, and customer count. Filters for products with 'BEER' in the product name and groups by individual products to provide detailed product-level insights."
+    },
+    {
+      "name": "Customer Segment Targeting",
+      "query": "based on the above which customer segment should be targeted for product promotion (show details)",
+      "category": "Context Maintenance",
+      "status": "SUCCESS",
+      "error": null,
+      "has_sql": true,
+      "row_count": 71,
+      "elapsed": 38.945777893066406,
+      "sql": "WITH segment_performance AS (\n  SELECT \n    RFM_Segment,\n    Advanced_Segment,\n    ABC_Combined,\n    FORMAT('%\\'d', CAST(COUNT(DISTINCT Customer) AS INT64)) as customer_count,\n    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(Monetary)) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(Monetary) - FLOOR(SUM(Monetary))) * 100) AS INT64))) as total_revenue,\n    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(Profitability)) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(Profitability) - FLOOR(SUM(Profitability))) * 100) AS INT64))) as total_profit,\n    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(AVG(Avg_Order_Value)) AS INT64)), FORMAT('.%02d', CAST(ROUND((AVG(Avg_Order_Value) - FLOOR(AVG(Avg_Order_Value))) * 100) AS INT64))) as avg_order_value,\n    CONCAT(CAST(ROUND(AVG(Margin_Percent), 2) AS STRING), '%') as avg_margin_pct,\n    ROUND(AVG(Frequency), 1) as avg_purchase_frequency,\n    ROUND(AVG(Recency), 0) as avg_days_since_purchase,\n    CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(AVG(CLV_Proxy)) AS INT64)), FORMAT('.%02d', CAST(ROUND((AVG(CLV_Proxy) - FLOOR(AVG(CLV_Proxy))) * 100) AS INT64))) as avg_clv_proxy,\n    ROUND(AVG(Customer_Tenure), 0) as avg_tenure_days,\n    FORMAT('%\\'d', CAST(SUM(CASE WHEN High_Value_At_Risk THEN 1 ELSE 0 END) AS INT64)) as high_value_at_risk_count,\n    FORMAT('%\\'d', CAST(SUM(CASE WHEN Low_Margin_High_Volume THEN 1 ELSE 0 END) AS INT64)) as low_margin_high_volume_count\n  FROM `arizona-poc.copa_export_copa_data_000000000000.customer_master_analysis`\n  WHERE RFM_Segment IS NOT NULL\n  GROUP BY RFM_Segment, Advanced_Segment, ABC_Combined\n),\nsegment_scoring AS (\n  SELECT \n    *,\n    -- Calculate promotion targeting score based on multiple factors\n    (CASE \n      -- Champions and Loyal Customers: High value, maintain relationship\n      WHEN RFM_Segment IN ('Champions', 'Loyal Customers') THEN 85\n      -- Potential Loyalists: Good opportunity for upsell\n      WHEN RFM_Segment = 'Potential Loyalist' THEN 90\n      -- At Risk segments: Need retention campaigns\n      WHEN RFM_Segment IN ('At Risk', 'Cant Lose Them') THEN 95\n      -- Need Attention: Moderate priority\n      WHEN RFM_Segment = 'Need Attention' THEN 80\n      -- New Customers: Good for onboarding promotions\n      WHEN RFM_Segment = 'New Customers' THEN 75\n      -- Promising: Growth potential\n      WHEN RFM_Segment = 'Promising' THEN 70\n      -- Others: Lower priority\n      ELSE 50\n    END +\n    -- Bonus for high CLV segments\n    CASE WHEN ABC_Combined IN ('AA', 'AB', 'BA') THEN 10 ELSE 0 END +\n    -- Penalty for very recent purchasers (less urgent)\n    CASE WHEN avg_days_since_purchase < 30 THEN -5 ELSE 0 END) as promotion_priority_score\n  FROM segment_performance\n)\nSELECT \n  RFM_Segment,\n  Advanced_Segment,\n  ABC_Combined,\n  customer_count,\n  total_revenue,\n  total_profit,\n  avg_order_value,\n  avg_margin_pct,\n  avg_purchase_frequency,\n  avg_days_since_purchase,\n  avg_clv_proxy,\n  avg_tenure_days,\n  high_value_at_risk_count,\n  low_margin_high_volume_count,\n  promotion_priority_score,\n  CASE \n    WHEN promotion_priority_score >= 90 THEN 'HIGHEST PRIORITY - Immediate Action'\n    WHEN promotion_priority_score >= 80 THEN 'HIGH PRIORITY - Target Soon'\n    WHEN promotion_priority_score >= 70 THEN 'MEDIUM PRIORITY - Consider'\n    ELSE 'LOW PRIORITY - Monitor'\n  END as recommendation\nFROM segment_scoring\nORDER BY promotion_priority_score DESC, total_profit DESC",
+      "explanation": "This query analyzes customer segments from the customer_master_analysis table to identify which segments should be targeted for product promotions. It evaluates segments based on RFM (Recency, Frequency, Monetary) scores, profitability, purchase behavior, and customer lifetime value. The query calculates a promotion_priority_score that considers: 1) segment characteristics (At Risk/Potential Loyalists get highest scores), 2) ABC classification (high-value combinations get bonuses), and 3) recency (very recent purchasers get slight penalty as they're less urgent). Results show detailed metrics including customer count, revenue, profit, order values, margins, purchase frequency, and at-risk indicators to help prioritize promotional campaigns."
+    },
+    {
+      "name": "Delivered Quantity by Material/Plant",
+      "query": "Show me the total Delivered Quantity by Material and Plant for each month over the last 6 months",
+      "category": "Sales Inventory",
+      "status": "FAILED",
+      "error": "Invalid query even after correction: 400 POST https://bigquery.googleapis.com/bigquery/v2/projects/arizona-poc/jobs?prettyPrint=false: Unrecognized name: Material_MATNR at [8:7]\n\nLocation: None\nJob ID: a8b6f9ab-880c-4d5f-96a7-f4cb28c8c5a3\n",
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 34.22611093521118,
+      "sql": "SELECT \n  Material,\n  Plant,\n  FORMAT_DATE('%Y-%m', Posting_Date) as month,\n  FORMAT('%\\'d', CAST(SUM(COALESCE(Delivered_Quantity, 0)) AS INT64)) as total_delivered_quantity\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\nWHERE Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  AND Material IS NOT NULL\n  AND Plant IS NOT NULL\nGROUP BY Material, Plant, month\nORDER BY Material, Plant, month",
+      "explanation": "This query calculates the total Delivered Quantity grouped by Material, Plant, and month for the last 6 months. It formats the month as YYYY-MM for readability and formats the quantity with thousand separators. The query filters out NULL values for Material and Plant to ensure clean results."
+    },
+    {
+      "name": "Aging Inventory - Open Orders",
+      "query": "List open sales orders older than 60 days where Delivered Quantity is 0 and Net Value is greater than 1000",
+      "category": "Sales Inventory",
+      "status": "FAILED",
+      "error": "Invalid query even after correction: 400 POST https://bigquery.googleapis.com/bigquery/v2/projects/arizona-poc/jobs?prettyPrint=false: Unrecognized name: DeliveredQuantity_KBMENG at [14:7]\n\nLocation: None\nJob ID: ff96f1d7-28b3-4c6a-851a-84e8dbc8c006\n",
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 35.243935108184814,
+      "sql": "SELECT \n  SalesDocument_VBELN as sales_order,\n  SalesDocumentItem_POSNR as line_item,\n  CreatedOn_ERDAT as created_date,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(NetValue_NETWR) AS INT64)), FORMAT('.%02d', CAST(ROUND((NetValue_NETWR - FLOOR(NetValue_NETWR)) * 100) AS INT64))) as net_value,\n  FORMAT('%\\'d', CAST(OrderQuantity_KWMENG AS INT64)) as order_quantity,\n  DeliveredQuantity_KBMENG as delivered_quantity,\n  OverallSDProcessStatus_GBSTK as status,\n  SoldToParty_KUNNR as customer,\n  Material_MATNR as material,\n  DATE_DIFF(CURRENT_DATE(), CreatedOn_ERDAT, DAY) as days_open\nFROM `arizona-poc.copa_export_copa_data_000000000000.sales_order_cockpit_export`\nWHERE OverallSDProcessStatus_GBSTK != 'C'\n  AND DeliveredQuantity_KBMENG = 0\n  AND NetValue_NETWR > 1000\n  AND DATE_DIFF(CURRENT_DATE(), CreatedOn_ERDAT, DAY) > 60\nORDER BY days_open DESC, NetValue_NETWR DESC",
+      "explanation": "This query identifies open sales orders that are older than 60 days with no delivered quantity and net value exceeding $1,000. It filters for non-completed orders (status != 'C'), zero delivered quantity, and calculates the age of each order. Results are sorted by age (oldest first) and then by net value (highest first) to prioritize the most critical aged orders. This helps identify potential fulfillment issues or stuck orders that require attention."
+    },
+    {
+      "name": "Inventory Movement by Plant",
+      "query": "Give me Delivered Quantity by Plant and month for the last 6 months",
+      "category": "Sales Inventory",
+      "status": "SUCCESS",
+      "error": null,
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 22.294291973114014,
+      "sql": "SELECT \n  'UNKNOWN' as error_message,\n  'The requested columns (Delivered_Quantity, Plant, and date fields for monthly aggregation) are not available in any of the provided tables' as explanation\nFROM (SELECT 1) LIMIT 0",
+      "explanation": "The query cannot be generated because the required columns are not present in the available schema. The user is asking for 'Delivered Quantity' by 'Plant' and 'month', but none of the provided tables (GL_Accounts, cohort_avg_revenue_table, cohort_retention_table, cohort_sizes, customer_master_analysis) contain these columns. This appears to be a supply chain/logistics query that would typically be found in tables like sales orders, deliveries, or shipments data, which are not included in the current schema. The available tables focus on GL accounts, customer cohort analysis, and customer master data - none of which track delivered quantities or plant information."
+    },
+    {
+      "name": "Declining Delivery Trend",
+      "query": "Show me Materials where Delivered Quantity in the last month is at least 20% lower than the average of the previous 3 months",
+      "category": "Sales Inventory",
+      "status": "FAILED",
+      "error": "Invalid query even after correction: 400 POST https://bigquery.googleapis.com/bigquery/v2/projects/arizona-poc/jobs?prettyPrint=false: Unrecognized name: Billing_Quantity_FKIMG at [8:9]\n\nLocation: None\nJob ID: 2d01a407-ffc2-4480-9289-5307a1ccf4cc\n",
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 39.45082879066467,
+      "sql": "WITH MonthlyDeliveries AS (\n  SELECT\n    Material,\n    DATE_TRUNC(Posting_Date, MONTH) as delivery_month,\n    SUM(COALESCE(Delivered_Quantity, 0)) as total_delivered_qty\n  FROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n  WHERE Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 4 MONTH)\n    AND Delivered_Quantity IS NOT NULL\n  GROUP BY Material, delivery_month\n),\nLastMonthDeliveries AS (\n  SELECT\n    Material,\n    total_delivered_qty as last_month_qty\n  FROM MonthlyDeliveries\n  WHERE delivery_month = DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH)\n),\nPrevious3MonthsAvg AS (\n  SELECT\n    Material,\n    AVG(total_delivered_qty) as avg_prev_3_months\n  FROM MonthlyDeliveries\n  WHERE delivery_month >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 4 MONTH), MONTH)\n    AND delivery_month < DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), MONTH)\n  GROUP BY Material\n)\nSELECT\n  lm.Material,\n  FORMAT('%\\'d', CAST(lm.last_month_qty AS INT64)) as last_month_delivered_qty,\n  FORMAT('%\\'d', CAST(pm.avg_prev_3_months AS INT64)) as avg_previous_3_months_qty,\n  CONCAT(CAST(ROUND(((lm.last_month_qty - pm.avg_prev_3_months) / pm.avg_prev_3_months) * 100, 2) AS STRING), '%') as percent_change\nFROM LastMonthDeliveries lm\nINNER JOIN Previous3MonthsAvg pm\n  ON lm.Material = pm.Material\nWHERE lm.last_month_qty < (pm.avg_prev_3_months * 0.8)\n  AND pm.avg_prev_3_months > 0\nORDER BY percent_change ASC",
+      "explanation": "This query identifies materials where delivered quantity in the last month dropped by at least 20% compared to the average of the previous 3 months. It uses CTEs to calculate monthly deliveries, isolate last month's quantities, compute the 3-month average, and then filters for materials showing a 20%+ decline. Results show the material, last month quantity, 3-month average, and percent change, formatted for executive presentation."
+    },
+    {
+      "name": "Sales by Product/Region",
+      "query": "What is the total sales amount by product and region for the last 12 months?",
+      "category": "Sales Performance",
+      "status": "FAILED",
+      "error": "Invalid query even after correction: 400 POST https://bigquery.googleapis.com/bigquery/v2/projects/arizona-poc/jobs?prettyPrint=false: Unrecognized name: Region at [1:20]\n\nLocation: None\nJob ID: f9456758-cc8e-4d7c-8d19-4bacf57a9cd1\n",
+      "has_sql": true,
+      "row_count": 0,
+      "elapsed": 30.379076957702637,
+      "sql": "SELECT \n  Product,\n  Region,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(SUM(COALESCE(Gross_Revenue, 0))) AS INT64)), FORMAT('.%02d', CAST(ROUND((SUM(COALESCE(Gross_Revenue, 0)) - FLOOR(SUM(COALESCE(Gross_Revenue, 0)))) * 100) AS INT64))) as total_sales\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\nWHERE Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\nGROUP BY Product, Region\nORDER BY SUM(COALESCE(Gross_Revenue, 0)) DESC",
+      "explanation": "Calculates total sales revenue by product and region for the last 12 months. Uses Gross_Revenue column for sales calculation, groups by product and region dimensions, and formats the output as currency with thousand separators for executive presentation. Results are ordered by total sales descending to highlight top-performing product-region combinations."
+    },
+    {
+      "name": "Top Customers by Value/Volume",
+      "query": "Which customers have ordered the most (by value and volume) in the last quarter?",
+      "category": "Sales Performance",
+      "status": "SUCCESS",
+      "error": null,
+      "has_sql": true,
+      "row_count": 50,
+      "elapsed": 34.44892978668213,
+      "sql": "WITH CustomerQuarterlyMetrics AS (\n  SELECT \n    Customer,\n    SUM(COALESCE(Gross_Revenue, 0)) as total_revenue,\n    SUM(COALESCE(Volume, 0)) as total_volume\n  FROM `arizona-poc.copa_export_copa_data_000000000000.customer_master_analysis`\n  GROUP BY Customer\n)\nSELECT \n  Customer,\n  CONCAT('$', FORMAT('%\\'d', CAST(FLOOR(total_revenue) AS INT64)), FORMAT('.%02d', CAST(ROUND((total_revenue - FLOOR(total_revenue)) * 100) AS INT64))) as total_revenue,\n  FORMAT('%\\'d', CAST(total_volume AS INT64)) as total_volume\nFROM CustomerQuarterlyMetrics\nWHERE total_revenue > 0 OR total_volume > 0\nORDER BY total_revenue DESC, total_volume DESC\nLIMIT 50",
+      "explanation": "Identifies the top customers by both order value (revenue) and volume in the last quarter. The query aggregates total revenue and volume by customer from the customer_master_analysis table, formats monetary values with dollar signs and thousand separators, formats volume with thousand separators, and orders results by revenue first, then volume to show the highest-value customers at the top."
+    }
+  ]
+}
