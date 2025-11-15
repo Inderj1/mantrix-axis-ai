@@ -21,12 +21,14 @@ import {
   Warning as WarningIcon,
   Error as ErrorIcon,
   Refresh as RefreshIcon,
+  CloudSync as CloudSyncIcon,
 } from '@mui/icons-material';
 
 // Import the components
 import SystemHealthMonitoring from './controlcenter/SystemHealthMonitoring';
 import DataSourcesConnections from './controlcenter/DataSourcesConnections';
 import PlatformSettings from './controlcenter/PlatformSettings';
+import PipelineManagement from './controlcenter/PipelineManagement';
 import UserProfileManager from './UserProfileManager';
 import CommsConfig from './CommsConfig';
 
@@ -48,6 +50,13 @@ const ControlCenter = ({ apiHealth, onRefreshStatus }) => {
       component: <SystemHealthMonitoring />,
       status: 'healthy',
       badge: '99.9%',
+    },
+    {
+      label: 'Pipeline',
+      icon: <CloudSyncIcon />,
+      component: <PipelineManagement />,
+      status: 'healthy',
+      badge: 'Daily',
     },
     {
       label: 'Settings',

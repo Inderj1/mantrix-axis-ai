@@ -18,6 +18,7 @@ from src.api.stox_routes import router as stox_router
 from src.api.comms_routes import router as comms_router
 from src.api.comms_config_routes import router as comms_config_router
 from src.api.agent_routes import router as agent_router
+from src.api.pipeline_routes import router as pipeline_router
 
 # Configure structured logging
 structlog.configure(
@@ -52,6 +53,8 @@ async def lifespan(app: FastAPI):
     # Start Enterprise Pulse scheduler in background
     from src.core.pulse_scheduler import get_scheduler
     from src.core.market_signal_scheduler import get_market_signal_scheduler
+    from src.core.pipeline_scheduler import get_pipeline_scheduler
+    from datetime import time
     import asyncio
 
     pulse_scheduler = get_scheduler(check_interval=60)  # Check every minute
@@ -62,6 +65,14 @@ async def lifespan(app: FastAPI):
     markets_scheduler = get_market_signal_scheduler(check_interval=1800)  # Check every 30 minutes
     markets_task = asyncio.create_task(markets_scheduler.start())
     logger.info("Markets.AI Signal Scheduler started")
+
+    # Start Pipeline scheduler (daily at 2:00 AM)
+    pipeline_scheduler = get_pipeline_scheduler(
+        execution_time=time(2, 0),  # 2:00 AM
+        check_interval=300  # Check every 5 minutes
+    )
+    pipeline_task = asyncio.create_task(pipeline_scheduler.start())
+    logger.info("Pipeline Scheduler started (daily at 2:00 AM)")
 
     yield
 
@@ -85,6 +96,15 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     logger.info("Markets.AI Signal Scheduler stopped")
+
+    # Stop pipeline scheduler
+    await pipeline_scheduler.stop()
+    pipeline_task.cancel()
+    try:
+        await pipeline_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("Pipeline Scheduler stopped")
 
 
 app = FastAPI(
@@ -141,6 +161,7 @@ app.include_router(stox_router)
 app.include_router(comms_router)
 app.include_router(comms_config_router)
 app.include_router(agent_router)
+app.include_router(pipeline_router)
 
 
 @app.get("/")

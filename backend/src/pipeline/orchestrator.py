@@ -138,6 +138,10 @@ class PipelineOrchestrator:
             self.cache_manager
         )
 
+        # Run history (in-memory for now, should be persisted to DB in production)
+        self.run_history: List[PipelineRun] = []
+        self.max_history_size = 100  # Keep last 100 runs
+
         logger.info("Pipeline orchestrator initialized")
 
     def execute_pipeline(
@@ -328,6 +332,9 @@ class PipelineOrchestrator:
                 f"{run.duration_seconds:.1f}s"
             )
 
+            # Save to run history
+            self._save_run_to_history(run)
+
             return run
 
         except Exception as e:
@@ -339,6 +346,9 @@ class PipelineOrchestrator:
             end_time = datetime.now()
             run.end_time = end_time.isoformat()
             run.duration_seconds = (end_time - start_time).total_seconds()
+
+            # Save to run history even if failed
+            self._save_run_to_history(run)
 
             return run
 
@@ -514,3 +524,25 @@ PHASE 1: Schema Extraction
 
             'timestamp': run.start_time
         }
+
+    def _save_run_to_history(self, run: PipelineRun):
+        """Save pipeline run to history (in-memory)."""
+        self.run_history.insert(0, run)  # Insert at beginning (most recent first)
+
+        # Trim history if it exceeds max size
+        if len(self.run_history) > self.max_history_size:
+            self.run_history = self.run_history[:self.max_history_size]
+
+        logger.debug(f"Saved run {run.run_id} to history ({len(self.run_history)} total runs)")
+
+    def get_run_history(self, limit: int = 10) -> List[PipelineRun]:
+        """
+        Get pipeline run history.
+
+        Args:
+            limit: Maximum number of runs to return (default: 10)
+
+        Returns:
+            List of PipelineRun objects, most recent first
+        """
+        return self.run_history[:limit]
