@@ -274,8 +274,14 @@ class RDFBuilder:
         # Data freshness (if modified timestamp available)
         if snapshot.modified_at:
             try:
+                from datetime import timezone
                 modified_dt = datetime.fromisoformat(snapshot.modified_at)
-                age_hours = (datetime.now() - modified_dt).total_seconds() / 3600
+                # Use UTC for both datetimes to avoid timezone issues
+                now_utc = datetime.now(timezone.utc)
+                # Make modified_dt timezone-aware if it isn't
+                if modified_dt.tzinfo is None:
+                    modified_dt = modified_dt.replace(tzinfo=timezone.utc)
+                age_hours = (now_utc - modified_dt).total_seconds() / 3600
                 self.graph.add((table_uri, STATS.dataAgeHours, Literal(age_hours, datatype=XSD.float)))
 
                 # Flag stale data (>7 days old)

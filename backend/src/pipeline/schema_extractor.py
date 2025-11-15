@@ -155,7 +155,7 @@ class SchemaExtractor:
 
         try:
             # Store with 7-day TTL (refreshed on next extraction)
-            self.cache_manager.cache_schema(cache_key, snapshot.to_dict(), ttl=7 * 24 * 60 * 60)
+            self.cache_manager.set_cached_schema(cache_key, snapshot.to_dict(), ttl=7 * 24 * 60 * 60)
             logger.debug(f"Stored schema snapshot for {snapshot.table_name}")
         except Exception as e:
             logger.warning(f"Failed to store snapshot for {snapshot.table_name}: {e}")

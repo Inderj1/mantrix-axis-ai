@@ -367,17 +367,16 @@ class PipelineOrchestrator:
 
         # Check Weaviate vectors
         try:
+            import weaviate.classes as wvc
+            collection = self.weaviate_client.client.collections.get("TableSchemas")
+
             for snapshot in snapshots[:10]:  # Sample first 10
-                existing = self.weaviate_client.client.data_object.get(
-                    class_name="TableSchemas",
-                    where={
-                        "path": ["table_name"],
-                        "operator": "Equal",
-                        "valueText": snapshot.table_name
-                    }
+                response = collection.query.fetch_objects(
+                    filters=wvc.query.Filter.by_property("table_name").equal(snapshot.table_name),
+                    limit=1
                 )
 
-                if not existing or not existing.get('objects'):
+                if not response.objects or len(response.objects) == 0:
                     errors.append(f"No vector found for {snapshot.table_name}")
 
         except Exception as e:
