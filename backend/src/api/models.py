@@ -7,7 +7,9 @@ class QueryRequest(BaseModel):
     dataset: Optional[str] = Field(None, description="Override default dataset")
     options: Optional[Dict[str, Any]] = Field(default_factory=dict)
     conversationId: Optional[str] = Field(None, description="Conversation ID for context")
-    
+    page_size: Optional[int] = Field(10000, description="Number of rows per page (default: 10000, max: 100000)")
+    page_token: Optional[str] = Field(None, description="Token for fetching next page of results")
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -15,7 +17,9 @@ class QueryRequest(BaseModel):
                 "options": {
                     "use_vector_search": True,
                     "max_tables": 5
-                }
+                },
+                "page_size": 10000,
+                "page_token": None
             }
         }
 
@@ -96,6 +100,9 @@ class ExecutionResponse(BaseModel):
     row_count: Optional[int] = None
     total_rows: Optional[int] = None
     truncated: Optional[bool] = None
+    has_more: Optional[bool] = None
+    next_page_token: Optional[str] = None
+    page_info: Optional[Dict[str, Any]] = None
     validation: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None

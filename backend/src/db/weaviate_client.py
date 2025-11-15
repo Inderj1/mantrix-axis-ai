@@ -76,6 +76,16 @@ class WeaviateClient:
                     Property(name="columns", data_type=DataType.TEXT),  # JSON string
                     Property(name="row_count", data_type=DataType.INT),
                     Property(name="combined_text", data_type=DataType.TEXT),  # For semantic search
+                    Property(name="schema_version", data_type=DataType.INT),
+                    Property(name="schema_hash", data_type=DataType.TEXT),
+                    Property(name="column_count", data_type=DataType.INT),
+                    Property(name="database_type", data_type=DataType.TEXT),
+                    Property(name="created_at", data_type=DataType.TEXT),
+                    Property(name="modified_at", data_type=DataType.TEXT),
+                    Property(name="indexed_at", data_type=DataType.TEXT),
+                    Property(name="business_domains", data_type=DataType.TEXT),  # JSON string
+                    Property(name="has_relationships", data_type=DataType.BOOL),
+                    Property(name="column_names", data_type=DataType.TEXT),  # JSON string
                 ],
                 vectorizer_config=wvc.config.Configure.Vectorizer.none(),
                 vector_index_config=wvc.config.Configure.VectorIndex.hnsw(

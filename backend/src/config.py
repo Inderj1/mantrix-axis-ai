@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         None, alias="GOOGLE_APPLICATION_CREDENTIALS"
     )
     bigquery_dataset: str = Field(..., alias="BIGQUERY_DATASET")
+    bigquery_query_timeout_seconds: int = Field(default=60, alias="BIGQUERY_QUERY_TIMEOUT_SECONDS")
+    default_query_timeout_seconds: int = Field(default=60, alias="DEFAULT_QUERY_TIMEOUT_SECONDS")
 
     # Weaviate
     weaviate_url: str = Field(default="http://localhost:8082", alias="WEAVIATE_URL")

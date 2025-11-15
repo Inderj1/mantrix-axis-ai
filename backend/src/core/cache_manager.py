@@ -285,16 +285,54 @@ class CacheManager:
             self.PREFIX_SCHEMA,
             f"{project}:{dataset}:{table}"
         )
-        
+
         try:
             cached_data = self.redis.get(key)
             if cached_data:
                 return json.loads(cached_data)
-                
+
         except Exception as e:
             logger.error(f"Failed to get cached schema: {e}")
-        
+
         return None
+
+    def get_cached_schema(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached schema using a direct cache key.
+        Used by format_normalizer and other modules that generate their own cache keys.
+
+        Args:
+            cache_key: Direct cache key (not prefixed)
+
+        Returns:
+            Cached data as dictionary or None
+        """
+        try:
+            cached_data = self.redis.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.error(f"Failed to get cached schema with key {cache_key}: {e}")
+
+        return None
+
+    def set_cached_schema(self, cache_key: str, data: Dict[str, Any], ttl: int = None) -> None:
+        """
+        Set cached schema using a direct cache key.
+        Used by format_normalizer and other modules that generate their own cache keys.
+
+        Args:
+            cache_key: Direct cache key (not prefixed)
+            data: Data to cache
+            ttl: Time to live in seconds (default: TTL_SCHEMA)
+        """
+        if ttl is None:
+            ttl = self.TTL_SCHEMA
+
+        try:
+            self.redis.setex(cache_key, ttl, json.dumps(data))
+        except Exception as e:
+            logger.error(f"Failed to set cached schema with key {cache_key}: {e}")
     
     def invalidate_schema_cache(self, project: str, dataset: str, table: Optional[str] = None) -> int:
         """Invalidate schema cache for a table or entire dataset."""

@@ -30,3 +30,6 @@ plotly
 pypdf
 python-docx
 python-multipart
+rdflib
+crewai
+python-dotenv

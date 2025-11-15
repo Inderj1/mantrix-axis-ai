@@ -6,6 +6,7 @@ from src.core.query_optimizer import QueryOptimizer
 from src.core.industry_configs import IndustryConfigManager
 from src.core.cache_manager import CacheManager
 from src.core.query_suggestions import QuerySuggestionService
+from src.core.format_normalizer import FormatNormalizer
 from src.core.financial_hierarchy import HierarchyLevel, financial_hierarchy
 from src.core.financial_semantic_parser import financial_parser, QueryIntent, QueryType
 from src.core.metrics_precalculation import FinancialMetricsPreCalculator
@@ -45,6 +46,7 @@ class SQLGenerator:
         self.vector_client = WeaviateClient()
         self.optimizer = QueryOptimizer()
         self.suggestion_service = QuerySuggestionService()
+        self.format_normalizer = None  # Will be initialized after cache_manager
         
         # Initialize cache manager
         self.cache_manager = None
@@ -72,7 +74,15 @@ class SQLGenerator:
             except Exception as e:
                 logger.warning(f"Failed to initialize cache manager: {e}. Running without cache.")
                 self.cache_manager = None
-        
+
+        # Initialize format normalizer (requires bq_client and cache_manager)
+        try:
+            self.format_normalizer = FormatNormalizer(self.bq_client, self.cache_manager)
+            logger.info("Format normalizer initialized - JOIN accuracy fix enabled")
+        except Exception as e:
+            logger.warning(f"Failed to initialize format normalizer: {e}. Running without format normalization.")
+            self.format_normalizer = None
+
         # Industry configuration
         self.industry_manager = IndustryConfigManager()
         if settings.enable_industry_features:
@@ -602,7 +612,27 @@ class SQLGenerator:
                     
                     # Re-validate optimized query
                     result["validation"] = self.bq_client.validate_query(result["sql"])
-            
+
+            # Apply format normalization for JOIN accuracy (fixes COPA/Cockpit mismatch)
+            if self.format_normalizer and validation.get("valid", False):
+                try:
+                    original_sql = result["sql"]
+                    normalized_sql = self.format_normalizer.normalize_join_query(original_sql)
+
+                    if normalized_sql != original_sql:
+                        logger.info("Format normalization applied to query - JOIN accuracy improved")
+                        result["original_sql_before_normalization"] = original_sql
+                        result["sql"] = normalized_sql
+                        result["format_normalized"] = True
+
+                        # Re-validate normalized query
+                        result["validation"] = self.bq_client.validate_query(result["sql"])
+                    else:
+                        result["format_normalized"] = False
+                except Exception as e:
+                    logger.warning(f"Format normalization failed: {e}. Using original query.")
+                    result["format_normalized"] = False
+
             # Add industry context to result
             if settings.enable_industry_features:
                 result["industry"] = settings.industry
