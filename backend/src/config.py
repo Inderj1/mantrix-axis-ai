@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Anthropic (for NLP-to-SQL system)
     anthropic_api_key: Optional[str] = Field(None, alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-3-5-sonnet-20240620", alias="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-sonnet-4-5-20250929", alias="ANTHROPIC_MODEL")
 
     # OpenAI (for embeddings)
     openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
@@ -95,6 +95,37 @@ class Settings(BaseSettings):
     cache_result_enabled: bool = Field(
         default=False, alias="CACHE_RESULT_ENABLED"
     )  # Off by default for fresh data
+
+    # Cache quality settings
+    cache_execution_threshold_ms: int = Field(
+        default=30000, alias="CACHE_EXECUTION_THRESHOLD_MS"
+    )  # 30 seconds - queries slower than this get reduced TTL
+    cache_min_confidence: float = Field(
+        default=0.7, alias="CACHE_MIN_CONFIDENCE"
+    )  # Minimum LLM confidence score to cache
+    cache_max_rows_threshold: int = Field(
+        default=1000000, alias="CACHE_MAX_ROWS_THRESHOLD"
+    )  # 1M rows - queries returning more marked as suspect
+    cache_validation_required: bool = Field(
+        default=True, alias="CACHE_VALIDATION_REQUIRED"
+    )  # Require successful BigQuery validation before caching
+    cache_execution_test_required: bool = Field(
+        default=True, alias="CACHE_EXECUTION_TEST_REQUIRED"
+    )  # Require successful test execution before caching
+    cache_invalidate_on_pipeline: bool = Field(
+        default=True, alias="CACHE_INVALIDATE_ON_PIPELINE"
+    )  # Automatically invalidate cache when pipeline updates schemas
+
+    # Cache quality tier TTLs (in seconds)
+    cache_ttl_gold: int = Field(
+        default=7 * 24 * 60 * 60, alias="CACHE_TTL_GOLD"
+    )  # 7 days - fast, validated, high confidence
+    cache_ttl_silver: int = Field(
+        default=3 * 24 * 60 * 60, alias="CACHE_TTL_SILVER"
+    )  # 3 days - medium speed, validated
+    cache_ttl_bronze: int = Field(
+        default=12 * 60 * 60, alias="CACHE_TTL_BRONZE"
+    )  # 12 hours - slow but validated
 
     # PostgreSQL Configuration
     postgres_host: str = Field(default="localhost", alias="POSTGRES_HOST")

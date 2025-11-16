@@ -236,7 +236,139 @@ class CacheManager:
             
         except Exception as e:
             logger.error(f"Failed to cache SQL generation: {e}")
-    
+
+    def cache_validated_sql(
+        self,
+        key: str,
+        result: Dict[str, Any],
+        query: str,
+        execution_time_ms: float,
+        row_count: int,
+        validation_status: bool,
+        error_details: Optional[str] = None,
+        confidence_score: Optional[float] = None
+    ) -> bool:
+        """
+        Cache a validated and successfully executed SQL query with quality metadata.
+
+        This method enforces quality gates and only caches queries that meet all criteria:
+        - Passed BigQuery validation (if required)
+        - Executed successfully (if test execution required)
+        - Meets performance thresholds
+        - Meets confidence thresholds
+
+        Args:
+            key: Cache key
+            result: SQL generation result from LLM
+            query: Normalized query string
+            execution_time_ms: Time taken to execute query in milliseconds
+            row_count: Number of rows returned
+            validation_status: Whether query passed BigQuery validation
+            error_details: Error message if any (None if successful)
+            confidence_score: LLM confidence score (0-1)
+
+        Returns:
+            bool: True if cached, False if rejected
+        """
+        from src.config import settings
+
+        try:
+            # QUALITY GATE 1: Validation required?
+            if settings.cache_validation_required and not validation_status:
+                logger.warning(f"Rejecting cache - validation failed: {error_details}")
+                return False
+
+            # QUALITY GATE 2: Execution errors?
+            if error_details:
+                logger.warning(f"Rejecting cache - execution error: {error_details}")
+                return False
+
+            # QUALITY GATE 3: Confidence threshold
+            if confidence_score is not None and confidence_score < settings.cache_min_confidence:
+                logger.warning(f"Rejecting cache - low confidence: {confidence_score:.2f} < {settings.cache_min_confidence}")
+                return False
+
+            # QUALITY GATE 4: Row count threshold (mark as suspect if exceeded)
+            suspect_high_rows = row_count > settings.cache_max_rows_threshold
+
+            # Add execution metadata to result
+            result["execution_metadata"] = {
+                "execution_time_ms": execution_time_ms,
+                "row_count": row_count,
+                "validation_status": validation_status,
+                "error_details": error_details,
+                "confidence_score": confidence_score,
+                "cached_at": datetime.now().isoformat(),
+                "cache_version": "2.0",  # Smart caching version
+                "suspect_high_rows": suspect_high_rows
+            }
+            result["normalized_query"] = query
+            result["hit_count"] = 0
+
+            # Determine cache quality tier and TTL
+            cache_tier, ttl = self._determine_cache_tier(
+                execution_time_ms=execution_time_ms,
+                confidence_score=confidence_score or 0.5,
+                suspect_high_rows=suspect_high_rows
+            )
+
+            result["cache_tier"] = cache_tier
+
+            # Store in Redis
+            self.redis.setex(
+                key,
+                ttl,
+                json.dumps(result)
+            )
+
+            # Update query frequency tracking
+            self._track_query_frequency(query)
+
+            logger.info(
+                f"Cached validated SQL [{cache_tier} tier, {ttl}s TTL]: "
+                f"{execution_time_ms:.0f}ms, {row_count} rows, "
+                f"confidence={confidence_score or 0:.2f}"
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to cache validated SQL: {e}")
+            return False
+
+    def _determine_cache_tier(
+        self,
+        execution_time_ms: float,
+        confidence_score: float,
+        suspect_high_rows: bool
+    ) -> tuple[str, int]:
+        """
+        Determine cache quality tier and TTL based on query performance.
+
+        Returns:
+            tuple: (tier_name, ttl_seconds)
+        """
+        from src.config import settings
+
+        # GOLD TIER: Fast (<5s), high confidence, reasonable row count
+        if (
+            execution_time_ms < 5000
+            and confidence_score >= 0.9
+            and not suspect_high_rows
+        ):
+            return ("GOLD", settings.cache_ttl_gold)
+
+        # BRONZE TIER: Slow (>30s) or suspect rows
+        elif (
+            execution_time_ms > settings.cache_execution_threshold_ms
+            or suspect_high_rows
+        ):
+            return ("BRONZE", settings.cache_ttl_bronze)
+
+        # SILVER TIER: Everything else that passed gates
+        else:
+            return ("SILVER", settings.cache_ttl_silver)
+
     def get_sql_generation(self, key: str) -> Optional[Dict[str, Any]]:
         """Retrieve SQL generation from cache."""
         try:
@@ -867,7 +999,93 @@ class CacheManager:
             
         except Exception as e:
             logger.error(f"Failed to warm MV cache: {e}")
-    
+
+    def invalidate_failed_queries(self) -> Dict[str, int]:
+        """
+        Scan cache and invalidate entries that represent failed or low-quality queries.
+
+        This method removes cache entries that:
+        - Have execution errors
+        - Failed validation
+        - Exceed performance thresholds
+        - Have old cache version (pre-smart caching)
+
+        Returns:
+            Dict with counts of different invalidation reasons
+        """
+        invalidation_stats = {
+            "execution_errors": 0,
+            "validation_failed": 0,
+            "slow_queries": 0,
+            "old_version": 0,
+            "total_deleted": 0
+        }
+
+        try:
+            # Scan all SQL cache keys
+            for key in self.redis.scan_iter(match=f"{self.PREFIX_SQL}*"):
+                try:
+                    cached_data = self.redis.get(key)
+                    if not cached_data:
+                        continue
+
+                    result = json.loads(cached_data)
+                    should_invalidate = False
+                    reason = None
+
+                    # Check for execution metadata (smart cache v2.0)
+                    exec_meta = result.get("execution_metadata", {})
+
+                    # Reason 1: Old cache version (no metadata)
+                    if not exec_meta:
+                        should_invalidate = True
+                        reason = "old_version"
+                        invalidation_stats["old_version"] += 1
+
+                    # Reason 2: Execution errors
+                    elif exec_meta.get("error_details"):
+                        should_invalidate = True
+                        reason = "execution_errors"
+                        invalidation_stats["execution_errors"] += 1
+
+                    # Reason 3: Validation failed
+                    elif not exec_meta.get("validation_status", True):
+                        should_invalidate = True
+                        reason = "validation_failed"
+                        invalidation_stats["validation_failed"] += 1
+
+                    # Reason 4: Excessively slow (3x threshold)
+                    elif exec_meta.get("execution_time_ms", 0) > (self.settings.cache_execution_threshold_ms * 3):
+                        should_invalidate = True
+                        reason = "slow_queries"
+                        invalidation_stats["slow_queries"] += 1
+
+                    if should_invalidate:
+                        self.redis.delete(key)
+                        invalidation_stats["total_deleted"] += 1
+                        logger.debug(f"Invalidated cache key for {reason}: {key[:50]}...")
+
+                except json.JSONDecodeError:
+                    # Corrupted cache entry, delete it
+                    self.redis.delete(key)
+                    invalidation_stats["total_deleted"] += 1
+                except Exception as e:
+                    logger.warning(f"Error checking cache entry {key}: {e}")
+
+            logger.info(
+                f"Cache invalidation complete: {invalidation_stats['total_deleted']} deleted "
+                f"(errors: {invalidation_stats['execution_errors']}, "
+                f"validation: {invalidation_stats['validation_failed']}, "
+                f"slow: {invalidation_stats['slow_queries']}, "
+                f"old: {invalidation_stats['old_version']})"
+            )
+
+            return invalidation_stats
+
+        except Exception as e:
+            logger.error(f"Failed to invalidate failed queries: {e}")
+            return invalidation_stats
+
     def clear_all_caches(self) -> int:
         """Clear all caches (use with caution)."""
         deleted = 0

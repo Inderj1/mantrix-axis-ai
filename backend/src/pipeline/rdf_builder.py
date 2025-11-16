@@ -501,18 +501,21 @@ Errors: {len(result.errors)}
         """
         Query relationships for a specific table.
 
+        ENHANCED: Queries BOTH directions - where table is source AND target.
+        This ensures all possible JOINs are discovered.
+
         Args:
             table_name: Table to find relationships for
 
         Returns:
-            List of relationship dictionaries
+            List of relationship dictionaries with bidirectional relationships
         """
         table_uri = FIN[f"Table_{table_name}"]
 
         relationships = []
 
-        # Query SPARQL for relationships
-        query = f"""
+        # Query 1: Where this table is the SOURCE
+        query_as_source = f"""
         PREFIX fin: <http://example.com/finance#>
         PREFIX schema: <http://example.com/schema#>
 
@@ -530,18 +533,54 @@ Errors: {len(result.errors)}
         }}
         """
 
-        try:
-            results = self.graph.query(query)
+        # Query 2: Where this table is the TARGET (reverse relationships)
+        query_as_target = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
 
-            for row in results:
+        SELECT ?source_table ?source_col ?target_col
+        WHERE {{
+            ?rel a fin:JoinRelationship .
+            ?rel schema:sourceTable ?source_table_uri .
+            ?rel schema:targetTable <{table_uri}> .
+            ?rel schema:sourceColumn ?source_col_uri .
+            ?rel schema:targetColumn ?target_col_uri .
+
+            ?source_table_uri schema:tableName ?source_table .
+            ?source_col_uri schema:columnName ?source_col .
+            ?target_col_uri schema:columnName ?target_col .
+        }}
+        """
+
+        try:
+            # Execute query 1: as source
+            results_as_source = self.graph.query(query_as_source)
+
+            for row in results_as_source:
                 relationships.append({
                     'target_table': str(row.target_table),
                     'source_column': str(row.source_col),
                     'target_column': str(row.target_col),
-                    'join_type': 'INNER'
+                    'join_type': 'INNER',
+                    'direction': 'outgoing'
                 })
 
+            # Execute query 2: as target (reverse)
+            results_as_target = self.graph.query(query_as_target)
+
+            for row in results_as_target:
+                # When we're the target, flip the relationship
+                relationships.append({
+                    'target_table': str(row.source_table),  # The other table
+                    'source_column': str(row.target_col),   # Our column
+                    'target_column': str(row.source_col),   # Their column
+                    'join_type': 'INNER',
+                    'direction': 'incoming'
+                })
+
+            logger.debug(f"Found {len(relationships)} relationships for {table_name}")
+
         except Exception as e:
-            logger.error(f"SPARQL query failed: {e}")
+            logger.error(f"SPARQL query failed for {table_name}: {e}")
 
         return relationships

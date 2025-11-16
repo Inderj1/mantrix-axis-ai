@@ -311,6 +311,28 @@ class PipelineOrchestrator:
             validation_errors = self._validate_pipeline(snapshots_to_process)
             run.errors.extend([f"Validation: {e}" for e in validation_errors])
 
+            # === Phase 5: Cache Invalidation (Smart Caching) ===
+            # Invalidate SQL cache entries affected by schema changes
+            if self.cache_manager and len(snapshots_to_process) > 0 and settings.cache_invalidate_on_pipeline:
+                logger.info("Phase 5: Cache Invalidation")
+                try:
+                    # Determine which tables had schema changes
+                    changed_tables = {s.table_name for s in snapshots_to_process}
+
+                    # Invalidate queries that used these tables
+                    invalidation_result = self._invalidate_cache_for_tables(changed_tables, changes)
+
+                    logger.info(
+                        f"Cache invalidation complete: {invalidation_result['sql_entries_deleted']} SQL entries, "
+                        f"{invalidation_result['failed_queries_removed']} failed queries removed"
+                    )
+
+                    run.cache_invalidation_result = invalidation_result
+
+                except Exception as cache_error:
+                    logger.warning(f"Cache invalidation failed (non-fatal): {cache_error}")
+                    run.errors.append(f"Cache invalidation: {str(cache_error)}")
+
             # === Complete Run ===
             run.tables_processed = len(snapshots_to_process)
 
@@ -393,6 +415,75 @@ class PipelineOrchestrator:
             errors.append(f"Vector validation failed: {str(e)}")
 
         return errors
+
+    def _invalidate_cache_for_tables(
+        self,
+        changed_tables: set,
+        changes: Dict
+    ) -> Dict[str, int]:
+        """
+        Invalidate cache entries affected by schema changes.
+
+        When schemas change, cached SQL queries may:
+        - Reference columns that no longer exist
+        - Miss new columns that are more relevant
+        - Use outdated table relationships
+
+        This method invalidates:
+        1. SQL cache entries that use changed tables
+        2. Failed queries (as part of general cleanup)
+
+        Args:
+            changed_tables: Set of table names that changed
+            changes: Dictionary of SchemaChangeType -> list of changes
+
+        Returns:
+            Dict with invalidation statistics
+        """
+        stats = {
+            "sql_entries_deleted": 0,
+            "failed_queries_removed": 0,
+            "tables_affected": len(changed_tables)
+        }
+
+        try:
+            # First, run general cleanup of failed queries
+            failed_query_stats = self.cache_manager.invalidate_failed_queries()
+            stats["failed_queries_removed"] = failed_query_stats.get("total_deleted", 0)
+
+            # Then, invalidate cache entries that use changed tables
+            for key in self.cache_manager.redis.scan_iter(match=f"{self.cache_manager.PREFIX_SQL}*"):
+                try:
+                    cached_data = self.cache_manager.redis.get(key)
+                    if not cached_data:
+                        continue
+
+                    import json
+                    result = json.loads(cached_data)
+                    tables_used = set(result.get("tables_used", []))
+
+                    # Check if this cached query uses any changed tables
+                    if tables_used & changed_tables:
+                        self.cache_manager.redis.delete(key)
+                        stats["sql_entries_deleted"] += 1
+
+                        logger.debug(
+                            f"Invalidated cache for query using changed tables: "
+                            f"{tables_used & changed_tables}"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"Error checking cache entry {key}: {e}")
+
+            logger.info(
+                f"Cache invalidation: {stats['sql_entries_deleted']} entries deleted "
+                f"for {stats['tables_affected']} changed tables"
+            )
+
+        except Exception as e:
+            logger.error(f"Cache invalidation failed: {e}")
+
+        return stats
 
     def execute_scheduled(self, schedule: str = "hourly") -> Optional[PipelineRun]:
         """

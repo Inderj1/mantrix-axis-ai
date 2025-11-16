@@ -642,13 +642,85 @@ class SQLGenerator:
             if not result.get("error"):
                 # Get improvement suggestions
                 improvements = self.suggestion_service.suggest_query_improvements(
-                    query, 
+                    query,
                     result.get("sql", ""),
                     result.get("execution", {}).get("performance_stats")
                 )
                 if improvements:
                     result["suggestions"] = improvements
-            
+
+            # SMART CACHING: Cache after validation and test execution (if not from cache)
+            if (
+                self.cache_manager
+                and settings.cache_sql_enabled
+                and not result.get("from_cache", False)
+                and not force_refresh
+            ):
+                try:
+                    # Get validation status
+                    validation_status = result.get("validation", {}).get("valid", False)
+                    error_details = result.get("validation", {}).get("error") if not validation_status else None
+
+                    # Test execution if required and query is valid
+                    execution_time_ms = 0
+                    row_count = 0
+
+                    if settings.cache_execution_test_required and validation_status and result.get("sql"):
+                        try:
+                            # Quick test execution with LIMIT 1 for performance
+                            import time
+                            test_sql = result["sql"]
+
+                            # Add LIMIT 1 if not already limited for testing
+                            if "LIMIT" not in test_sql.upper():
+                                test_sql += " LIMIT 1"
+
+                            start_time = time.time()
+                            test_results = self.bq_client.execute_query(test_sql)
+                            execution_time_ms = (time.time() - start_time) * 1000
+                            row_count = len(test_results) if test_results else 0
+
+                            logger.debug(f"Test execution: {execution_time_ms:.0f}ms, {row_count} rows")
+
+                        except Exception as exec_error:
+                            # Test execution failed
+                            error_details = str(exec_error)
+                            validation_status = False
+                            logger.warning(f"Test execution failed: {error_details[:100]}...")
+
+                    # Get confidence score from result (if available)
+                    confidence_score = result.get("confidence_score")
+
+                    # Generate cache key
+                    normalized_query = query.strip().lower()
+                    normalized_query = " ".join(normalized_query.split())
+
+                    table_names = sorted(result.get("tables_used", []))
+                    import hashlib
+                    query_hash = hashlib.sha256(normalized_query.encode()).hexdigest()
+                    table_hash = hashlib.sha256(",".join(table_names).encode()).hexdigest()
+                    cache_key = f"sql:{query_hash}:{table_hash}"
+
+                    # Attempt to cache with quality gates
+                    cached = self.cache_manager.cache_validated_sql(
+                        key=cache_key,
+                        result=result,
+                        query=normalized_query,
+                        execution_time_ms=execution_time_ms,
+                        row_count=row_count,
+                        validation_status=validation_status,
+                        error_details=error_details,
+                        confidence_score=confidence_score
+                    )
+
+                    if not cached:
+                        logger.info(f"Query not cached - failed quality gates")
+                    else:
+                        logger.debug(f"Query cached with smart caching v2.0")
+
+                except Exception as cache_error:
+                    logger.error(f"Smart caching failed: {cache_error}")
+
             return result
             
         except Exception as e:

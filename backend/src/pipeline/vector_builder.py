@@ -448,6 +448,9 @@ class VectorBuilder:
 
             # Column names for quick reference - stored as JSON string
             "column_names": json.dumps([col['name'] for col in snapshot.columns]),
+
+            # CRITICAL FIX: Store full column metadata (not just names)
+            "columns": json.dumps(snapshot.columns),
         }
 
         collection = self.weaviate_client.client.collections.get("TableSchemas")

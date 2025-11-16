@@ -144,28 +144,49 @@ class WeaviateClient:
     def search_similar_tables(self, query_embedding: List[float], limit: int = 5) -> List[Dict[str, Any]]:
         """Search for tables similar to the query."""
         try:
+            import json
             collection = self.client.collections.get(self.collection_name)
-            
+
+            # Specify which properties to return to avoid None values
             response = collection.query.near_vector(
                 near_vector=query_embedding,
                 limit=limit,
-                return_metadata=wvc.query.MetadataQuery(distance=True)
+                return_metadata=wvc.query.MetadataQuery(distance=True),
+                return_properties=[
+                    "table_name",
+                    "dataset",
+                    "project",
+                    "description",
+                    "columns",
+                    "row_count",
+                    "combined_text"
+                ]
             )
-            
+
             results = []
             for item in response.objects:
-                import json
+                # Safe property access with None checks
+                columns_json = item.properties.get("columns")
+                columns = []
+                if columns_json:
+                    try:
+                        columns = json.loads(columns_json)
+                    except (json.JSONDecodeError, TypeError) as parse_error:
+                        logger.warning(f"Failed to parse columns for {item.properties.get('table_name')}: {parse_error}")
+                        columns = []
+
                 result = {
-                    "table_name": item.properties["table_name"],
-                    "dataset": item.properties["dataset"],
-                    "project": item.properties["project"],
-                    "description": item.properties["description"],
-                    "columns": json.loads(item.properties["columns"]),
-                    "row_count": item.properties["row_count"],
+                    "table_name": item.properties.get("table_name", "unknown"),
+                    "dataset": item.properties.get("dataset", ""),
+                    "project": item.properties.get("project", ""),
+                    "description": item.properties.get("description", ""),
+                    "columns": columns,
+                    "row_count": item.properties.get("row_count", 0),
                     "distance": item.metadata.distance if item.metadata else None
                 }
                 results.append(result)
-            
+
+            logger.info(f"Vector search found {len(results)} similar tables")
             return results
         except Exception as e:
             logger.error(f"Failed to search tables: {e}")
