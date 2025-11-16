@@ -15,7 +15,7 @@ cleanup() {
     echo -e "\n${YELLOW}Shutting down services...${NC}"
     pkill -f "npm start"
     pkill -f "uvicorn src.main:app"
-    redis-cli shutdown 2>/dev/null
+    docker-compose stop redis weaviate mongodb
     echo -e "${GREEN}All services stopped.${NC}"
     exit 0
 }
@@ -35,13 +35,27 @@ else
     echo -e "${GREEN}✓ Virtual environment found${NC}"
 fi
 
-# Install/update required dependencies
-echo -e "${YELLOW}Checking dependencies...${NC}"
+# Install/update backend dependencies
+echo -e "${YELLOW}Checking backend dependencies...${NC}"
 cd backend
 source venv/bin/activate
 pip install -q rdflib crewai nest-asyncio 2>/dev/null || echo -e "${YELLOW}⚠ Some dependencies may need manual installation${NC}"
 cd ..
-echo -e "${GREEN}✓ Dependencies checked${NC}"
+echo -e "${GREEN}✓ Backend dependencies checked${NC}"
+
+# Check and install frontend dependencies
+if [ ! -d "frontend/node_modules" ]; then
+    echo -e "${YELLOW}Frontend dependencies not found. Installing...${NC}"
+    cd frontend
+    npm install
+    cd ..
+    echo -e "${GREEN}✓ Frontend dependencies installed${NC}"
+else
+    echo -e "${GREEN}✓ Frontend dependencies found${NC}"
+fi
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
 
 # Clean up any existing processes on required ports
 echo -e "\n${YELLOW}Cleaning up existing processes...${NC}"
@@ -49,19 +63,19 @@ lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
 echo -e "${GREEN}✓ Ports freed${NC}"
 
-# Start Redis
-echo -e "\n${YELLOW}Starting Redis...${NC}"
-if pgrep -f "redis-server" > /dev/null; then
-    echo -e "${GREEN}✓ Redis already running${NC}"
+# Start required Docker services (Redis, Weaviate, MongoDB)
+echo -e "\n${YELLOW}Starting required Docker services (Redis, Weaviate, MongoDB)...${NC}"
+docker-compose up -d redis weaviate mongodb
+sleep 5
+if docker ps | grep -q redis && docker ps | grep -q weaviate && docker ps | grep -q mongodb; then
+    echo -e "${GREEN}✓ Required services started successfully${NC}"
+    echo -e "  Redis: localhost:6379"
+    echo -e "  Weaviate: localhost:8082"
+    echo -e "  MongoDB: localhost:27017"
 else
-    redis-server --daemonize yes
-    sleep 1
-    if pgrep -f "redis-server" > /dev/null; then
-        echo -e "${GREEN}✓ Redis started successfully${NC}"
-    else
-        echo -e "${RED}✗ Failed to start Redis${NC}"
-        exit 1
-    fi
+    echo -e "${RED}✗ Failed to start one or more required services${NC}"
+    echo -e "${YELLOW}Run 'docker-compose logs redis weaviate mongodb' to see errors${NC}"
+    exit 1
 fi
 
 # Start Backend
@@ -99,18 +113,16 @@ else
     exit 1
 fi
 
-# Optional: Start Docker services (MongoDB, Neo4j, Weaviate)
-echo -e "\n${YELLOW}Docker Services (optional):${NC}"
-read -p "Do you want to start Docker services (MongoDB, Neo4j, Weaviate)? (y/n) " -n 1 -r
+# Optional: Start additional Docker services (Neo4j)
+echo -e "\n${YELLOW}Additional Docker Services (optional):${NC}"
+read -p "Do you want to start Neo4j? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Starting Docker services...${NC}"
-    docker-compose up -d mongodb neo4j weaviate
+    echo -e "${YELLOW}Starting Neo4j...${NC}"
+    docker-compose up -d neo4j
     sleep 3
-    echo -e "${GREEN}✓ Docker services started${NC}"
-    echo -e "  MongoDB: localhost:27017"
+    echo -e "${GREEN}✓ Neo4j started${NC}"
     echo -e "  Neo4j: localhost:7474 (browser), localhost:7687 (bolt)"
-    echo -e "  Weaviate: localhost:8082"
 fi
 
 # Summary
@@ -121,6 +133,8 @@ echo -e "${GREEN}Frontend:${NC}  http://localhost:5174"
 echo -e "${GREEN}Backend:${NC}   http://localhost:8000"
 echo -e "${GREEN}API Docs:${NC}  http://localhost:8000/docs"
 echo -e "${GREEN}Redis:${NC}     localhost:6379"
+echo -e "${GREEN}Weaviate:${NC}  http://localhost:8082"
+echo -e "${GREEN}MongoDB:${NC}   localhost:27017"
 echo -e "\n${YELLOW}Logs:${NC}"
 echo -e "  Backend:  tail -f logs/backend.log"
 echo -e "  Frontend: tail -f logs/frontend.log"

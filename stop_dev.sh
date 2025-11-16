@@ -16,12 +16,18 @@ pkill -f "npm start" && echo -e "${GREEN}✓ Frontend stopped${NC}" || echo -e "
 echo -e "\n${YELLOW}Stopping Backend...${NC}"
 pkill -f "uvicorn src.main:app" && echo -e "${GREEN}✓ Backend stopped${NC}" || echo -e "${RED}✗ Backend not running${NC}"
 
-# Stop Redis
-echo -e "\n${YELLOW}Stopping Redis...${NC}"
-redis-cli shutdown 2>/dev/null && echo -e "${GREEN}✓ Redis stopped${NC}" || echo -e "${RED}✗ Redis not running${NC}"
+# Stop required Docker services (Redis, Weaviate, MongoDB)
+echo -e "\n${YELLOW}Stopping required Docker services (Redis, Weaviate, MongoDB)...${NC}"
+docker-compose stop redis weaviate mongodb && echo -e "${GREEN}✓ Required services stopped${NC}" || echo -e "${YELLOW}! Required services not running${NC}"
 
-# Stop Docker services
-echo -e "\n${YELLOW}Stopping Docker services...${NC}"
-docker-compose down && echo -e "${GREEN}✓ Docker services stopped${NC}" || echo -e "${YELLOW}! No Docker services running${NC}"
+# Optional: Stop all Docker services
+echo -e "\n${YELLOW}Additional Docker Services:${NC}"
+read -p "Do you want to stop all Docker services (Neo4j)? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    docker-compose down && echo -e "${GREEN}✓ All Docker services stopped${NC}" || echo -e "${YELLOW}! No additional services running${NC}"
+else
+    echo -e "${YELLOW}Neo4j left running (if it was started)${NC}"
+fi
 
-echo -e "\n${GREEN}All services stopped!${NC}"
+echo -e "\n${GREEN}All development services stopped!${NC}"

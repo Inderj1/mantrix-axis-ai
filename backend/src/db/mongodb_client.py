@@ -26,14 +26,14 @@ class MongoDBClient:
             self.client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongodb_url)
             self.db = self.client[settings.mongodb_database]
             self.conversations_collection = self.db[settings.mongodb_conversations_collection]
-            
+
             # Create indexes
             await self._create_indexes()
-            
+
             # Test connection
             await self.client.admin.command('ping')
             logger.info("Successfully connected to MongoDB")
-            
+
         except Exception as e:
             logger.error("Failed to connect to MongoDB", error=str(e))
             raise

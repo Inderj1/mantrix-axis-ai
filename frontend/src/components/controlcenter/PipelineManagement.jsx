@@ -45,7 +45,6 @@ import {
   CloudSync as CloudSyncIcon,
   TableChart as TableChartIcon,
   AccountTree as GraphIcon,
-  VectorIcon,
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -152,7 +151,7 @@ const PipelineManagement = () => {
       case 'running':
         return <CircularProgress size={20} />;
       default:
-        return <InfoIcon sx={{ color: theme.palette.grey[500]} }} />;
+        return <InfoIcon sx={{ color: theme.palette.grey[500] }} />;
     }
   };
 

@@ -33,3 +33,8 @@ python-multipart
 rdflib
 crewai
 python-dotenv
+
+# Testing
+pytest>=9.0.0
+pytest-asyncio>=1.3.0
+pytest-cov>=4.0.0  # For coverage reports
