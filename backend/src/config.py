@@ -169,9 +169,15 @@ class Settings(BaseSettings):
     databricks_catalog: Optional[str] = Field(default="main", alias="DATABRICKS_CATALOG")
     databricks_schema: Optional[str] = Field(default="default", alias="DATABRICKS_SCHEMA")
 
-    # Clerk Authentication
+    # Clerk Authentication (Deprecated - use Cognito)
     clerk_secret_key: Optional[str] = Field(None, alias="CLERK_SECRET_KEY")
     production_domain: Optional[str] = Field(None, alias="PRODUCTION_DOMAIN")
+
+    # AWS Cognito Authentication
+    aws_region: str = Field(default="us-east-1", alias="AWS_REGION")
+    cognito_user_pool_id: Optional[str] = Field(None, alias="COGNITO_USER_POOL_ID")
+    cognito_app_client_id: Optional[str] = Field(None, alias="COGNITO_APP_CLIENT_ID")
+    cognito_admin_group: str = Field(default="Admins", alias="COGNITO_ADMIN_GROUP")
 
     # Database Feature Flags (Global Enable/Disable)
     enable_bigquery: bool = Field(default=True, alias="ENABLE_BIGQUERY")

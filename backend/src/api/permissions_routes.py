@@ -3,14 +3,22 @@ Database Permissions API Routes
 
 Endpoints for managing user database permissions and access control.
 Allows admins to grant/revoke database access, check permissions, and view audit logs.
+
+All admin operations (grant/revoke) require admin role from Cognito.
 """
-from fastapi import APIRouter, HTTPException, status, Header
-from typing import Optional, List
+from fastapi import APIRouter, HTTPException, status, Depends
+from typing import Optional, List, Dict, Any
 import structlog
 
 from ..db.connector_factory import ConnectorFactory, get_permissions_manager
 from ..core.database_permissions import AccessLevel
 from ..core.permissions_storage import get_permissions_storage
+from ..api.middleware.cognito_auth import (
+    get_current_user,
+    require_auth,
+    require_admin,
+    get_optional_user
+)
 from .models import (
     GrantPermissionRequest,
     RevokePermissionRequest,
@@ -25,32 +33,11 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/permissions", tags=["permissions"])
 
 
-def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """
-    Extract user ID from authorization header.
-
-    In production, this would validate JWT token and extract user ID.
-    For now, this is a placeholder that can be extended with Clerk integration.
-
-    Args:
-        authorization: Authorization header value
-
-    Returns:
-        User ID or None
-    """
-    # TODO: Integrate with Clerk authentication
-    # For now, return a placeholder or extract from header
-    if authorization and authorization.startswith("Bearer "):
-        # In production, decode JWT and extract user_id
-        return "current_user_id"
-    return None
-
-
 @router.get("/databases/available")
 async def get_available_databases(
     user_id: Optional[str] = None,
     organization_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None)
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
 ):
     """
     Get list of databases available to a user.
@@ -58,28 +45,36 @@ async def get_available_databases(
     Returns information about which databases the user has access to,
     along with their access levels and database availability status.
 
+    Optional authentication: Works with or without auth token.
+
     Args:
-        user_id: Optional user ID (defaults to current user)
-        organization_id: Optional organization ID
-        authorization: Authorization header
+        user_id: Optional user ID (defaults to current authenticated user)
+        organization_id: Optional organization ID (defaults to user's org)
+        current_user: Current authenticated user (auto-injected)
 
     Returns:
         Dictionary with allowed databases and details
     """
     try:
-        # Use provided user_id or extract from auth token
-        target_user_id = user_id or get_current_user_id(authorization)
-
-        if not target_user_id:
-            raise HTTPException(
-                status_code=401,
-                detail="User ID required. Provide user_id parameter or valid authorization header."
-            )
+        # Determine target user and organization
+        if current_user:
+            # User is authenticated
+            target_user_id = user_id or current_user["id"]
+            target_org_id = organization_id or current_user.get("organization_id")
+        else:
+            # No authentication - require explicit user_id
+            if not user_id:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication required or provide user_id parameter"
+                )
+            target_user_id = user_id
+            target_org_id = organization_id
 
         # Get supported types with user permissions
         database_details = ConnectorFactory.get_supported_types_for_user(
             user_id=target_user_id,
-            organization_id=organization_id
+            organization_id=target_org_id
         )
 
         # Filter to only allowed databases
@@ -96,7 +91,7 @@ async def get_available_databases(
 
         return AllowedDatabasesResponse(
             user_id=target_user_id,
-            organization_id=organization_id,
+            organization_id=target_org_id,
             allowed_databases=allowed_databases,
             database_details=database_details
         )
@@ -224,24 +219,26 @@ async def get_user_permissions(
 @router.post("/grant", status_code=status.HTTP_201_CREATED)
 async def grant_permission(
     request: GrantPermissionRequest,
-    authorization: Optional[str] = Header(None)
+    admin_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Grant database permission to a user.
+
+    **Requires admin role** from Cognito Admin group.
 
     Allows admins to grant specific database access to users with configurable
     access levels, rate limits, and schema/table restrictions.
 
     Args:
         request: Grant permission request with user_id and permission details
-        authorization: Authorization header (used to identify granting admin)
+        admin_user: Admin user (auto-injected, must be in Admins group)
 
     Returns:
         Success message with granted permission details
     """
     try:
-        # Get user who is granting permission (from auth token)
-        granted_by = get_current_user_id(authorization) or "system"
+        # Get admin user who is granting permission
+        granted_by = admin_user["id"]
 
         # Grant permission
         permissions_manager = get_permissions_manager()
@@ -291,23 +288,25 @@ async def grant_permission(
 @router.post("/revoke")
 async def revoke_permission(
     request: RevokePermissionRequest,
-    authorization: Optional[str] = Header(None)
+    admin_user: Dict[str, Any] = Depends(require_admin)
 ):
     """
     Revoke database permission from a user.
+
+    **Requires admin role** from Cognito Admins group.
 
     Removes a user's access to a specific database type.
 
     Args:
         request: Revoke permission request with user_id and database_type
-        authorization: Authorization header (used to identify revoking admin)
+        admin_user: Admin user (auto-injected, must be in Admins group)
 
     Returns:
         Success message
     """
     try:
-        # Get user who is revoking permission
-        revoked_by = get_current_user_id(authorization) or "system"
+        # Get admin user who is revoking permission
+        revoked_by = admin_user["id"]
 
         # Revoke permission
         permissions_manager = get_permissions_manager()

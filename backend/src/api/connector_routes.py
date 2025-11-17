@@ -3,8 +3,13 @@ Database Connector API Routes
 
 Endpoints for managing external database connectors.
 Allows users to configure, test, and manage connections to BigQuery, Snowflake, PostgreSQL, etc.
+
+Permissions:
+- GET /types: Optional auth (filters by user permissions if authenticated)
+- POST /test: Optional auth (checks permissions if authenticated)
+- POST /, PUT /, DELETE /: Require authentication
 """
-from fastapi import APIRouter, HTTPException, status, Header
+from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import structlog
@@ -12,6 +17,11 @@ from bson import ObjectId
 
 from ..db.connector_factory import ConnectorFactory
 from ..db.mongodb_client import get_mongodb_client
+from ..api.middleware.cognito_auth import (
+    get_optional_user,
+    require_auth,
+    require_admin
+)
 from .models import (
     ConnectorConfigRequest,
     ConnectorTestRequest,
@@ -23,27 +33,6 @@ from .models import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
-
-
-def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """
-    Extract user ID from authorization header.
-
-    In production, this would validate JWT token and extract user ID.
-    For now, this is a placeholder that can be extended with Clerk integration.
-
-    Args:
-        authorization: Authorization header value
-
-    Returns:
-        User ID or None
-    """
-    # TODO: Integrate with Clerk authentication
-    # For now, return a placeholder or extract from header
-    if authorization and authorization.startswith("Bearer "):
-        # In production, decode JWT and extract user_id
-        return "current_user_id"
-    return None
 
 # MongoDB collection for connector configurations
 CONNECTORS_COLLECTION = "database_connectors"
@@ -94,22 +83,30 @@ def serialize_connector(connector_doc: Dict[str, Any]) -> ConnectorResponse:
 async def get_connector_types(
     user_id: Optional[str] = None,
     organization_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None)
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
 ):
     """
     Get list of supported connector types filtered by user permissions.
 
+    Optional authentication: Works with or without auth token.
+    If authenticated, filters connectors by user's database permissions.
+
     Args:
-        user_id: Optional user ID (defaults to current user from auth)
+        user_id: Optional user ID (defaults to current authenticated user)
         organization_id: Optional organization ID
-        authorization: Authorization header
+        current_user: Current authenticated user (auto-injected)
 
     Returns:
         Dictionary mapping connector types to availability status, permissions, and config templates
     """
     try:
-        # Get user ID from auth or parameter
-        target_user_id = user_id or get_current_user_id(authorization)
+        # Determine target user and organization
+        if current_user:
+            target_user_id = user_id or current_user["id"]
+            target_org_id = organization_id or current_user.get("organization_id")
+        else:
+            target_user_id = user_id
+            target_org_id = organization_id
 
         # If no user_id provided, return all types without permission filtering
         if not target_user_id:
@@ -147,7 +144,7 @@ async def get_connector_types(
         # Get permission-filtered connector types for user
         type_details = ConnectorFactory.get_supported_types_for_user(
             user_id=target_user_id,
-            organization_id=organization_id
+            organization_id=target_org_id
         )
 
         # Add config templates for accessible types
@@ -182,7 +179,7 @@ async def test_connector(
     request: ConnectorTestRequest,
     user_id: Optional[str] = None,
     organization_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None)
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
 ):
     """
     Test a database connector configuration without saving.
@@ -190,28 +187,34 @@ async def test_connector(
     This endpoint validates credentials and connectivity by attempting
     to connect to the database and execute a simple query.
 
-    Permission checking: User must have at least READ access to the database type.
+    Optional authentication: Works with or without auth token.
+    Permission checking: If authenticated, user must have at least READ access to the database type.
 
     Args:
         request: Connector test request with type and config
-        user_id: Optional user ID (defaults to current user from auth)
+        user_id: Optional user ID (defaults to current authenticated user)
         organization_id: Optional organization ID
-        authorization: Authorization header
+        current_user: Current authenticated user (auto-injected)
 
     Returns:
         Test results including success status and connection metadata
     """
     try:
-        # Get user ID from auth or parameter
-        target_user_id = user_id or get_current_user_id(authorization)
+        # Determine target user and organization
+        if current_user:
+            target_user_id = user_id or current_user["id"]
+            target_org_id = organization_id or current_user.get("organization_id")
+        else:
+            target_user_id = user_id
+            target_org_id = organization_id
 
-        # Check permissions if user_id is provided
+        # Check permissions if user is authenticated
         if target_user_id:
             has_access = ConnectorFactory.check_user_access(
                 user_id=target_user_id,
                 database_type=request.connector_type,
                 required_level="read",  # Require at least READ access to test
-                organization_id=organization_id
+                organization_id=target_org_id
             )
 
             if not has_access:
