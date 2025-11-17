@@ -360,3 +360,75 @@ class ResearchReportResponse(BaseModel):
     methodology: str
     data_summary: Dict[str, Any]
     generated_at: str
+
+
+# Database Connector Models
+
+class ConnectorConfigRequest(BaseModel):
+    connector_type: str = Field(..., description="Type of database connector: bigquery, snowflake, postgresql, etc.")
+    name: str = Field(..., description="User-friendly name for this connector")
+    config: Dict[str, Any] = Field(..., description="Connector-specific configuration")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "connector_type": "snowflake",
+                "name": "Snowflake Analytics",
+                "config": {
+                    "account": "arizona.snowflakecomputing.com",
+                    "user": "analytics_user",
+                    "password": "secure_password",
+                    "warehouse": "COMPUTE_WH",
+                    "database": "ANALYTICS",
+                    "schema": "PUBLIC",
+                    "role": "ANALYTICS_ROLE"
+                }
+            }
+        }
+
+
+class ConnectorTestRequest(BaseModel):
+    connector_type: str = Field(..., description="Type of database connector")
+    config: Dict[str, Any] = Field(..., description="Connector configuration to test")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "connector_type": "snowflake",
+                "config": {
+                    "account": "arizona.snowflakecomputing.com",
+                    "user": "test_user",
+                    "password": "test_password",
+                    "warehouse": "COMPUTE_WH"
+                }
+            }
+        }
+
+
+class ConnectorTestResponse(BaseModel):
+    success: bool
+    connector_type: str
+    message: str
+    connection_time_ms: Optional[float] = None
+    metadata: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class ConnectorResponse(BaseModel):
+    connector_id: str
+    connector_type: str
+    name: str
+    status: str = Field(..., description="connected, disconnected, error")
+    created_at: str
+    updated_at: str
+    config_summary: Dict[str, Any] = Field(..., description="Config without sensitive data")
+
+
+class ConnectorListResponse(BaseModel):
+    connectors: List[ConnectorResponse]
+    total_count: int
+
+
+class ConnectorUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, description="Update connector name")
+    config: Optional[Dict[str, Any]] = Field(None, description="Update connector configuration")

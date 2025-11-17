@@ -19,6 +19,7 @@ from src.api.comms_routes import router as comms_router
 from src.api.comms_config_routes import router as comms_config_router
 from src.api.agent_routes import router as agent_router
 from src.api.pipeline_routes import router as pipeline_router
+from src.api.connector_routes import router as connector_router
 
 # Configure structured logging
 structlog.configure(
@@ -162,6 +163,7 @@ app.include_router(comms_router)
 app.include_router(comms_config_router)
 app.include_router(agent_router)
 app.include_router(pipeline_router)
+app.include_router(connector_router)
 
 
 @app.get("/")

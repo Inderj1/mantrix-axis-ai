@@ -5,6 +5,7 @@ pydantic-settings
 anthropic
 openai
 google-cloud-bigquery
+snowflake-connector-python
 weaviate-client
 pymongo
 redis

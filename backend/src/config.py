@@ -133,7 +133,16 @@ class Settings(BaseSettings):
     postgres_user: str = Field(default="inder", alias="POSTGRES_USER")
     postgres_password: str = Field(default="", alias="POSTGRES_PASSWORD")
     postgres_database: str = Field(default="customer_analytics", alias="POSTGRES_DATABASE")
-    
+
+    # Snowflake Configuration (optional - only needed if using Snowflake)
+    snowflake_account: Optional[str] = Field(None, alias="SNOWFLAKE_ACCOUNT")
+    snowflake_user: Optional[str] = Field(None, alias="SNOWFLAKE_USER")
+    snowflake_password: Optional[str] = Field(None, alias="SNOWFLAKE_PASSWORD")
+    snowflake_warehouse: Optional[str] = Field(None, alias="SNOWFLAKE_WAREHOUSE")
+    snowflake_database: Optional[str] = Field(None, alias="SNOWFLAKE_DATABASE")
+    snowflake_schema: Optional[str] = Field(default="PUBLIC", alias="SNOWFLAKE_SCHEMA")
+    snowflake_role: Optional[str] = Field(None, alias="SNOWFLAKE_ROLE")
+
     # Clerk Authentication
     clerk_secret_key: Optional[str] = Field(None, alias="CLERK_SECRET_KEY")
     production_domain: Optional[str] = Field(None, alias="PRODUCTION_DOMAIN")

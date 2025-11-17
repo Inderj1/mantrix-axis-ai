@@ -24,9 +24,15 @@ class PulseScheduler:
             check_interval: How often to check for monitors to execute (in seconds)
         """
         self.check_interval = check_interval
-        self.pg_client = PostgreSQLClient(database="customer_analytics")
+        try:
+            self.pg_client = PostgreSQLClient(database="customer_analytics")
+            logger.info("PostgreSQL client initialized for Pulse Scheduler")
+        except Exception as e:
+            logger.warning(f"PostgreSQL not available for Pulse Scheduler: {e}")
+            self.pg_client = None
         self.pulse_service = PulseMonitorService()
         self.running = False
+        self._pg_unavailable_logged = False  # Track if we've logged the unavailability warning
 
     async def start(self):
         """Start the scheduler"""
@@ -67,20 +73,33 @@ class PulseScheduler:
 
     def _get_monitors_to_run(self) -> List[Dict[str, Any]]:
         """Get all enabled monitors where next_run <= now"""
-        query = """
-        SELECT
-            id, user_id, name, natural_language_query,
-            sql_query, data_source, alert_condition,
-            severity, frequency
-        FROM pulse_monitors
-        WHERE enabled = true
-          AND (next_run IS NULL OR next_run <= CURRENT_TIMESTAMP)
-        ORDER BY next_run ASC NULLS FIRST
-        LIMIT 100
-        """
+        # Check if PostgreSQL is available
+        if not self.pg_client:
+            if not self._pg_unavailable_logged:
+                logger.info("PostgreSQL not available - Pulse monitoring disabled")
+                self._pg_unavailable_logged = True
+            return []
 
-        monitors = self.pg_client.execute_query(query)
-        return monitors or []
+        try:
+            query = """
+            SELECT
+                id, user_id, name, natural_language_query,
+                sql_query, data_source, alert_condition,
+                severity, frequency
+            FROM pulse_monitors
+            WHERE enabled = true
+              AND (next_run IS NULL OR next_run <= CURRENT_TIMESTAMP)
+            ORDER BY next_run ASC NULLS FIRST
+            LIMIT 100
+            """
+
+            monitors = self.pg_client.execute_query(query)
+            return monitors or []
+        except Exception as e:
+            if not self._pg_unavailable_logged:
+                logger.warning(f"Failed to query pulse monitors: {e}")
+                self._pg_unavailable_logged = True
+            return []
 
     async def _execute_monitor_safe(self, monitor_id: str):
         """Execute a monitor with error handling"""
@@ -106,28 +125,35 @@ class PulseScheduler:
 
     def _update_next_run(self, monitor_id: str):
         """Calculate and update next_run time for a monitor"""
-        # Get monitor frequency
-        query = "SELECT frequency FROM pulse_monitors WHERE id = %s"
-        result = self.pg_client.execute_query(query, (monitor_id,))
-
-        if not result:
+        # Check if PostgreSQL is available
+        if not self.pg_client:
             return
 
-        frequency = result[0]['frequency']
+        try:
+            # Get monitor frequency
+            query = "SELECT frequency FROM pulse_monitors WHERE id = %s"
+            result = self.pg_client.execute_query(query, (monitor_id,))
 
-        # Calculate next run using the Python method
-        next_run = self.pulse_service._calculate_next_run(frequency)
+            if not result:
+                return
 
-        update_query = """
-        UPDATE pulse_monitors
-        SET
-            next_run = %s,
-            last_run = CURRENT_TIMESTAMP
-        WHERE id = %s
-        """
+            frequency = result[0]['frequency']
 
-        self.pg_client.execute_query(update_query, (next_run, monitor_id))
-        logger.info(f"Updated next_run for monitor {monitor_id} with frequency {frequency}")
+            # Calculate next run using the Python method
+            next_run = self.pulse_service._calculate_next_run(frequency)
+
+            update_query = """
+            UPDATE pulse_monitors
+            SET
+                next_run = %s,
+                last_run = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """
+
+            self.pg_client.execute_query(update_query, (next_run, monitor_id))
+            logger.info(f"Updated next_run for monitor {monitor_id} with frequency {frequency}")
+        except Exception as e:
+            logger.debug(f"Could not update next_run for monitor {monitor_id}: {e}")
 
 
 # Singleton instance

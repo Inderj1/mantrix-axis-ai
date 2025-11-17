@@ -453,6 +453,54 @@ async def get_data_sources(
                 "error": str(e)
             })
 
+        # External Database Connectors (from connector management)
+        try:
+            from ..db.mongodb_client import get_mongodb_client
+            from bson import ObjectId
+
+            mongo_client = get_mongodb_client()
+            db = mongo_client.get_database()
+            connectors_collection = db["database_connectors"]
+
+            external_connectors = list(connectors_collection.find())
+
+            for connector in external_connectors:
+                connector_data = {
+                    "id": str(connector['_id']),
+                    "name": connector['name'],
+                    "type": connector['connector_type'],
+                    "status": connector.get('status', 'disconnected'),
+                    "lastSync": connector.get('last_tested', 'Never'),
+                    "config": {
+                        # Include non-sensitive config summary
+                        k: v for k, v in connector.get('config', {}).items()
+                        if k not in ['password', 'api_key', 'secret', 'credentials', 'private_key']
+                    }
+                }
+
+                # Add type-specific fields
+                if connector['connector_type'] == 'snowflake':
+                    config = connector.get('config', {})
+                    connector_data["host"] = f"{config.get('account', 'unknown')}.snowflakecomputing.com"
+                    connector_data["database"] = config.get('database', 'Unknown')
+                    connector_data["warehouse"] = config.get('warehouse', 'Unknown')
+
+                elif connector['connector_type'] == 'bigquery':
+                    config = connector.get('config', {})
+                    connector_data["host"] = config.get('project_id', 'Unknown')
+                    connector_data["database"] = config.get('dataset_id', 'Unknown')
+
+                elif connector['connector_type'] == 'postgresql':
+                    config = connector.get('config', {})
+                    connector_data["host"] = config.get('host', 'Unknown')
+                    connector_data["database"] = config.get('database', 'Unknown')
+                    connector_data["port"] = config.get('port', 5432)
+
+                data_sources["databases"].append(connector_data)
+
+        except Exception as e:
+            logger.warning(f"Could not fetch external connectors: {e}")
+
         # LLM APIs (from environment/config)
         import os
         if os.getenv("ANTHROPIC_API_KEY"):

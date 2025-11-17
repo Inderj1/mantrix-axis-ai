@@ -427,6 +427,38 @@ export const apiService = {
   getSchedulerStatus: () =>
     api.get('/api/v1/markets/scheduler/status'),
 
+  // Database Connector endpoints
+  getConnectorTypes: () =>
+    api.get('/api/v1/connectors/types'),
+
+  testConnector: (connectorType, config) =>
+    api.post('/api/v1/connectors/test', {
+      connector_type: connectorType,
+      config
+    }),
+
+  createConnector: (connectorType, name, config) =>
+    api.post('/api/v1/connectors', {
+      connector_type: connectorType,
+      name,
+      config
+    }),
+
+  listConnectors: () =>
+    api.get('/api/v1/connectors'),
+
+  getConnector: (connectorId) =>
+    api.get(`/api/v1/connectors/${connectorId}`),
+
+  updateConnector: (connectorId, updates) =>
+    api.put(`/api/v1/connectors/${connectorId}`, updates),
+
+  deleteConnector: (connectorId) =>
+    api.delete(`/api/v1/connectors/${connectorId}`),
+
+  testExistingConnector: (connectorId) =>
+    api.post(`/api/v1/connectors/${connectorId}/test`),
+
   // Generic HTTP methods
   get: (url, config) => api.get(url, config),
   post: (url, data, config) => api.post(url, data, config),
