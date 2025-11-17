@@ -128,7 +128,8 @@ class WeaviateClient:
                 "description": schema.get("description", ""),
                 "columns": json.dumps(schema["columns"]),
                 "row_count": schema.get("row_count", 0),
-                "combined_text": combined_text.strip()
+                "combined_text": combined_text.strip(),
+                "database_type": schema.get("source_database_type", schema.get("database_type", "bigquery"))  # Support both field names
             }
             
             collection.data.insert(
