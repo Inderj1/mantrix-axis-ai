@@ -5,6 +5,11 @@ import os
 import json
 import uuid
 from datetime import datetime, date, time, timezone
+
+# Import authentication and permission modules
+from src.api.middleware.cognito_auth import get_current_user, require_auth, require_admin
+from src.db.connector_factory import ConnectorFactory
+from src.core.database_permissions import AccessLevel
 from src.api.models import (
     QueryRequest, QueryResponse,
     SQLGenerateRequest, SQLExecuteRequest,
@@ -254,17 +259,80 @@ async def health_check():
 async def process_query(
     request: QueryRequest,
     generator: SQLGenerator = Depends(get_sql_generator),
-    mongodb: MongoDBClient = Depends(get_mongodb_client)
+    mongodb: MongoDBClient = Depends(get_mongodb_client),
+    user: Optional[Dict] = Depends(get_current_user)  # Add authentication
 ):
-    """Process a natural language query and return results."""
+    """Process a natural language query and return results with permission checks."""
     start_time = datetime.utcnow()
     execution_id = str(uuid.uuid4())
 
     try:
+        # Determine database type (default to bigquery for backward compatibility)
+        database_type = request.database_type or 'bigquery'
+
+        # SECURITY FIX 1: Check user permissions for database access
+        if user and user.get('id') != 'anonymous':
+            # Check if user has permission to access this database
+            has_access = ConnectorFactory.check_user_access(
+                user_id=user['id'],
+                database_type=database_type,
+                required_level=AccessLevel.READ.value,
+                organization_id=user.get('organization_id')
+            )
+
+            if not has_access:
+                # AUDIT LOG: Access denied
+                logger.warning(
+                    "Database access denied",
+                    user_id=user['id'],
+                    username=user.get('username'),
+                    database_type=database_type,
+                    organization_id=user.get('organization_id'),
+                    reason="Insufficient permissions"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied: You don't have permission to use {database_type}. "
+                           f"Please contact your administrator to request access."
+                )
+
+            # AUDIT LOG: Access granted
+            logger.info(
+                "Database access granted",
+                user_id=user['id'],
+                username=user.get('username'),
+                database_type=database_type,
+                organization_id=user.get('organization_id'),
+                query_preview=request.question[:100] if request.question else "N/A"
+            )
+
+        # SECURITY FIX 2: Restrict custom database_config to admins only
+        if request.database_config:
+            if not user or not user.get('is_admin'):
+                # AUDIT LOG: Unauthorized custom config attempt
+                logger.warning(
+                    "Unauthorized custom database config attempt",
+                    user_id=user.get('id') if user else 'anonymous',
+                    username=user.get('username') if user else 'anonymous',
+                    database_type=database_type
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="Custom database configuration is only allowed for administrators. "
+                           "Please use pre-configured database connections."
+                )
+
+            # AUDIT LOG: Admin using custom config
+            logger.info(
+                "Admin using custom database config",
+                user_id=user['id'],
+                username=user.get('username'),
+                database_type=database_type
+            )
+
         # Create custom generator if different database type is specified
         if request.database_type and request.database_type != 'bigquery':
             # Validate database type
-            from src.db.connector_factory import ConnectorFactory
             supported_types = ConnectorFactory.get_supported_types()
             if request.database_type not in supported_types:
                 raise HTTPException(
@@ -272,14 +340,14 @@ async def process_query(
                     detail=f"Unsupported database type: {request.database_type}. Supported types: {', '.join(supported_types)}"
                 )
 
-            # Create database-specific generator
+            # Create database-specific generator (config only if admin)
             logger.info(f"Creating SQL generator for database type: {request.database_type}")
             generator = SQLGenerator(
                 database_type=request.database_type,
-                database_config=request.database_config
+                database_config=request.database_config if user and user.get('is_admin') else None
             )
         elif request.database_config:
-            # Use custom config even for BigQuery
+            # Use custom config even for BigQuery (admin only - already checked above)
             logger.info("Creating SQL generator with custom database config")
             generator = SQLGenerator(
                 database_type=request.database_type or 'bigquery',
@@ -514,14 +582,75 @@ async def process_query(
 @router.post("/generate", response_model=QueryResponse)
 async def generate_sql(
     request: SQLGenerateRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_sql_generator),
+    user: Optional[Dict] = Depends(get_current_user)  # Add authentication
 ):
-    """Generate SQL from natural language without executing."""
+    """Generate SQL from natural language without executing (with permission checks)."""
     try:
+        # Determine database type (default to bigquery for backward compatibility)
+        database_type = request.database_type or 'bigquery'
+
+        # SECURITY FIX 1: Check user permissions for database access
+        if user and user.get('id') != 'anonymous':
+            # Check if user has permission to access this database
+            has_access = ConnectorFactory.check_user_access(
+                user_id=user['id'],
+                database_type=database_type,
+                required_level=AccessLevel.READ.value,
+                organization_id=user.get('organization_id')
+            )
+
+            if not has_access:
+                # AUDIT LOG: Access denied
+                logger.warning(
+                    "SQL generation access denied",
+                    user_id=user['id'],
+                    username=user.get('username'),
+                    database_type=database_type,
+                    organization_id=user.get('organization_id'),
+                    reason="Insufficient permissions"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied: You don't have permission to generate SQL for {database_type}. "
+                           f"Please contact your administrator to request access."
+                )
+
+            # AUDIT LOG: Access granted
+            logger.info(
+                "SQL generation access granted",
+                user_id=user['id'],
+                username=user.get('username'),
+                database_type=database_type,
+                organization_id=user.get('organization_id')
+            )
+
+        # SECURITY FIX 2: Restrict custom database_config to admins only
+        if request.database_config:
+            if not user or not user.get('is_admin'):
+                # AUDIT LOG: Unauthorized custom config attempt
+                logger.warning(
+                    "Unauthorized custom database config attempt (generate_sql)",
+                    user_id=user.get('id') if user else 'anonymous',
+                    username=user.get('username') if user else 'anonymous',
+                    database_type=database_type
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="Custom database configuration is only allowed for administrators."
+                )
+
+            # AUDIT LOG: Admin using custom config
+            logger.info(
+                "Admin using custom database config (generate_sql)",
+                user_id=user['id'],
+                username=user.get('username'),
+                database_type=database_type
+            )
+
         # Create custom generator if different database type is specified
         if request.database_type and request.database_type != 'bigquery':
             # Validate database type
-            from src.db.connector_factory import ConnectorFactory
             supported_types = ConnectorFactory.get_supported_types()
             if request.database_type not in supported_types:
                 raise HTTPException(
@@ -529,14 +658,14 @@ async def generate_sql(
                     detail=f"Unsupported database type: {request.database_type}. Supported types: {', '.join(supported_types)}"
                 )
 
-            # Create database-specific generator
+            # Create database-specific generator (config only if admin)
             logger.info(f"Creating SQL generator for database type: {request.database_type}")
             generator = SQLGenerator(
                 database_type=request.database_type,
-                database_config=request.database_config
+                database_config=request.database_config if user and user.get('is_admin') else None
             )
         elif request.database_config:
-            # Use custom config even for BigQuery
+            # Use custom config even for BigQuery (admin only - already checked above)
             logger.info("Creating SQL generator with custom database config")
             generator = SQLGenerator(
                 database_type=request.database_type or 'bigquery',
