@@ -202,7 +202,8 @@ class CrossDatabaseExecutor:
         join_condition: str,
         join_type: str = 'INNER',
         user_id: str = 'anonymous',
-        organization_id: str = 'default'
+        organization_id: str = 'default',
+        database_configs: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> pd.DataFrame:
         """
         Execute JOIN between tables in different databases.
@@ -216,6 +217,7 @@ class CrossDatabaseExecutor:
             join_type: Type of join (INNER, LEFT, RIGHT, FULL)
             user_id: User ID
             organization_id: Organization ID
+            database_configs: Optional configs for database connections
 
         Returns:
             DataFrame with joined results
@@ -227,12 +229,21 @@ class CrossDatabaseExecutor:
             join_type=join_type
         )
 
+        # Get configs or use empty dict
+        configs = database_configs or {}
+
         # Fetch from left database
-        left_connector = self.factory.create_connector(left_db)
+        left_connector = self.factory.create_connector(
+            left_db,
+            config=configs.get(left_db, {})
+        )
         left_df = await self._execute_query(left_connector, left_query)
 
         # Fetch from right database
-        right_connector = self.factory.create_connector(right_db)
+        right_connector = self.factory.create_connector(
+            right_db,
+            config=configs.get(right_db, {})
+        )
         right_df = await self._execute_query(right_connector, right_query)
 
         # Parse join condition to extract columns
