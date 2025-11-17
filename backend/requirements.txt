@@ -6,6 +6,7 @@ anthropic
 openai
 google-cloud-bigquery
 snowflake-connector-python
+databricks-sql-connector>=2.0.0
 weaviate-client
 pymongo
 redis

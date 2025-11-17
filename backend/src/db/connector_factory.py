@@ -11,7 +11,13 @@ from .base_connector import BaseDatabaseConnector
 from .connectors import (
     BigQueryConnector,
     SnowflakeConnector,
-    SNOWFLAKE_AVAILABLE
+    SNOWFLAKE_AVAILABLE,
+    PostgreSQLConnector,
+    POSTGRESQL_AVAILABLE,
+    RedshiftConnector,
+    REDSHIFT_AVAILABLE,
+    DatabricksConnector,
+    DATABRICKS_AVAILABLE
 )
 
 logger = structlog.get_logger()
@@ -36,6 +42,24 @@ class ConnectorFactory:
             'available': SNOWFLAKE_AVAILABLE,
             'required_config': ['account', 'user', 'password'],
             'optional_config': ['warehouse', 'database', 'schema', 'role']
+        },
+        'postgresql': {
+            'class': PostgreSQLConnector if POSTGRESQL_AVAILABLE else None,
+            'available': POSTGRESQL_AVAILABLE,
+            'required_config': ['host', 'database', 'user'],
+            'optional_config': ['port', 'password', 'schema', 'ssl_mode']
+        },
+        'redshift': {
+            'class': RedshiftConnector if REDSHIFT_AVAILABLE else None,
+            'available': REDSHIFT_AVAILABLE,
+            'required_config': ['host', 'database', 'user'],
+            'optional_config': ['port', 'password', 'schema', 'ssl_mode', 'cluster_identifier']
+        },
+        'databricks': {
+            'class': DatabricksConnector if DATABRICKS_AVAILABLE else None,
+            'available': DATABRICKS_AVAILABLE,
+            'required_config': ['server_hostname', 'http_path', 'access_token'],
+            'optional_config': ['catalog', 'schema']
         },
     }
 

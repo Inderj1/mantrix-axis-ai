@@ -144,8 +144,8 @@ POSTGRESQL_CAPABILITIES = DatabaseCapabilities(
     case_insensitive_comparison=True,  # ILIKE operator
 
     # Query optimization
-    requires_table_qualification=False,
-    table_qualification_format=None,
+    requires_table_qualification=False,  # Optional but supported
+    table_qualification_format="{schema}.{table}",
     supports_query_hints=False,
 
     # Limits
@@ -234,13 +234,13 @@ REDSHIFT_CAPABILITIES = DatabaseCapabilities(
     supports_ctes=True,
     supports_window_functions=True,
     supports_recursive_ctes=False,
-    supports_lateral_joins=False,
+    supports_lateral_joins=True,  # Redshift supports LATERAL JOIN
     supports_full_outer_join=True,
 
     # Data types
-    supports_arrays=True,
-    supports_json=True,
-    supports_struct=True,  # SUPER type
+    supports_arrays=False,  # Redshift doesn't support native PostgreSQL arrays
+    supports_json=True,  # SUPER type for JSON
+    supports_struct=False,  # Limited support via SUPER type
 
     # Functions
     date_format_function="TO_CHAR",
@@ -248,8 +248,8 @@ REDSHIFT_CAPABILITIES = DatabaseCapabilities(
     case_insensitive_comparison=True,  # ILIKE operator
 
     # Query optimization
-    requires_table_qualification=False,
-    table_qualification_format=None,
+    requires_table_qualification=False,  # Optional but supported
+    table_qualification_format="{schema}.{table}",
     supports_query_hints=False,
 
     # Limits
@@ -300,8 +300,8 @@ DATABRICKS_CAPABILITIES = DatabaseCapabilities(
     case_insensitive_comparison=False,
 
     # Query optimization
-    requires_table_qualification=False,
-    table_qualification_format=None,
+    requires_table_qualification=True,  # Unity Catalog uses three-part names
+    table_qualification_format="{catalog}.{schema}.{table}",
     supports_query_hints=True,
 
     # Limits

@@ -143,6 +143,32 @@ class Settings(BaseSettings):
     snowflake_schema: Optional[str] = Field(default="PUBLIC", alias="SNOWFLAKE_SCHEMA")
     snowflake_role: Optional[str] = Field(None, alias="SNOWFLAKE_ROLE")
 
+    # External PostgreSQL Configuration (for customer databases, separate from internal)
+    external_postgres_host: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_HOST")
+    external_postgres_port: Optional[int] = Field(default=5432, alias="EXTERNAL_POSTGRES_PORT")
+    external_postgres_database: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_DATABASE")
+    external_postgres_user: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_USER")
+    external_postgres_password: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_PASSWORD")
+    external_postgres_schema: Optional[str] = Field(default="public", alias="EXTERNAL_POSTGRES_SCHEMA")
+    external_postgres_ssl_mode: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_SSL_MODE")
+
+    # Redshift Configuration (optional - only needed if using Redshift)
+    redshift_host: Optional[str] = Field(None, alias="REDSHIFT_HOST")
+    redshift_port: Optional[int] = Field(default=5439, alias="REDSHIFT_PORT")
+    redshift_database: Optional[str] = Field(None, alias="REDSHIFT_DATABASE")
+    redshift_user: Optional[str] = Field(None, alias="REDSHIFT_USER")
+    redshift_password: Optional[str] = Field(None, alias="REDSHIFT_PASSWORD")
+    redshift_schema: Optional[str] = Field(default="public", alias="REDSHIFT_SCHEMA")
+    redshift_ssl_mode: Optional[str] = Field(default="require", alias="REDSHIFT_SSL_MODE")
+    redshift_cluster_identifier: Optional[str] = Field(None, alias="REDSHIFT_CLUSTER_IDENTIFIER")
+
+    # Databricks Configuration (optional - only needed if using Databricks)
+    databricks_server_hostname: Optional[str] = Field(None, alias="DATABRICKS_SERVER_HOSTNAME")
+    databricks_http_path: Optional[str] = Field(None, alias="DATABRICKS_HTTP_PATH")
+    databricks_access_token: Optional[str] = Field(None, alias="DATABRICKS_ACCESS_TOKEN")
+    databricks_catalog: Optional[str] = Field(default="main", alias="DATABRICKS_CATALOG")
+    databricks_schema: Optional[str] = Field(default="default", alias="DATABRICKS_SCHEMA")
+
     # Clerk Authentication
     clerk_secret_key: Optional[str] = Field(None, alias="CLERK_SECRET_KEY")
     production_domain: Optional[str] = Field(None, alias="PRODUCTION_DOMAIN")
