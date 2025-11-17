@@ -432,3 +432,89 @@ class ConnectorListResponse(BaseModel):
 class ConnectorUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, description="Update connector name")
     config: Optional[Dict[str, Any]] = Field(None, description="Update connector configuration")
+
+
+# Database Permissions Models
+
+class DatabasePermissionRequest(BaseModel):
+    database_type: str = Field(..., description="Database type: bigquery, snowflake, postgresql, redshift, databricks")
+    access_level: str = Field(..., description="Access level: none, read, write, admin")
+    max_queries_per_day: Optional[int] = Field(None, description="Rate limit: maximum queries per day")
+    max_rows_per_query: Optional[int] = Field(None, description="Maximum rows per query")
+    allowed_schemas: Optional[List[str]] = Field(None, description="List of allowed schemas")
+    allowed_tables: Optional[List[str]] = Field(None, description="List of allowed tables")
+    expires_at: Optional[str] = Field(None, description="ISO timestamp when permission expires")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "database_type": "snowflake",
+                "access_level": "read",
+                "max_queries_per_day": 100,
+                "max_rows_per_query": 10000,
+                "allowed_schemas": ["analytics", "reporting"],
+                "expires_at": "2024-12-31T23:59:59Z"
+            }
+        }
+
+
+class GrantPermissionRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to grant permission to")
+    organization_id: Optional[str] = Field(None, description="Organization ID")
+    permission: DatabasePermissionRequest = Field(..., description="Permission details")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user_12345",
+                "organization_id": "org_67890",
+                "permission": {
+                    "database_type": "bigquery",
+                    "access_level": "read",
+                    "max_queries_per_day": 50
+                }
+            }
+        }
+
+
+class RevokePermissionRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to revoke permission from")
+    database_type: str = Field(..., description="Database type to revoke")
+    organization_id: Optional[str] = Field(None, description="Organization ID")
+
+
+class UserPermissionsResponse(BaseModel):
+    user_id: str
+    organization_id: Optional[str] = None
+    permissions: Dict[str, Dict[str, Any]] = Field(..., description="Database type to permission mapping")
+    is_admin: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class PermissionCheckRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to check")
+    database_type: str = Field(..., description="Database type")
+    required_level: str = Field("read", description="Required access level: read, write, admin")
+    organization_id: Optional[str] = Field(None, description="Organization ID")
+
+
+class PermissionCheckResponse(BaseModel):
+    has_access: bool
+    user_id: str
+    database_type: str
+    access_level: str
+    required_level: str
+    message: str
+
+
+class AllowedDatabasesResponse(BaseModel):
+    user_id: str
+    organization_id: Optional[str] = None
+    allowed_databases: List[str]
+    database_details: Dict[str, Dict[str, Any]] = Field(..., description="Details for each allowed database")
+
+
+class AuditLogResponse(BaseModel):
+    entries: List[Dict[str, Any]]
+    total_count: int

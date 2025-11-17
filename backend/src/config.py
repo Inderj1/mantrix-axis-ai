@@ -173,5 +173,12 @@ class Settings(BaseSettings):
     clerk_secret_key: Optional[str] = Field(None, alias="CLERK_SECRET_KEY")
     production_domain: Optional[str] = Field(None, alias="PRODUCTION_DOMAIN")
 
+    # Database Feature Flags (Global Enable/Disable)
+    enable_bigquery: bool = Field(default=True, alias="ENABLE_BIGQUERY")
+    enable_snowflake: bool = Field(default=True, alias="ENABLE_SNOWFLAKE")
+    enable_postgresql: bool = Field(default=True, alias="ENABLE_POSTGRESQL")
+    enable_redshift: bool = Field(default=True, alias="ENABLE_REDSHIFT")
+    enable_databricks: bool = Field(default=True, alias="ENABLE_DATABRICKS")
+
 
 settings = Settings()

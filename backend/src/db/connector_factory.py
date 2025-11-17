@@ -3,8 +3,9 @@ Database Connector Factory
 
 Factory pattern for creating database connector instances based on type.
 Supports BigQuery, Snowflake, PostgreSQL, and future connectors.
+Includes permission checking and access control.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import structlog
 
 from .base_connector import BaseDatabaseConnector
@@ -19,8 +20,25 @@ from .connectors import (
     DatabricksConnector,
     DATABRICKS_AVAILABLE
 )
+from src.core.database_permissions import (
+    DatabasePermissionsManager,
+    AccessLevel
+)
+from src.core.permissions_storage import get_permissions_storage
 
 logger = structlog.get_logger()
+
+# Singleton permissions manager
+_permissions_manager = None
+
+
+def get_permissions_manager() -> DatabasePermissionsManager:
+    """Get singleton permissions manager instance."""
+    global _permissions_manager
+    if _permissions_manager is None:
+        storage = get_permissions_storage()
+        _permissions_manager = DatabasePermissionsManager(storage_backend=storage)
+    return _permissions_manager
 
 
 class ConnectorFactory:
@@ -261,3 +279,157 @@ class ConnectorFactory:
             'required_fields': connector_info['required_config'],
             'optional_fields': connector_info['optional_config']
         }
+
+    @classmethod
+    def check_user_access(
+        cls,
+        user_id: str,
+        database_type: str,
+        required_level: str = AccessLevel.READ.value,
+        organization_id: Optional[str] = None
+    ) -> bool:
+        """
+        Check if user has access to a database type with required level.
+
+        Args:
+            user_id: User ID
+            database_type: Database type (bigquery, snowflake, etc.)
+            required_level: Required access level (read, write, admin)
+            organization_id: Optional organization ID
+
+        Returns:
+            True if user has access, False otherwise
+        """
+        permissions_manager = get_permissions_manager()
+        return permissions_manager.check_access(
+            user_id=user_id,
+            database_type=database_type,
+            required_level=required_level,
+            organization_id=organization_id
+        )
+
+    @classmethod
+    def get_allowed_databases_for_user(
+        cls,
+        user_id: str,
+        organization_id: Optional[str] = None,
+        min_access_level: str = AccessLevel.READ.value
+    ) -> List[str]:
+        """
+        Get list of database types user has access to.
+
+        Args:
+            user_id: User ID
+            organization_id: Optional organization ID
+            min_access_level: Minimum required access level
+
+        Returns:
+            List of database type strings (e.g., ['bigquery', 'snowflake'])
+        """
+        permissions_manager = get_permissions_manager()
+        return permissions_manager.get_allowed_databases(
+            user_id=user_id,
+            organization_id=organization_id,
+            min_access_level=min_access_level
+        )
+
+    @classmethod
+    def get_supported_types_for_user(
+        cls,
+        user_id: str,
+        organization_id: Optional[str] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get supported connector types filtered by user permissions.
+
+        Args:
+            user_id: User ID
+            organization_id: Optional organization ID
+
+        Returns:
+            Dictionary mapping connector type to availability and permission info:
+            {
+                'bigquery': {
+                    'available': True,
+                    'has_access': True,
+                    'access_level': 'read'
+                },
+                ...
+            }
+        """
+        permissions_manager = get_permissions_manager()
+        user_permissions = permissions_manager.get_user_permissions(user_id, organization_id)
+
+        result = {}
+        for connector_type, info in cls.SUPPORTED_CONNECTORS.items():
+            access_level = AccessLevel.NONE.value
+            has_access = False
+
+            if user_permissions:
+                access_level = user_permissions.get_access_level(connector_type)
+                has_access = user_permissions.has_access(connector_type)
+
+            result[connector_type] = {
+                'available': info['available'],
+                'has_access': has_access,
+                'access_level': access_level,
+                'globally_enabled': permissions_manager.is_database_globally_enabled(connector_type)
+            }
+
+        return result
+
+    @classmethod
+    def create_connector_with_permissions(
+        cls,
+        connector_type: str,
+        config: Dict[str, Any],
+        user_id: str,
+        organization_id: Optional[str] = None,
+        required_level: str = AccessLevel.READ.value
+    ) -> BaseDatabaseConnector:
+        """
+        Create a database connector with permission checking.
+
+        Args:
+            connector_type: Type of connector (e.g., 'bigquery', 'snowflake')
+            config: Configuration dictionary with connector-specific parameters
+            user_id: User ID requesting the connector
+            organization_id: Optional organization ID
+            required_level: Required access level (default: read)
+
+        Returns:
+            Initialized database connector instance
+
+        Raises:
+            ValueError: If connector type is unsupported or config is invalid
+            PermissionError: If user doesn't have required access
+            ImportError: If required dependencies are not installed
+        """
+        # Check user permissions first
+        has_access = cls.check_user_access(
+            user_id=user_id,
+            database_type=connector_type,
+            required_level=required_level,
+            organization_id=organization_id
+        )
+
+        if not has_access:
+            logger.warning(
+                f"User {user_id} does not have {required_level} access to {connector_type}",
+                user_id=user_id,
+                database_type=connector_type,
+                required_level=required_level
+            )
+            raise PermissionError(
+                f"User does not have {required_level} access to {connector_type} database"
+            )
+
+        # User has permission, create connector normally
+        logger.info(
+            f"Creating {connector_type} connector for user {user_id}",
+            user_id=user_id,
+            database_type=connector_type,
+            access_level=required_level
+        )
+
+        return cls.create_connector(connector_type, config)

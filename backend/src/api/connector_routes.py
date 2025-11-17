@@ -4,8 +4,8 @@ Database Connector API Routes
 Endpoints for managing external database connectors.
 Allows users to configure, test, and manage connections to BigQuery, Snowflake, PostgreSQL, etc.
 """
-from fastapi import APIRouter, HTTPException, status
-from typing import List, Dict, Any
+from fastapi import APIRouter, HTTPException, status, Header
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import structlog
 from bson import ObjectId
@@ -23,6 +23,27 @@ from .models import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
+
+
+def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
+    """
+    Extract user ID from authorization header.
+
+    In production, this would validate JWT token and extract user ID.
+    For now, this is a placeholder that can be extended with Clerk integration.
+
+    Args:
+        authorization: Authorization header value
+
+    Returns:
+        User ID or None
+    """
+    # TODO: Integrate with Clerk authentication
+    # For now, return a placeholder or extract from header
+    if authorization and authorization.startswith("Bearer "):
+        # In production, decode JWT and extract user_id
+        return "current_user_id"
+    return None
 
 # MongoDB collection for connector configurations
 CONNECTORS_COLLECTION = "database_connectors"
@@ -70,41 +91,84 @@ def serialize_connector(connector_doc: Dict[str, Any]) -> ConnectorResponse:
 
 
 @router.get("/types")
-async def get_connector_types():
+async def get_connector_types(
+    user_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
     """
-    Get list of supported connector types and their availability.
+    Get list of supported connector types filtered by user permissions.
+
+    Args:
+        user_id: Optional user ID (defaults to current user from auth)
+        organization_id: Optional organization ID
+        authorization: Authorization header
 
     Returns:
-        Dictionary mapping connector types to availability status and config templates
+        Dictionary mapping connector types to availability status, permissions, and config templates
     """
     try:
-        supported_types = ConnectorFactory.get_supported_types()
+        # Get user ID from auth or parameter
+        target_user_id = user_id or get_current_user_id(authorization)
 
-        # Get config templates for each type
-        type_details = {}
-        for connector_type, available in supported_types.items():
-            if available:
+        # If no user_id provided, return all types without permission filtering
+        if not target_user_id:
+            logger.info("No user_id provided, returning all connector types without permission filtering")
+            supported_types = ConnectorFactory.get_supported_types()
+
+            # Get config templates for each type
+            type_details = {}
+            for connector_type, available in supported_types.items():
+                if available:
+                    try:
+                        template = ConnectorFactory.get_config_template(connector_type)
+                        type_details[connector_type] = {
+                            'available': available,
+                            'required_fields': template['required_fields'],
+                            'optional_fields': template['optional_fields']
+                        }
+                    except Exception as e:
+                        logger.warning(f"Failed to get template for {connector_type}: {e}")
+                        type_details[connector_type] = {
+                            'available': available,
+                            'error': str(e)
+                        }
+                else:
+                    type_details[connector_type] = {
+                        'available': False,
+                        'message': 'Connector not available (missing dependencies)'
+                    }
+
+            return {
+                'success': True,
+                'connector_types': type_details
+            }
+
+        # Get permission-filtered connector types for user
+        type_details = ConnectorFactory.get_supported_types_for_user(
+            user_id=target_user_id,
+            organization_id=organization_id
+        )
+
+        # Add config templates for accessible types
+        for connector_type, details in type_details.items():
+            if details.get('available') and details.get('has_access'):
                 try:
                     template = ConnectorFactory.get_config_template(connector_type)
-                    type_details[connector_type] = {
-                        'available': available,
-                        'required_fields': template['required_fields'],
-                        'optional_fields': template['optional_fields']
-                    }
+                    details['required_fields'] = template['required_fields']
+                    details['optional_fields'] = template['optional_fields']
                 except Exception as e:
                     logger.warning(f"Failed to get template for {connector_type}: {e}")
-                    type_details[connector_type] = {
-                        'available': available,
-                        'error': str(e)
-                    }
-            else:
-                type_details[connector_type] = {
-                    'available': False,
-                    'message': 'Connector not available (missing dependencies)'
-                }
+                    details['error'] = str(e)
+
+        logger.info(
+            f"Retrieved connector types for user {target_user_id}",
+            user_id=target_user_id
+        )
 
         return {
             'success': True,
+            'user_id': target_user_id,
             'connector_types': type_details
         }
 
@@ -114,23 +178,57 @@ async def get_connector_types():
 
 
 @router.post("/test", response_model=ConnectorTestResponse)
-async def test_connector(request: ConnectorTestRequest):
+async def test_connector(
+    request: ConnectorTestRequest,
+    user_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
     """
     Test a database connector configuration without saving.
 
     This endpoint validates credentials and connectivity by attempting
     to connect to the database and execute a simple query.
 
+    Permission checking: User must have at least READ access to the database type.
+
     Args:
         request: Connector test request with type and config
+        user_id: Optional user ID (defaults to current user from auth)
+        organization_id: Optional organization ID
+        authorization: Authorization header
 
     Returns:
         Test results including success status and connection metadata
     """
     try:
+        # Get user ID from auth or parameter
+        target_user_id = user_id or get_current_user_id(authorization)
+
+        # Check permissions if user_id is provided
+        if target_user_id:
+            has_access = ConnectorFactory.check_user_access(
+                user_id=target_user_id,
+                database_type=request.connector_type,
+                required_level="read",  # Require at least READ access to test
+                organization_id=organization_id
+            )
+
+            if not has_access:
+                logger.warning(
+                    f"User {target_user_id} attempted to test {request.connector_type} without permission",
+                    user_id=target_user_id,
+                    database_type=request.connector_type
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You do not have permission to test {request.connector_type} connectors"
+                )
+
         logger.info(
             f"Testing {request.connector_type} connector",
-            connector_type=request.connector_type
+            connector_type=request.connector_type,
+            user_id=target_user_id
         )
 
         # Test the connection
@@ -147,6 +245,9 @@ async def test_connector(request: ConnectorTestRequest):
             metadata=result.get('metadata'),
             error=result.get('error')
         )
+
+    except HTTPException:
+        raise
 
     except ValueError as e:
         logger.warning(f"Invalid connector configuration: {e}")
