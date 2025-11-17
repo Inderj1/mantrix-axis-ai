@@ -71,15 +71,15 @@ class CognitoAuth:
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
 
             # Decode and verify the token
+            # Cognito access tokens use "client_id" claim instead of "aud"
             decoded = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
-                audience=self.app_client_id,
                 options={
                     "verify_signature": True,
                     "verify_exp": True,
-                    "verify_aud": True
+                    "verify_aud": False  # Access tokens don't have aud claim
                 }
             )
 
@@ -88,6 +88,13 @@ class CognitoAuth:
                 raise HTTPException(
                     status_code=401,
                     detail="Invalid token type. Expected access token."
+                )
+
+            # Verify client_id (access tokens use client_id instead of aud)
+            if decoded.get("client_id") != self.app_client_id:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Invalid client_id. Expected {self.app_client_id}"
                 )
 
             return decoded
