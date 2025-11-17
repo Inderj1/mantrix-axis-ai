@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 import asyncio
 import json
 
-from src.db.bigquery import BigQueryClient
+from src.db.base_connector import BaseDatabaseConnector
 from src.core.financial_hierarchy import financial_hierarchy
 from src.core.cache_manager import CacheManager
 from src.config import settings
@@ -64,18 +64,48 @@ class PreCalculationConfig(BaseModel):
 
 class FinancialMetricsPreCalculator:
     """Service for pre-calculating financial metrics."""
-    
+
     def __init__(
         self,
-        bq_client: BigQueryClient,
+        db_client: BaseDatabaseConnector = None,  # Made optional for backward compat
         cache_manager: Optional[CacheManager] = None,
-        config: Optional[PreCalculationConfig] = None
+        config: Optional[PreCalculationConfig] = None,
+        bq_client: BaseDatabaseConnector = None,  # Deprecated parameter for backward compatibility
+        database_qualifier: Optional[str] = None,
+        schema_qualifier: Optional[str] = None
     ):
-        self.bq_client = bq_client
+        """Initialize FinancialMetricsPreCalculator with database-agnostic client.
+
+        Args:
+            db_client: Database connector instance (preferred)
+            cache_manager: Optional cache manager
+            config: Pre-calculation configuration
+            bq_client: Deprecated, use db_client instead
+            database_qualifier: Database/project qualifier
+            schema_qualifier: Schema/dataset qualifier
+        """
+        # Handle backward compatibility
+        self.db_client = db_client or bq_client
+        self.bq_client = self.db_client  # Backward compatibility alias
+
+        if self.db_client is None:
+            raise ValueError("Either db_client or bq_client must be provided")
+
         self.cache_manager = cache_manager
         self.config = config or PreCalculationConfig()
         self.hierarchy = financial_hierarchy
         self._running = False
+
+        # Store qualifiers
+        self.database_qualifier = database_qualifier
+        self.schema_qualifier = schema_qualifier
+
+        # Get database capabilities
+        if hasattr(self.db_client, 'get_capabilities'):
+            self.db_capabilities = self.db_client.get_capabilities()
+            self.db_type = self.db_capabilities.database_type
+        else:
+            self.db_type = 'bigquery'  # Fallback for old clients
         
     def _generate_time_ranges(self) -> Dict[TimeGranularity, List[Dict[str, str]]]:
         """Generate time ranges for each granularity."""
@@ -190,7 +220,18 @@ class FinancialMetricsPreCalculator:
             raise ValueError(f"Unknown metric: {metric_code}")
         
         # Get the table name (handle hyphenated names)
-        table_ref = f"`{self.bq_client.project_id}.{self.bq_client.dataset_id}.dataset_25m_table`"
+        # Build table reference based on database type
+        if hasattr(self.db_client, 'qualify_table_name'):
+            table_ref = self.db_client.qualify_table_name("dataset_25m_table")
+        else:
+            # Fallback: construct manually
+            if self.database_qualifier and self.schema_qualifier:
+                if self.db_type == 'bigquery':
+                    table_ref = f"`{self.database_qualifier}.{self.schema_qualifier}.dataset_25m_table`"
+                else:
+                    table_ref = f"{self.database_qualifier}.{self.schema_qualifier}.dataset_25m_table"
+            else:
+                table_ref = "dataset_25m_table"
         
         # Build SELECT clause based on metric components
         select_parts = []

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple, Set
 from dataclasses import dataclass
 from enum import Enum
 import structlog
-from src.db.bigquery import BigQueryClient
+from src.db.base_connector import BaseDatabaseConnector
 from src.core.cache_manager import CacheManager
 from src.config import settings
 
@@ -50,18 +50,44 @@ class FormatNormalizer:
     Normalizes column formats for accurate JOINs.
 
     Usage:
-        normalizer = FormatNormalizer(bq_client, cache_manager)
+        normalizer = FormatNormalizer(db_client, cache_manager)
         normalized_query = normalizer.normalize_join_query(sql_query)
     """
 
-    def __init__(self, bq_client: BigQueryClient, cache_manager: Optional[CacheManager] = None):
-        self.bq_client = bq_client
+    def __init__(
+        self,
+        db_client: BaseDatabaseConnector,
+        cache_manager: Optional[CacheManager] = None,
+        database_qualifier: Optional[str] = None,
+        schema_qualifier: Optional[str] = None
+    ):
+        """Initialize FormatNormalizer with database-agnostic client.
+
+        Args:
+            db_client: Database connector instance (any type)
+            cache_manager: Optional cache manager
+            database_qualifier: Database/project qualifier for cache keys
+            schema_qualifier: Schema/dataset qualifier for cache keys
+        """
+        self.db_client = db_client
+        self.bq_client = db_client  # Backward compatibility alias
         self.cache_manager = cache_manager
         self.format_cache: Dict[str, ColumnFormat] = {}
 
+        # Store qualifiers for cache keys and queries
+        self.database_qualifier = database_qualifier
+        self.schema_qualifier = schema_qualifier
+
+        # Get database capabilities
+        self.db_capabilities = db_client.get_capabilities()
+        self.db_type = self.db_capabilities.database_type
+
     def _cache_key(self, table: str, column: str) -> str:
         """Generate cache key for format metadata"""
-        return f"format:{self.bq_client.project_id}:{self.bq_client.dataset_id}:{table}:{column}"
+        # Use provided qualifiers or fall back to empty string
+        db_qual = self.database_qualifier or "default"
+        schema_qual = self.schema_qualifier or "default"
+        return f"format:{db_qual}:{schema_qual}:{table}:{column}"
 
     def detect_column_format(self, table_name: str, column_name: str, force_refresh: bool = False) -> ColumnFormat:
         """
@@ -97,11 +123,26 @@ class FormatNormalizer:
         # Sample data from table
         logger.info(f"Analyzing format for {table_name}.{column_name}")
 
+        # Get qualified table name based on database type
+        if hasattr(self.db_client, 'qualify_table_name'):
+            qualified_table = self.db_client.qualify_table_name(table_name)
+        else:
+            # Fallback: construct manually
+            if self.database_qualifier and self.schema_qualifier:
+                if self.db_type == 'bigquery':
+                    qualified_table = f"`{self.database_qualifier}.{self.schema_qualifier}.{table_name}`"
+                else:
+                    qualified_table = f"{self.database_qualifier}.{self.schema_qualifier}.{table_name}"
+            elif self.schema_qualifier:
+                qualified_table = f"{self.schema_qualifier}.{table_name}"
+            else:
+                qualified_table = table_name
+
         query = f"""
         SELECT
             {column_name},
             COUNT(*) as count
-        FROM `{self.bq_client.project_id}.{self.bq_client.dataset_id}.{table_name}`
+        FROM {qualified_table}
         WHERE {column_name} IS NOT NULL
         GROUP BY {column_name}
         ORDER BY count DESC
@@ -109,7 +150,7 @@ class FormatNormalizer:
         """
 
         try:
-            results = self.bq_client.execute_query(query, max_rows=1000)
+            results = self.db_client.execute_query(query, max_rows=1000)
             rows = results.get('rows', [])
 
             if not rows:

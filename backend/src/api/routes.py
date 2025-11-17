@@ -261,9 +261,34 @@ async def process_query(
     execution_id = str(uuid.uuid4())
 
     try:
-        # Override dataset if provided
-        if request.dataset:
-            generator.bq_client.dataset_id = request.dataset
+        # Create custom generator if different database type is specified
+        if request.database_type and request.database_type != 'bigquery':
+            # Validate database type
+            from src.db.connector_factory import ConnectorFactory
+            supported_types = ConnectorFactory.get_supported_types()
+            if request.database_type not in supported_types:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported database type: {request.database_type}. Supported types: {', '.join(supported_types)}"
+                )
+
+            # Create database-specific generator
+            logger.info(f"Creating SQL generator for database type: {request.database_type}")
+            generator = SQLGenerator(
+                database_type=request.database_type,
+                database_config=request.database_config
+            )
+        elif request.database_config:
+            # Use custom config even for BigQuery
+            logger.info("Creating SQL generator with custom database config")
+            generator = SQLGenerator(
+                database_type=request.database_type or 'bigquery',
+                database_config=request.database_config
+            )
+
+        # Override dataset if provided (for BigQuery backward compatibility)
+        if request.dataset and hasattr(generator.db_client, 'dataset_id'):
+            generator.db_client.dataset_id = request.dataset
 
         # Get options
         options = request.options or {}
@@ -493,13 +518,38 @@ async def generate_sql(
 ):
     """Generate SQL from natural language without executing."""
     try:
+        # Create custom generator if different database type is specified
+        if request.database_type and request.database_type != 'bigquery':
+            # Validate database type
+            from src.db.connector_factory import ConnectorFactory
+            supported_types = ConnectorFactory.get_supported_types()
+            if request.database_type not in supported_types:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported database type: {request.database_type}. Supported types: {', '.join(supported_types)}"
+                )
+
+            # Create database-specific generator
+            logger.info(f"Creating SQL generator for database type: {request.database_type}")
+            generator = SQLGenerator(
+                database_type=request.database_type,
+                database_config=request.database_config
+            )
+        elif request.database_config:
+            # Use custom config even for BigQuery
+            logger.info("Creating SQL generator with custom database config")
+            generator = SQLGenerator(
+                database_type=request.database_type or 'bigquery',
+                database_config=request.database_config
+            )
+
         result = generator.generate_sql(
             request.question,
             use_vector_search=request.use_vector_search,
             max_tables=request.max_tables
         )
         return QueryResponse(**result)
-        
+
     except Exception as e:
         logger.error(f"SQL generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

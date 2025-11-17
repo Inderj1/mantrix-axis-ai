@@ -9,6 +9,8 @@ class QueryRequest(BaseModel):
     conversationId: Optional[str] = Field(None, description="Conversation ID for context")
     page_size: Optional[int] = Field(10000, description="Number of rows per page (default: 10000, max: 100000)")
     page_token: Optional[str] = Field(None, description="Token for fetching next page of results")
+    database_type: Optional[str] = Field('bigquery', description="Database type (bigquery, snowflake, postgresql, redshift, databricks)")
+    database_config: Optional[Dict[str, Any]] = Field(None, description="Database-specific configuration (credentials, connection details)")
 
     class Config:
         json_schema_extra = {
@@ -19,7 +21,9 @@ class QueryRequest(BaseModel):
                     "max_tables": 5
                 },
                 "page_size": 10000,
-                "page_token": None
+                "page_token": None,
+                "database_type": "bigquery",
+                "database_config": None
             }
         }
 
@@ -28,6 +32,8 @@ class SQLGenerateRequest(BaseModel):
     question: str = Field(..., description="Natural language question")
     use_vector_search: bool = Field(True, description="Use vector search for table selection")
     max_tables: int = Field(5, description="Maximum number of tables to consider")
+    database_type: Optional[str] = Field('bigquery', description="Database type (bigquery, snowflake, postgresql, redshift, databricks)")
+    database_config: Optional[Dict[str, Any]] = Field(None, description="Database-specific configuration")
 
 
 class SQLExecuteRequest(BaseModel):

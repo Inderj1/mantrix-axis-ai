@@ -98,7 +98,10 @@ ORDER BY current_inventory ASC"""
         business_context: Optional[Dict[str, Any]] = None,
         join_hints: Optional[List[Dict[str, Any]]] = None,
         conversation_context: Optional[Dict[str, Any]] = None,
-        column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        database_type: str = 'bigquery',
+        database_name: str = 'BigQuery',
+        dialect_guide: str = ''
     ) -> Dict[str, Any]:
         """Generate SQL query from natural language using table schemas."""
         logger.info(f"=== Starting SQL generation ===")
@@ -125,7 +128,7 @@ ORDER BY current_inventory ASC"""
             effective_examples = examples if examples else self._get_relevant_examples(user_query, financial_context)
             logger.info(f"Got {len(effective_examples) if effective_examples else 0} examples")
 
-            logger.info("Building user prompt...")
+            logger.info(f"Building user prompt for {database_name} (dialect: {database_type})...")
             user_prompt = self._build_user_prompt(
                 user_query,
                 table_schemas,
@@ -133,7 +136,10 @@ ORDER BY current_inventory ASC"""
                 financial_context,
                 business_context,
                 join_hints,
-                conversation_context
+                conversation_context,
+                database_type=database_type,
+                database_name=database_name,
+                dialect_guide=dialect_guide
             )
             logger.info("User prompt built successfully")
             if join_hints:
@@ -704,9 +710,24 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         financial_context: Optional[Dict[str, Any]] = None,
         business_context: Optional[Dict[str, Any]] = None,
         join_hints: Optional[List[Dict[str, Any]]] = None,
-        conversation_context: Optional[Dict[str, Any]] = None
+        conversation_context: Optional[Dict[str, Any]] = None,
+        database_type: str = 'bigquery',
+        database_name: str = 'BigQuery',
+        dialect_guide: str = ''
     ) -> str:
         prompt_parts = []
+
+        # Add database dialect information FIRST (CRITICAL for multi-database support)
+        if dialect_guide:
+            prompt_parts.append(f"## 🗄️ TARGET DATABASE: {database_name}\n\n")
+            prompt_parts.append(f"**CRITICAL**: You are generating SQL for {database_name}, NOT BigQuery.\n")
+            prompt_parts.append(f"You MUST use {database_type.upper()} SQL syntax and follow these guidelines:\n")
+            prompt_parts.append(dialect_guide)
+            prompt_parts.append("\n" + "=" * 80 + "\n\n")
+        else:
+            # Default to BigQuery if no dialect guide provided (backward compatibility)
+            prompt_parts.append("## 🗄️ TARGET DATABASE: BigQuery\n\n")
+            prompt_parts.append("=" * 80 + "\n\n")
 
         # Load temporal context for date handling
         temporal_context = self._load_temporal_context()

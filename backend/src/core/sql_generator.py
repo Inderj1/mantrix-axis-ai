@@ -32,7 +32,7 @@ except ImportError as e:
     GraphTraversalEngine = None
     get_jena_knowledge_graph = lambda redis_client=None: None
     get_jena_query_resolver = lambda: None
-from src.db.bigquery import BigQueryClient
+from src.db.connector_factory import ConnectorFactory
 from src.db.weaviate_client import WeaviateClient
 from src.config import settings
 
@@ -40,12 +40,62 @@ logger = structlog.get_logger()
 
 
 class SQLGenerator:
-    def __init__(self):
+    def __init__(
+        self,
+        database_type: str = 'bigquery',
+        database_config: Optional[Dict[str, Any]] = None
+    ):
+        """Initialize SQL Generator with multi-database support.
+
+        Args:
+            database_type: Type of database ('bigquery', 'snowflake', 'postgresql', 'redshift', 'databricks')
+            database_config: Database-specific configuration (optional, uses settings for BigQuery)
+        """
+        # Store database type and config
+        self.database_type = database_type
+        self.database_config = database_config or {}
+
+        # Validate database type against supported types
+        from src.db.connector_factory import ConnectorFactory
+        supported_types = ConnectorFactory.get_supported_types()
+        if database_type not in supported_types:
+            raise ValueError(
+                f"Unsupported database type: {database_type}. "
+                f"Supported types: {', '.join(supported_types)}"
+            )
+
+        logger.info(f"Initializing SQL Generator for database type: {database_type}")
+
+        # Initialize LLM and vector clients
         self.llm_client = LLMClient()
-        self.bq_client = BigQueryClient()
         self.vector_client = WeaviateClient()
         self.optimizer = QueryOptimizer()
         self.suggestion_service = QuerySuggestionService()
+
+        # Create database client using connector factory
+        if database_type == 'bigquery':
+            # Use existing BigQuery config for backward compatibility
+            db_config = {
+                'project_id': settings.google_cloud_project,
+                'dataset_id': settings.bigquery_dataset
+            }
+        else:
+            # Use provided configuration for other databases
+            db_config = self.database_config
+
+        # Create connector via factory
+        self.db_client = ConnectorFactory.create_connector(
+            connector_type=database_type,
+            config=db_config
+        )
+
+        # Get database capabilities for dialect-specific handling
+        self.db_capabilities = self.db_client.get_capabilities()
+        logger.info(f"Database client initialized: {self.db_capabilities.database_name}")
+
+        # Keep bq_client reference for backward compatibility (will be removed in later tasks)
+        self.bq_client = self.db_client
+
         self.format_normalizer = None  # Will be initialized after cache_manager
         
         # Initialize cache manager
@@ -75,9 +125,14 @@ class SQLGenerator:
                 logger.warning(f"Failed to initialize cache manager: {e}. Running without cache.")
                 self.cache_manager = None
 
-        # Initialize format normalizer (requires bq_client and cache_manager)
+        # Initialize format normalizer (requires db_client and cache_manager)
         try:
-            self.format_normalizer = FormatNormalizer(self.bq_client, self.cache_manager)
+            self.format_normalizer = FormatNormalizer(
+                db_client=self.db_client,
+                cache_manager=self.cache_manager,
+                database_qualifier=self._get_database_qualifier(),
+                schema_qualifier=self._get_schema_qualifier()
+            )
             logger.info("Format normalizer initialized - JOIN accuracy fix enabled")
         except Exception as e:
             logger.warning(f"Failed to initialize format normalizer: {e}. Running without format normalization.")
@@ -156,8 +211,10 @@ class SQLGenerator:
         if self.cache_manager and self.enable_financial_features:
             try:
                 precalculator = FinancialMetricsPreCalculator(
-                    bq_client=self.bq_client,
-                    cache_manager=self.cache_manager
+                    db_client=self.db_client,
+                    cache_manager=self.cache_manager,
+                    database_qualifier=self._get_database_qualifier(),
+                    schema_qualifier=self._get_schema_qualifier()
                 )
                 registry = PreCalcRegistry(precalculator)
                 decomposer = QueryDecomposer(registry, self.financial_parser)
@@ -171,22 +228,133 @@ class SQLGenerator:
         
         # Set LLM client in suggestion service
         self.suggestion_service.llm_client = self.llm_client
-        
+
         # Skip automatic indexing on startup - will be done lazily on first use
         # self._index_schemas()
-    
+
+    def _get_database_qualifier(self) -> Optional[str]:
+        """Get database-level qualifier (project for BigQuery, database for others).
+
+        Returns:
+            Database qualifier string or None
+        """
+        if self.database_type == 'bigquery':
+            return getattr(self.db_client, 'project_id', None)
+        elif self.database_type in ['snowflake', 'databricks']:
+            return getattr(self.db_client, 'database', None)
+        elif self.database_type in ['postgresql', 'redshift']:
+            return getattr(self.db_client, 'database', None)
+        return None
+
+    def _get_schema_qualifier(self) -> Optional[str]:
+        """Get schema/dataset qualifier.
+
+        Returns:
+            Schema qualifier string or None
+        """
+        if self.database_type == 'bigquery':
+            return getattr(self.db_client, 'dataset_id', None)
+        else:
+            return getattr(self.db_client, 'schema', None)
+
+    def _get_full_qualifier(self) -> str:
+        """Get full database qualifier for cache keys and logging.
+
+        Returns:
+            Formatted qualifier (e.g., 'project:dataset' for BigQuery, 'database:schema' for others)
+        """
+        db_qual = self._get_database_qualifier()
+        schema_qual = self._get_schema_qualifier()
+
+        if db_qual and schema_qual:
+            return f"{db_qual}:{schema_qual}"
+        elif schema_qual:
+            return schema_qual
+        elif db_qual:
+            return db_qual
+        return "default"
+
+    def _get_dialect_guide(self) -> str:
+        """Get database-specific SQL syntax guidelines for LLM.
+
+        Returns:
+            String containing SQL dialect-specific guidelines
+        """
+        guides = {
+            'bigquery': """
+**BigQuery SQL Dialect:**
+- Use backticks for identifiers: `project.dataset.table`
+- Date formatting: FORMAT_DATE('%Y-%m-%d', date_column)
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP()
+- Date arithmetic: DATE_ADD(date, INTERVAL 1 DAY)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Arrays: ARRAY_AGG(), UNNEST()
+- Structs: STRUCT(field1, field2)
+- Supports standard SQL with extensions
+            """,
+            'snowflake': """
+**Snowflake SQL Dialect:**
+- Three-part names: database.schema.table (no backticks needed)
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP() or SYSDATE()
+- Date arithmetic: DATEADD(DAY, 1, date)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Semi-structured data: VARIANT type with : accessor
+- JSON: PARSE_JSON(), object:field syntax
+- Case-insensitive by default (identifiers are uppercase unless quoted)
+            """,
+            'postgresql': """
+**PostgreSQL SQL Dialect:**
+- Schema-qualified names: schema.table (or just table if in search_path)
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP or NOW()
+- Date arithmetic: date + INTERVAL '1 day'
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Case-insensitive search: ILIKE operator
+- JSON: jsonb type with -> and ->> operators
+- Supports CTEs, window functions, recursive queries
+            """,
+            'redshift': """
+**Amazon Redshift SQL Dialect:**
+- Similar to PostgreSQL but with some limitations
+- Schema-qualified names: schema.table
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: || or CONCAT
+- No recursive CTEs
+- Limited window function support compared to PostgreSQL
+- SUPER type for semi-structured data (JSON-like)
+- DISTKEY and SORTKEY for optimization (optional in queries)
+            """,
+            'databricks': """
+**Databricks SQL Dialect (Spark SQL):**
+- Three-part names: catalog.schema.table
+- Date formatting: DATE_FORMAT(date_column, 'yyyy-MM-dd')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP() or NOW()
+- Date arithmetic: DATE_ADD(date, 1)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Delta Lake features: TIME TRAVEL, MERGE, OPTIMIZE
+- Java-style date patterns: 'yyyy-MM-dd HH:mm:ss'
+- Supports Spark SQL with Delta Lake extensions
+            """
+        }
+        return guides.get(self.database_type, "")
+
     def _index_schemas(self):
         """Index all table schemas in the vector database."""
         try:
-            logger.info("Indexing BigQuery table schemas...")
-            schemas = self.bq_client.get_dataset_schema()
-            
+            logger.info(f"Indexing {self.db_capabilities.database_name} table schemas...")
+            schemas = self.db_client.get_dataset_schema()
+
             for schema in schemas:
                 # Cache schema if caching is enabled
                 if self.cache_manager and settings.cache_schema_enabled:
                     self.cache_manager.cache_schema(
-                        self.bq_client.project_id,
-                        self.bq_client.dataset_id,
+                        self._get_database_qualifier(),
+                        self._get_schema_qualifier(),
                         schema['table_name'],
                         schema
                     )
@@ -497,6 +665,12 @@ class SQLGenerator:
 
             # Prepare kwargs for LLM client
             llm_kwargs = {}
+
+            # Add database dialect information (CRITICAL for multi-database support)
+            llm_kwargs["database_type"] = self.database_type
+            llm_kwargs["database_name"] = self.db_capabilities.database_name
+            llm_kwargs["dialect_guide"] = self._get_dialect_guide()
+
             if financial_context:
                 llm_kwargs["financial_context"] = financial_context
             if enhanced_context:
@@ -505,6 +679,8 @@ class SQLGenerator:
                 llm_kwargs["join_hints"] = join_hints
             if conversation_context:
                 llm_kwargs["conversation_context"] = conversation_context
+
+            logger.info(f"Generating SQL for {self.db_capabilities.database_name} (dialect: {self.database_type})")
             
             # Debug relevant_schemas before passing to LLM
             logger.info(f"Relevant schemas type: {type(relevant_schemas)}")
@@ -753,7 +929,7 @@ class SQLGenerator:
         """Check if vector DB needs reindexing based on cache expiration."""
         try:
             # Check if we have a timestamp for when schemas were last indexed
-            index_timestamp_key = f"schema_index_timestamp:{self.bq_client.project_id}:{self.bq_client.dataset_id}"
+            index_timestamp_key = f"schema_index_timestamp:{self._get_full_qualifier()}"
             
             if self.cache_manager:
                 # Get the last index timestamp from cache

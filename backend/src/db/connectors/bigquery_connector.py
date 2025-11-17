@@ -12,7 +12,13 @@ import json
 import re
 import structlog
 
-from ..base_connector import BaseDatabaseConnector, QueryExecutionError, TableNotFoundError, SchemaNotFoundError
+from ..base_connector import (
+    BaseDatabaseConnector,
+    QueryExecutionError,
+    TableNotFoundError,
+    SchemaNotFoundError,
+    ConnectionError as ConnectorConnectionError
+)
 from ..database_capabilities import BIGQUERY_CAPABILITIES, DatabaseCapabilities
 from src.config import settings
 
@@ -100,7 +106,7 @@ class BigQueryConnector(BaseDatabaseConnector):
 
         except Exception as e:
             logger.error(f"Failed to initialize BigQuery connector: {e}")
-            raise ConnectionError(f"Failed to connect to BigQuery: {e}")
+            raise ConnectorConnectionError(f"Failed to connect to BigQuery: {e}")
 
     def disconnect(self) -> None:
         """
