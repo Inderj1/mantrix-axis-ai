@@ -21,6 +21,7 @@ from src.api.agent_routes import router as agent_router
 from src.api.pipeline_routes import router as pipeline_router
 from src.api.connector_routes import router as connector_router
 from src.api.permissions_routes import router as permissions_router
+from src.api.cross_database_routes import router as cross_database_router
 
 # Configure structured logging
 structlog.configure(
@@ -166,6 +167,7 @@ app.include_router(agent_router)
 app.include_router(pipeline_router)
 app.include_router(connector_router)
 app.include_router(permissions_router)
+app.include_router(cross_database_router)
 
 
 @app.get("/")
