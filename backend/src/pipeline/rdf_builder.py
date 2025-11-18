@@ -27,6 +27,11 @@ from rdflib.namespace import FOAF, DC, DCTERMS
 import structlog
 
 from src.pipeline.schema_extractor import TableSchemaSnapshot, SchemaExtractor
+from src.pipeline.column_statistics_extractor import (
+    get_statistics_extractor,
+    ColumnStatisticsExtractor,
+    TableStatistics
+)
 from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph
 from src.core.cache_manager import CacheManager
 from src.db.bigquery import BigQueryClient
@@ -74,12 +79,14 @@ class RDFBuilder:
         self,
         schema_extractor: SchemaExtractor,
         jena_kg=None,
-        cache_manager: Optional[CacheManager] = None
+        cache_manager: Optional[CacheManager] = None,
+        enable_statistics: bool = True
     ):
         self.schema_extractor = schema_extractor
         self.jena_kg = jena_kg or get_jena_knowledge_graph()
         self.cache_manager = cache_manager
         self.graph = Graph()  # Local RDF graph for building
+        self.enable_statistics = enable_statistics  # Enable/disable statistics extraction
 
         # Bind namespaces
         self.graph.bind("fin", FIN)
@@ -307,6 +314,274 @@ class RDFBuilder:
         else:
             return "huge"  # >10M
 
+    def add_column_optimization_metadata(
+        self,
+        snapshot: TableSchemaSnapshot,
+        connector: Any
+    ):
+        """
+        Add column-level optimization metadata to RDF graph.
+
+        Extracts and stores:
+        - Cardinality (distinct value count)
+        - Selectivity (cardinality / row_count)
+        - Index information
+        - Uniqueness constraints
+
+        Args:
+            snapshot: Table schema snapshot
+            connector: Database connector for statistics extraction
+        """
+        if not self.enable_statistics:
+            logger.debug(f"Statistics extraction disabled, skipping {snapshot.table_name}")
+            return
+
+        logger.info(f"Extracting optimization metadata for {snapshot.table_name}")
+
+        try:
+            # Get appropriate statistics extractor for this connector
+            stats_extractor = get_statistics_extractor(connector)
+
+            # Extract table statistics
+            table_stats = stats_extractor.extract_table_statistics(
+                table_name=snapshot.table_name,
+                schema=snapshot.dataset
+            )
+
+            # Add column statistics to graph
+            for col_name, col_stats in table_stats.column_stats.items():
+                col_uri = FIN[f"Column_{snapshot.table_name}_{col_name}"]
+
+                # Only add if column exists in graph
+                if (col_uri, RDF.type, FIN.Column) not in self.graph:
+                    logger.warning(
+                        f"Column {col_name} not found in graph for {snapshot.table_name}, skipping stats"
+                    )
+                    continue
+
+                # Add cardinality
+                if col_stats.cardinality is not None:
+                    self.graph.add((
+                        col_uri,
+                        STATS.cardinality,
+                        Literal(col_stats.cardinality, datatype=XSD.integer)
+                    ))
+
+                # Add selectivity
+                if col_stats.selectivity is not None:
+                    self.graph.add((
+                        col_uri,
+                        STATS.selectivity,
+                        Literal(col_stats.selectivity, datatype=XSD.float)
+                    ))
+
+                # Add index flag
+                self.graph.add((
+                    col_uri,
+                    STATS.hasIndex,
+                    Literal(col_stats.has_index, datatype=XSD.boolean)
+                ))
+
+                # Add uniqueness
+                if col_stats.is_unique:
+                    self.graph.add((
+                        col_uri,
+                        STATS.isUnique,
+                        Literal(True, datatype=XSD.boolean)
+                    ))
+
+                # Add null fraction
+                if col_stats.null_fraction is not None:
+                    self.graph.add((
+                        col_uri,
+                        STATS.nullFraction,
+                        Literal(col_stats.null_fraction, datatype=XSD.float)
+                    ))
+
+                # Add average length (for string columns)
+                if col_stats.avg_length is not None:
+                    self.graph.add((
+                        col_uri,
+                        STATS.avgLength,
+                        Literal(col_stats.avg_length, datatype=XSD.integer)
+                    ))
+
+                # Add primary/foreign key flags
+                if col_stats.is_primary_key:
+                    self.graph.add((
+                        col_uri,
+                        STATS.isPrimaryKey,
+                        Literal(True, datatype=XSD.boolean)
+                    ))
+
+                if col_stats.is_foreign_key:
+                    self.graph.add((
+                        col_uri,
+                        STATS.isForeignKey,
+                        Literal(True, datatype=XSD.boolean)
+                    ))
+
+            # Add index information to table
+            if table_stats.indexes:
+                table_uri = FIN[f"Table_{snapshot.table_name}"]
+
+                for idx in table_stats.indexes:
+                    idx_name = idx.get('name', f"index_{len(table_stats.indexes)}")
+                    idx_uri = FIN[f"Index_{snapshot.table_name}_{idx_name}"]
+
+                    self.graph.add((idx_uri, RDF.type, FIN.Index))
+                    self.graph.add((idx_uri, SCHEMA.indexName, Literal(idx_name)))
+                    self.graph.add((idx_uri, SCHEMA.indexType, Literal(idx.get('type', 'unknown'))))
+                    self.graph.add((table_uri, SCHEMA.hasIndex, idx_uri))
+
+                    # Link index to columns
+                    for col_name in idx.get('columns', []):
+                        col_uri = FIN[f"Column_{snapshot.table_name}_{col_name}"]
+                        self.graph.add((idx_uri, SCHEMA.indexColumn, col_uri))
+
+            logger.info(
+                f"Added optimization metadata for {snapshot.table_name}: "
+                f"{len(table_stats.column_stats)} columns, {len(table_stats.indexes)} indexes"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to add optimization metadata for {snapshot.table_name}: {e}",
+                exc_info=True
+            )
+
+    def add_statistics_freshness_metadata(self, table_name: str):
+        """
+        Track when statistics were last updated for this table.
+
+        Args:
+            table_name: Name of the table
+        """
+        table_uri = FIN[f"Table_{table_name}"]
+
+        # Add timestamp for statistics update
+        self.graph.add((
+            table_uri,
+            STATS.statisticsLastUpdated,
+            Literal(datetime.now().isoformat(), datatype=XSD.dateTime)
+        ))
+
+        logger.debug(f"Updated statistics freshness timestamp for {table_name}")
+
+    def should_update_statistics(
+        self,
+        table_name: str,
+        max_age_days: Optional[int] = None
+    ) -> bool:
+        """
+        Check if statistics need updating based on age.
+
+        Args:
+            table_name: Name of the table
+            max_age_days: Maximum age in days (uses settings default if not provided)
+
+        Returns:
+            True if statistics need updating, False otherwise
+        """
+        from src.config import settings
+
+        max_age = max_age_days if max_age_days is not None else settings.stats_max_age_days
+
+        query = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?last_updated
+        WHERE {{
+            ?table a fin:Table ;
+                   schema:tableName "{table_name}" ;
+                   stats:statisticsLastUpdated ?last_updated .
+        }}
+        """
+
+        try:
+            results = list(self.graph.query(query))
+
+            if not results:
+                logger.debug(f"No statistics timestamp found for {table_name} - needs update")
+                return True  # No stats yet, needs update
+
+            # Parse timestamp
+            last_updated_str = str(results[0].last_updated)
+            from datetime import timezone, timedelta
+
+            # Handle both timezone-aware and naive datetimes
+            last_updated = datetime.fromisoformat(last_updated_str)
+            if last_updated.tzinfo is None:
+                last_updated = last_updated.replace(tzinfo=timezone.utc)
+
+            now_utc = datetime.now(timezone.utc)
+            age = now_utc - last_updated
+
+            needs_update = age > timedelta(days=max_age)
+
+            if needs_update:
+                logger.debug(
+                    f"Statistics for {table_name} are {age.days} days old "
+                    f"(max: {max_age} days) - needs update"
+                )
+            else:
+                logger.debug(
+                    f"Statistics for {table_name} are {age.days} days old - still fresh"
+                )
+
+            return needs_update
+
+        except Exception as e:
+            logger.warning(f"Failed to check statistics freshness for {table_name}: {e}")
+            return True  # On error, assume update needed
+
+    def get_statistics_age_days(self, table_name: str) -> Optional[int]:
+        """
+        Get the age of statistics in days.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            Age in days, or None if no statistics exist
+        """
+        query = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?last_updated
+        WHERE {{
+            ?table a fin:Table ;
+                   schema:tableName "{table_name}" ;
+                   stats:statisticsLastUpdated ?last_updated .
+        }}
+        """
+
+        try:
+            results = list(self.graph.query(query))
+
+            if not results:
+                return None
+
+            last_updated_str = str(results[0].last_updated)
+            from datetime import timezone
+
+            last_updated = datetime.fromisoformat(last_updated_str)
+            if last_updated.tzinfo is None:
+                last_updated = last_updated.replace(tzinfo=timezone.utc)
+
+            now_utc = datetime.now(timezone.utc)
+            age = now_utc - last_updated
+
+            return age.days
+
+        except Exception as e:
+            logger.warning(f"Failed to get statistics age for {table_name}: {e}")
+            return None
+
     def _discover_relationships(self, snapshots: List[TableSchemaSnapshot]) -> int:
         """
         Discover JOIN relationships between tables.
@@ -386,6 +661,137 @@ class RDFBuilder:
         self.graph.add((table2_uri, SCHEMA.hasRelationship, rel_uri))
 
         logger.debug(f"Added relationship: {table1}.{col1} ↔ {table2}.{col2}")
+
+    def add_join_path_metadata(
+        self,
+        table1: str,
+        table2: str,
+        join_column: str,
+        avg_execution_time_ms: Optional[float] = None,
+        estimated_rows: Optional[int] = None,
+        recommended_strategy: Optional[str] = None,
+        success_rate: Optional[float] = None
+    ):
+        """
+        Add join path intelligence metadata to RDF graph.
+
+        This stores historical performance data for JOINs between tables,
+        enabling intelligent strategy selection.
+
+        Args:
+            table1: First table name
+            table2: Second table name
+            join_column: Column used for JOIN
+            avg_execution_time_ms: Average execution time in milliseconds
+            estimated_rows: Estimated result set size
+            recommended_strategy: Recommended execution strategy
+            success_rate: Success rate (0-1) for this join path
+        """
+        table1_uri = FIN[f"Table_{table1}"]
+        table2_uri = FIN[f"Table_{table2}"]
+
+        # Create join path URI
+        join_path_id = f"{table1}_to_{table2}_on_{join_column}"
+        join_path_uri = FIN[f"JoinPath_{join_path_id}"]
+
+        # Add join path metadata
+        self.graph.add((join_path_uri, RDF.type, FIN.JoinPath))
+        self.graph.add((join_path_uri, SCHEMA.leftTable, table1_uri))
+        self.graph.add((join_path_uri, SCHEMA.rightTable, table2_uri))
+        self.graph.add((join_path_uri, SCHEMA.joinColumn, Literal(join_column)))
+
+        if avg_execution_time_ms is not None:
+            self.graph.add((
+                join_path_uri,
+                STATS.avgExecutionTimeMs,
+                Literal(avg_execution_time_ms, datatype=XSD.float)
+            ))
+
+        if estimated_rows is not None:
+            self.graph.add((
+                join_path_uri,
+                STATS.estimatedRows,
+                Literal(estimated_rows, datatype=XSD.integer)
+            ))
+
+        if recommended_strategy is not None:
+            self.graph.add((
+                join_path_uri,
+                STATS.recommendedStrategy,
+                Literal(recommended_strategy)
+            ))
+
+        if success_rate is not None:
+            self.graph.add((
+                join_path_uri,
+                STATS.successRate,
+                Literal(success_rate, datatype=XSD.float)
+            ))
+
+        # Link to tables
+        self.graph.add((table1_uri, SCHEMA.hasJoinPath, join_path_uri))
+        self.graph.add((table2_uri, SCHEMA.hasJoinPath, join_path_uri))
+
+        logger.debug(
+            f"Added join path metadata: {table1} → {table2} on {join_column} "
+            f"(strategy: {recommended_strategy}, avg_time: {avg_execution_time_ms}ms)"
+        )
+
+    def query_join_path_metadata(
+        self,
+        table1: str,
+        table2: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Query join path metadata for optimization hints.
+
+        Args:
+            table1: First table name
+            table2: Second table name
+
+        Returns:
+            Dictionary with join path metadata or None
+        """
+        query = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?join_column ?avg_time ?estimated_rows ?strategy ?success_rate
+        WHERE {{
+            ?join_path a fin:JoinPath .
+            ?join_path schema:leftTable ?left_table .
+            ?join_path schema:rightTable ?right_table .
+            ?join_path schema:joinColumn ?join_column .
+
+            ?left_table schema:tableName "{table1}" .
+            ?right_table schema:tableName "{table2}" .
+
+            OPTIONAL {{ ?join_path stats:avgExecutionTimeMs ?avg_time }}
+            OPTIONAL {{ ?join_path stats:estimatedRows ?estimated_rows }}
+            OPTIONAL {{ ?join_path stats:recommendedStrategy ?strategy }}
+            OPTIONAL {{ ?join_path stats:successRate ?success_rate }}
+        }}
+        """
+
+        try:
+            results = list(self.graph.query(query))
+
+            if results:
+                row = results[0]
+                return {
+                    'join_column': str(row.join_column) if row.join_column else None,
+                    'avg_execution_time_ms': float(row.avg_time) if row.avg_time else None,
+                    'estimated_rows': int(row.estimated_rows) if row.estimated_rows else None,
+                    'recommended_strategy': str(row.strategy) if row.strategy else None,
+                    'success_rate': float(row.success_rate) if row.success_rate else None
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to query join path metadata: {e}")
+            return None
 
     def _merge_into_jena(self):
         """

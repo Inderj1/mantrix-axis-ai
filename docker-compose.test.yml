@@ -1,0 +1,368 @@
+# Docker Compose for Full Local Testing
+# Includes all services + test databases with sample data
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # BACKEND API
+  # ============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_ENV: ${API_ENV:-development}
+
+      # AI Services (REQUIRED)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Google Cloud / BigQuery (REQUIRED)
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+      BIGQUERY_DATASET: ${BIGQUERY_DATASET}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/credentials/gcp-key.json
+
+      # Service URLs (Docker internal)
+      WEAVIATE_URL: http://weaviate:8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MONGODB_URL: mongodb://mongodb:27017/nlp_sql_conversations
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: test_password_123
+
+      # PostgreSQL (Test Database)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: mantrix_test
+      POSTGRES_PASSWORD: mantrix_test_123
+      POSTGRES_DATABASE: mantrix_test_db
+
+      # Snowflake (Optional - requires real credentials)
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER:-}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE:-}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA:-PUBLIC}
+
+      # Databricks (Optional - requires real credentials)
+      DATABRICKS_SERVER_HOSTNAME: ${DATABRICKS_SERVER_HOSTNAME:-}
+      DATABRICKS_HTTP_PATH: ${DATABRICKS_HTTP_PATH:-}
+      DATABRICKS_ACCESS_TOKEN: ${DATABRICKS_ACCESS_TOKEN:-}
+      DATABRICKS_CATALOG: ${DATABRICKS_CATALOG:-main}
+      DATABRICKS_SCHEMA: ${DATABRICKS_SCHEMA:-default}
+
+      # Redshift (Optional - requires real credentials)
+      REDSHIFT_HOST: ${REDSHIFT_HOST:-}
+      REDSHIFT_PORT: ${REDSHIFT_PORT:-5439}
+      REDSHIFT_DATABASE: ${REDSHIFT_DATABASE:-}
+      REDSHIFT_USER: ${REDSHIFT_USER:-}
+      REDSHIFT_PASSWORD: ${REDSHIFT_PASSWORD:-}
+
+      # Statistics Extraction Configuration
+      STATS_EXTRACTION_ENABLED: "true"
+      STATS_EXTRACTION_SCHEDULE: weekly
+      STATS_EXTRACTION_DAY: 0
+      STATS_EXTRACTION_HOUR: 2
+      STATS_MAX_AGE_DAYS: 7
+      STATS_USE_SAMPLING: "true"
+      STATS_SAMPLE_PERCENT: 10
+      STATS_SAMPLING_THRESHOLD_GB: 10.0
+
+      # Cache Configuration
+      CACHE_ENABLED: "true"
+      CACHE_SQL_ENABLED: "true"
+      CACHE_EMBEDDINGS_ENABLED: "true"
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+    volumes:
+      - ./backend/src:/app/src
+      - ./query_logs:/app/query_logs
+      - ./logs:/app/logs
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-./credentials/gcp-key.json}:/app/credentials/gcp-key.json:ro
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - test-network
+
+  # ============================================================================
+  # FRONTEND UI
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5174:5174"
+    environment:
+      VITE_API_URL: http://localhost:8000
+      NODE_ENV: development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - /app/node_modules  # Prevent overwriting node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - test-network
+
+  # ============================================================================
+  # TEST DATABASES
+  # ============================================================================
+
+  # PostgreSQL Test Database (with sample data)
+  postgres:
+    image: postgres:16
+    container_name: mantrix-test-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: mantrix_test
+      POSTGRES_PASSWORD: mantrix_test_123
+      POSTGRES_DB: mantrix_test_db
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./backend/tests/fixtures/test_postgres_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mantrix_test -d mantrix_test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # MySQL Test Database (optional, for future MySQL connector)
+  mysql:
+    image: mysql:8.0
+    container_name: mantrix-test-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_123
+      MYSQL_DATABASE: mantrix_test_db
+      MYSQL_USER: mantrix_test
+      MYSQL_PASSWORD: mantrix_test_123
+    volumes:
+      - mysql_test_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password_123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+    profiles:
+      - full  # Only start with --profile full
+
+  # ============================================================================
+  # SUPPORTING SERVICES
+  # ============================================================================
+
+  # Weaviate Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: mantrix-test-weaviate
+    ports:
+      - "8082:8080"
+      - "50051:50051"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: 'text2vec-openai'
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate_test_data:/var/lib/weaviate
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mantrix-test-redis
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_test_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # MongoDB (Conversations)
+  mongodb:
+    image: mongo:7.0
+    container_name: mantrix-test-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: nlp_sql_conversations
+    volumes:
+      - mongodb_test_data:/data/db
+      - mongodb_test_config:/data/configdb
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5-community
+    container_name: mantrix-test-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/test_password_123
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=256M
+      - NEO4J_dbms_memory_heap_max__size=512M
+    volumes:
+      - neo4j_test_data:/data
+      - neo4j_test_logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "test_password_123", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - test-network
+
+  # ============================================================================
+  # TEST UTILITIES
+  # ============================================================================
+
+  # Adminer - Database UI for testing
+  adminer:
+    image: adminer:latest
+    container_name: mantrix-test-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+      - mysql
+    restart: unless-stopped
+    networks:
+      - test-network
+    profiles:
+      - tools  # Only start with --profile tools
+
+  # Redis Commander - Redis UI for testing
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: mantrix-test-redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - test-network
+    profiles:
+      - tools  # Only start with --profile tools
+
+  # Mongo Express - MongoDB UI for testing
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mantrix-test-mongo-express
+    ports:
+      - "8083:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - test-network
+    profiles:
+      - tools  # Only start with --profile tools
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  postgres_test_data:
+    driver: local
+  mysql_test_data:
+    driver: local
+  weaviate_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  mongodb_test_data:
+    driver: local
+  mongodb_test_config:
+    driver: local
+  neo4j_test_data:
+    driver: local
+  neo4j_test_logs:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  test-network:
+    name: mantrix-test-network
+    driver: bridge

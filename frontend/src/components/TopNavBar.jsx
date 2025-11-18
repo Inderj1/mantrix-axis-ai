@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useClerk } from '@clerk/clerk-react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Box,
   AppBar,
@@ -39,7 +39,7 @@ import {
 } from '@mui/icons-material';
 
 const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, user }) => {
-  const { signOut } = useClerk();
+  const { logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -119,7 +119,7 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, use
 
   const handleLogout = async () => {
     try {
-      await signOut();
+      await logout();
       // Clear session storage on logout
       sessionStorage.clear();
     } catch (error) {

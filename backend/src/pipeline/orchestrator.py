@@ -637,3 +637,244 @@ PHASE 1: Schema Extraction
             List of PipelineRun objects, most recent first
         """
         return self.run_history[:limit]
+
+    def execute_daily_pipeline(
+        self,
+        incremental: bool = True,
+        force_refresh: bool = False
+    ) -> PipelineRun:
+        """
+        Execute DAILY pipeline: Schema sync ONLY (no expensive statistics extraction).
+
+        This is a fast, cheap pipeline that:
+        - Extracts schemas from all databases
+        - Builds RDF graph with table-level stats only
+        - Generates vector embeddings
+        - SKIPS column statistics extraction (expensive!)
+
+        Runs: Daily at 2:00 AM
+        Duration: Minutes
+        Cost: Low
+
+        Args:
+            incremental: Only process changed schemas
+            force_refresh: Force rebuild even if no changes
+
+        Returns:
+            PipelineRun with execution details
+        """
+        run_id = f"daily_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now()
+
+        logger.info(
+            f"Starting DAILY pipeline (schema sync only) - "
+            f"Statistics extraction DISABLED for cost optimization"
+        )
+
+        # Temporarily disable statistics in RDF builder
+        original_stats_setting = self.rdf_builder.enable_statistics
+        self.rdf_builder.enable_statistics = False
+
+        try:
+            # Execute standard pipeline WITHOUT statistics
+            run = self.execute_pipeline(
+                incremental=incremental,
+                force_refresh=force_refresh
+            )
+
+            logger.info(
+                f"Daily pipeline complete: {run.tables_processed} tables, "
+                f"{run.duration_seconds:.1f}s (statistics extraction skipped)"
+            )
+
+            return run
+
+        finally:
+            # Restore original setting
+            self.rdf_builder.enable_statistics = original_stats_setting
+
+    def execute_statistics_pipeline(
+        self,
+        tables: Optional[List[str]] = None,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Execute STATISTICS EXTRACTION pipeline (expensive, runs weekly/monthly).
+
+        This pipeline:
+        - Extracts column-level statistics (cardinality, selectivity, indexes)
+        - Only processes tables with stale statistics (> 7 days old)
+        - Uses sampling for large tables (> 10GB)
+        - Adds statistics metadata to RDF graph
+
+        Runs: Weekly (Sunday 2:00 AM) or Monthly (1st of month)
+        Duration: Hours (depending on data size)
+        Cost: High (scans data)
+
+        Args:
+            tables: Specific tables to process (None = all with stale stats)
+            force_refresh: Force extraction even for fresh statistics
+
+        Returns:
+            Dictionary with extraction statistics
+        """
+        from src.db.connector_factory import ConnectorFactory
+
+        run_id = f"stats_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now()
+
+        logger.info(
+            f"Starting STATISTICS EXTRACTION pipeline - "
+            f"Schedule: {settings.stats_extraction_schedule}, "
+            f"Sampling: {settings.stats_use_sampling}, "
+            f"Max age: {settings.stats_max_age_days} days"
+        )
+
+        result = {
+            'run_id': run_id,
+            'tables_processed': 0,
+            'tables_skipped': 0,
+            'statistics_extracted': 0,
+            'errors': [],
+            'duration_seconds': 0
+        }
+
+        try:
+            # Get all table snapshots
+            all_snapshots = self.schema_extractor.extract_all_schemas(force_refresh=False)
+
+            # Filter tables based on configuration
+            snapshots_to_process = self._filter_tables_for_statistics(all_snapshots, force_refresh)
+
+            logger.info(
+                f"Processing {len(snapshots_to_process)}/{len(all_snapshots)} tables "
+                f"(skipping {len(all_snapshots) - len(snapshots_to_process)} with fresh statistics)"
+            )
+
+            result['tables_skipped'] = len(all_snapshots) - len(snapshots_to_process)
+
+            # Create connector factory
+            factory = ConnectorFactory()
+
+            # Extract statistics for each table
+            for snapshot in snapshots_to_process:
+                try:
+                    logger.info(f"Extracting statistics for {snapshot.table_name}")
+
+                    # Get appropriate connector
+                    connector = factory.create_connector(
+                        snapshot.database_type,
+                        config={
+                            'project': snapshot.project,
+                            'dataset': snapshot.dataset
+                        }
+                    )
+
+                    # Extract and add statistics to RDF
+                    self.rdf_builder.add_column_optimization_metadata(
+                        snapshot,
+                        connector
+                    )
+
+                    # Update freshness timestamp
+                    self.rdf_builder.add_statistics_freshness_metadata(snapshot.table_name)
+
+                    result['tables_processed'] += 1
+                    result['statistics_extracted'] += len(snapshot.columns)
+
+                    logger.info(
+                        f"✓ Statistics extracted for {snapshot.table_name}: "
+                        f"{len(snapshot.columns)} columns"
+                    )
+
+                except Exception as e:
+                    error_msg = f"Failed to extract statistics for {snapshot.table_name}: {str(e)}"
+                    logger.error(error_msg)
+                    result['errors'].append(error_msg)
+
+            # Merge updated statistics into Jena
+            logger.info("Merging statistics into Jena knowledge graph...")
+            self.rdf_builder._merge_into_jena()
+
+            # Calculate duration
+            end_time = datetime.now()
+            result['duration_seconds'] = (end_time - start_time).total_seconds()
+
+            logger.info(
+                f"Statistics extraction complete: "
+                f"{result['tables_processed']} tables, "
+                f"{result['statistics_extracted']} columns, "
+                f"{result['duration_seconds']:.1f}s, "
+                f"{len(result['errors'])} errors"
+            )
+
+            return result
+
+        except Exception as e:
+            error_msg = f"Statistics pipeline failed: {str(e)}"
+            logger.error(error_msg)
+            result['errors'].append(error_msg)
+
+            end_time = datetime.now()
+            result['duration_seconds'] = (end_time - start_time).total_seconds()
+
+            return result
+
+    def _filter_tables_for_statistics(
+        self,
+        snapshots: List,
+        force_refresh: bool
+    ) -> List:
+        """
+        Filter tables based on statistics extraction configuration.
+
+        Filters:
+        1. Skip tables with fresh statistics (< max_age_days)
+        2. Only include critical tables if configured
+        3. Exclude skip_tables if configured
+
+        Args:
+            snapshots: All table snapshots
+            force_refresh: Force extraction for all tables
+
+        Returns:
+            Filtered list of snapshots to process
+        """
+        # Parse critical/skip tables from settings
+        critical_tables = None
+        if settings.stats_critical_tables:
+            critical_tables = set(t.strip() for t in settings.stats_critical_tables.split(','))
+
+        skip_tables = set()
+        if settings.stats_skip_tables:
+            skip_tables = set(t.strip() for t in settings.stats_skip_tables.split(','))
+
+        filtered = []
+
+        for snapshot in snapshots:
+            table_name = snapshot.table_name
+
+            # Check skip list
+            if table_name in skip_tables:
+                logger.debug(f"Skipping {table_name} - in skip_tables list")
+                continue
+
+            # Check critical tables filter
+            if critical_tables and table_name not in critical_tables:
+                logger.debug(f"Skipping {table_name} - not in critical_tables list")
+                continue
+
+            # Check freshness (unless force_refresh)
+            if not force_refresh:
+                needs_update = self.rdf_builder.should_update_statistics(table_name)
+                if not needs_update:
+                    age_days = self.rdf_builder.get_statistics_age_days(table_name)
+                    logger.debug(
+                        f"Skipping {table_name} - statistics are {age_days} days old "
+                        f"(max: {settings.stats_max_age_days})"
+                    )
+                    continue
+
+            filtered.append(snapshot)
+
+        return filtered

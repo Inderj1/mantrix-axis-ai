@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -11,11 +12,28 @@ const api = axios.create({
 
 // Request interceptor
 api.interceptors.request.use(
-  (config) => {
-    // Add auth token if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    try {
+      // Try to get fresh token from Amplify session
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        localStorage.setItem('authToken', token);
+      } else {
+        // Fallback to localStorage if session fetch fails
+        const storedToken = localStorage.getItem('authToken');
+        if (storedToken) {
+          config.headers.Authorization = `Bearer ${storedToken}`;
+        }
+      }
+    } catch (error) {
+      // If Amplify session fails, try localStorage
+      const storedToken = localStorage.getItem('authToken');
+      if (storedToken) {
+        config.headers.Authorization = `Bearer ${storedToken}`;
+      }
     }
     return config;
   },
@@ -29,9 +47,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized
+      // Handle unauthorized - redirect to login
       localStorage.removeItem('authToken');
-      window.location.href = '/login';
+
+      // Only redirect if not already on login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

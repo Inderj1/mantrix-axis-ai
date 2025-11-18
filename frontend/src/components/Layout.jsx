@@ -26,8 +26,7 @@ import {
   AccountCircle as AccountCircleIcon,
 } from '@mui/icons-material';
 import AuthButton from './AuthButton';
-import { useUser } from '@clerk/clerk-react';
-import authConfig from '../auth_config.json';
+import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 240;
 
@@ -45,13 +44,11 @@ function Layout({ children }) {
   const location = useLocation();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user } = useUser();
-  
-  // Check if user is admin
-  const isAdmin = user?.primaryEmailAddress?.emailAddress && 
-    authConfig.authentication.access_control.roles.admin.includes(
-      user.primaryEmailAddress.emailAddress
-    );
+  const { user } = useAuth();
+
+  // TODO: Check if user is admin using Cognito groups
+  // For now, set to false - can be enhanced with token parsing
+  const isAdmin = false;
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);

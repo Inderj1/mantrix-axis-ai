@@ -305,6 +305,23 @@ class VectorBuilder:
             for col in other_cols[:10]:
                 parts.append(f"    - {col}")
 
+        # === OPTIMIZATION METADATA ===
+        # Add column-level optimization hints from RDF
+        high_selectivity_cols = self._get_high_selectivity_columns(snapshot.table_name)
+        if high_selectivity_cols:
+            parts.append("\nHighly Selective Columns (excellent for WHERE filters):")
+            for col in high_selectivity_cols:
+                parts.append(
+                    f"  - {col['name']} (selectivity: {col['selectivity']:.3f}, "
+                    f"cardinality: {col['cardinality']:,})"
+                )
+
+        indexed_cols = self._get_indexed_columns(snapshot.table_name)
+        if indexed_cols:
+            parts.append("\nIndexed Columns (fast lookups):")
+            for col in indexed_cols:
+                parts.append(f"  - {col}")
+
         # === COMMON USE CASES ===
         # Infer common use cases from table structure
         use_cases = self._infer_use_cases(snapshot)
@@ -350,6 +367,94 @@ class VectorBuilder:
             return self.rdf_builder.query_relationships(table_name)
         except Exception as e:
             logger.warning(f"Failed to query relationships for {table_name}: {e}")
+            return []
+
+    def _get_high_selectivity_columns(self, table_name: str) -> List[Dict[str, Any]]:
+        """
+        Query RDF graph for highly selective columns (good for filtering).
+
+        Highly selective columns have low selectivity values (<0.01),
+        meaning they filter out most rows and are ideal for WHERE clauses.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of column dictionaries with selectivity metadata
+        """
+        if not self.rdf_builder or not self.rdf_builder.graph:
+            return []
+
+        query = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?col_name ?selectivity ?cardinality
+        WHERE {{
+            ?table a fin:Table ;
+                   schema:tableName "{table_name}" ;
+                   schema:hasColumn ?column .
+            ?column schema:columnName ?col_name ;
+                    stats:selectivity ?selectivity ;
+                    stats:cardinality ?cardinality .
+            FILTER(?selectivity < 0.01)
+        }}
+        ORDER BY ?selectivity
+        LIMIT 5
+        """
+
+        try:
+            results = self.rdf_builder.graph.query(query)
+            return [
+                {
+                    'name': str(r.col_name),
+                    'selectivity': float(r.selectivity),
+                    'cardinality': int(r.cardinality)
+                }
+                for r in results
+            ]
+        except Exception as e:
+            logger.warning(f"Failed to query high selectivity columns for {table_name}: {e}")
+            return []
+
+    def _get_indexed_columns(self, table_name: str) -> List[str]:
+        """
+        Query RDF graph for indexed columns.
+
+        Indexed columns provide fast lookups and should be preferred
+        in JOIN and WHERE clauses.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of indexed column names
+        """
+        if not self.rdf_builder or not self.rdf_builder.graph:
+            return []
+
+        query = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?col_name
+        WHERE {{
+            ?table a fin:Table ;
+                   schema:tableName "{table_name}" ;
+                   schema:hasColumn ?column .
+            ?column schema:columnName ?col_name ;
+                    stats:hasIndex true .
+        }}
+        ORDER BY ?col_name
+        """
+
+        try:
+            results = self.rdf_builder.graph.query(query)
+            return [str(r.col_name) for r in results]
+        except Exception as e:
+            logger.warning(f"Failed to query indexed columns for {table_name}: {e}")
             return []
 
     def _infer_use_cases(self, snapshot: TableSchemaSnapshot) -> List[str]:

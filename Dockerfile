@@ -11,43 +11,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    structlog \
-    pydantic-settings \
-    anthropic \
-    openai \
-    google-cloud-bigquery \
-    weaviate-client \
-    pymongo \
-    redis \
-    psycopg2-binary \
-    neo4j \
-    sqlparse \
-    pandas \
-    numpy \
-    openpyxl \
-    xlrd \
-    sqlalchemy \
-    aioredis \
-    motor \
-    aiohttp \
-    google-cloud-storage \
-    psutil \
-    pytesseract \
-    pillow \
-    scikit-learn \
-    matplotlib \
-    seaborn \
-    plotly \
-    pypdf \
-    rdflib \
-    python-docx \
-    python-multipart \
-    crewai \
-    nest-asyncio
+# Copy requirements and install dependencies
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt nest-asyncio
 
 # Copy application code
 COPY backend/src/ ./src/

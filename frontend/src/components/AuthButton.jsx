@@ -1,5 +1,6 @@
 import React from 'react';
-import { useClerk, useUser } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Button,
   IconButton,
@@ -14,34 +15,14 @@ import {
   Login as LoginIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
-  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { clearCache } from '../config/queryClient';
 import { clearNavigationState } from '../hooks/usePersistedState';
 
 function AuthButton() {
-  let clerkHooks = { openSignIn: null, signOut: null };
-  let userHooks = { user: null, isSignedIn: false, isLoaded: false };
-  
-  try {
-    clerkHooks = useClerk();
-    userHooks = useUser();
-  } catch (error) {
-    console.error('Clerk hooks not available:', error);
-    // Return a fallback button
-    return (
-      <Button variant="outlined" color="inherit" sx={{ ml: 2 }} disabled>
-        Auth Not Available
-      </Button>
-    );
-  }
-  
-  const { openSignIn, signOut } = clerkHooks;
-  const { user, isSignedIn, isLoaded } = userHooks;
+  const navigate = useNavigate();
+  const { user, isAuthenticated, loading, logout } = useAuth();
   const [anchorEl, setAnchorEl] = React.useState(null);
-  
-  // Debug logging
-  console.log('AuthButton render:', { isLoaded, isSignedIn, user });
 
   const handleMenu = (event) => {
     setAnchorEl(event.currentTarget);
@@ -56,16 +37,20 @@ function AuthButton() {
     // Clear React Query cache and navigation state before signing out
     await clearCache();
     clearNavigationState();
-    await signOut();
+    await logout();
+    navigate('/login');
   };
 
   const handleProfile = () => {
     handleClose();
-    // Navigate to profile page or open profile modal
+    navigate('/profile');
   };
 
-  if (!isLoaded) {
-    console.log('Clerk not loaded yet');
+  const handleSignIn = () => {
+    navigate('/login');
+  };
+
+  if (loading) {
     return (
       <Button disabled variant="outlined" color="inherit" sx={{ ml: 2 }}>
         Loading...
@@ -73,14 +58,14 @@ function AuthButton() {
     );
   }
 
-  if (!isSignedIn) {
+  if (!isAuthenticated) {
     return (
       <Button
         variant="contained"
         startIcon={<LoginIcon />}
-        onClick={() => openSignIn()}
+        onClick={handleSignIn}
         fullWidth
-        sx={{ 
+        sx={{
           py: 1.25,
           px: 3,
           fontSize: '0.95rem',
@@ -104,10 +89,14 @@ function AuthButton() {
     );
   }
 
+  // Extract username from Cognito user object
+  const username = user?.username || 'User';
+  const userInitial = username.charAt(0).toUpperCase();
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'center' }}>
       <Typography variant="body2" sx={{ mr: 2, display: { xs: 'none', sm: 'block' } }}>
-        {user.primaryEmailAddress?.emailAddress}
+        {username}
       </Typography>
       <IconButton
         size="large"
@@ -117,12 +106,8 @@ function AuthButton() {
         onClick={handleMenu}
         color="inherit"
       >
-        <Avatar
-          src={user.imageUrl}
-          alt={user.fullName || user.firstName || 'User'}
-          sx={{ width: 32, height: 32 }}
-        >
-          {!user.imageUrl && (user.firstName?.[0] || user.primaryEmailAddress?.emailAddress?.[0] || 'U')}
+        <Avatar sx={{ width: 32, height: 32 }}>
+          {userInitial}
         </Avatar>
       </IconButton>
       <Menu
@@ -142,10 +127,7 @@ function AuthButton() {
       >
         <Box sx={{ px: 2, py: 1 }}>
           <Typography variant="subtitle1">
-            {user.fullName || user.firstName || 'User'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {user.primaryEmailAddress?.emailAddress}
+            {username}
           </Typography>
         </Box>
         <Divider />

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Paper, Typography } from '@mui/material';
-import { ClerkProvider } from '@clerk/clerk-react';
+import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import QueryPage from './pages/QueryPage-simple';
 import SimpleChatInterface from './components/SimpleChatInterface';
@@ -12,7 +12,7 @@ import HomePage from './pages/HomePage';
 import UserProfileManager from './components/UserProfileManager';
 import CommsConfig from './components/CommsConfig';
 import ProtectedRoute from './components/ProtectedRoute';
-import { initializeSettings } from './utils/initializeSettings';
+import LoginPage from './components/Auth/LoginPage';
 
 // Temporary simple pages
 const HistoryPage = () => (
@@ -39,129 +39,149 @@ const HealthPage = () => (
 function App() {
   console.log('App component rendering');
   console.log('Environment:', import.meta.env);
-  
-  useEffect(() => {
-    initializeSettings();
-  }, []);
 
-  const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-
-  console.log('Clerk Publishable Key:', clerkPubKey ? `Loaded: ${clerkPubKey.substring(0, 20)}...` : 'Missing');
-  
-  if (!clerkPubKey) {
-    console.error('Missing Clerk Publishable Key - Authentication will not work!');
-    // Return app without Clerk provider if key is missing
-    return (
-      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/chat" element={<SimpleChatInterface />} />
-            <Route path="/process-mining" element={<ProcessMiningPage />} />
-            <Route path="/whatif-analysis" element={<WhatIfAnalysisPage />} />
-            <Route path="/query" element={<QueryPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/schema" element={<SchemaPage />} />
-            <Route path="/health" element={<HealthPage />} />
-            <Route path="/profile" element={<UserProfileManager />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
-            <Route path="/comms/config" element={<CommsConfig />} />
-          </Routes>
-        </Layout>
-      </Box>
-    );
-  }
-  
   return (
-    <ClerkProvider publishableKey={clerkPubKey}>
-      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Navigate to="/chat" replace />} />
-            <Route 
-              path="/chat" 
-              element={
-                <ProtectedRoute routePath="/chat">
+    <AuthProvider>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Default protected route */}
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute routePath="/home">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
+                  <Navigate to="/chat" replace />
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute routePath="/chat">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <SimpleChatInterface />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/process-mining" 
-              element={
-                <ProtectedRoute routePath="/process-mining">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/process-mining"
+          element={
+            <ProtectedRoute routePath="/process-mining">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <ProcessMiningPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/whatif-analysis" 
-              element={
-                <ProtectedRoute routePath="/whatif-analysis">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/whatif-analysis"
+          element={
+            <ProtectedRoute routePath="/whatif-analysis">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <WhatIfAnalysisPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/query" 
-              element={
-                <ProtectedRoute routePath="/query">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/query"
+          element={
+            <ProtectedRoute routePath="/query">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <QueryPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/history" 
-              element={
-                <ProtectedRoute routePath="/history">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <ProtectedRoute routePath="/history">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <HistoryPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/schema" 
-              element={
-                <ProtectedRoute routePath="/schema">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/schema"
+          element={
+            <ProtectedRoute routePath="/schema">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <SchemaPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/health" 
-              element={
-                <ProtectedRoute routePath="/health">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/health"
+          element={
+            <ProtectedRoute routePath="/health">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <HealthPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute routePath="/profile">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute routePath="/profile">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <UserProfileManager />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/settings"
-              element={
-                <ProtectedRoute routePath="/admin/settings">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute routePath="/admin/settings">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <AdminSettings />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/comms/config"
-              element={
-                <ProtectedRoute routePath="/comms/config">
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/comms/config"
+          element={
+            <ProtectedRoute routePath="/comms/config">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
                   <CommsConfig />
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </Layout>
-      </Box>
-    </ClerkProvider>
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </AuthProvider>
   );
 }
 

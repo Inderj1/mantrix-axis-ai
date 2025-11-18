@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useUser } from '@clerk/clerk-react';
 import {
   Box,
   Dialog,
@@ -9,7 +8,6 @@ import MonitorCreationWizard from './pulse/MonitorCreationWizard';
 import MonitorDashboard from './pulse/MonitorDashboard';
 
 const EnterprisePulse = () => {
-  const { user } = useUser();
   // Use fixed 'persona' ID for persona-based insights
   const userId = 'persona';
   const [showWizard, setShowWizard] = useState(false);

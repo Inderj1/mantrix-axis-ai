@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Box,
   Paper,
@@ -239,11 +239,12 @@ const SMART_COMPLETIONS = {
 
 const AgentModeInterface = forwardRef((props, ref) => {
   const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch, initialQuestion, onQuestionUsed } = props;
-  // Get authenticated user from Clerk
-  const { user, isLoaded: isUserLoaded } = useUser();
+  // Get authenticated user from Cognito
+  const { user, loading: authLoading } = useAuth();
+  const isUserLoaded = !authLoading;
 
-  // Derive userId from authenticated user or use email as fallback
-  const userId = user?.id || user?.primaryEmailAddress?.emailAddress || 'default';
+  // Derive userId from authenticated user
+  const userId = user?.username || 'default';
 
   // Pre-populate with welcome message
   const [messages, setMessages] = useState([{

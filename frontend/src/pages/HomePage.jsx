@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Box,
   Container,
@@ -53,16 +53,10 @@ const features = [
 
 function HomePage() {
   console.log('HomePage component rendering!');
-  
+
   const navigate = useNavigate();
-  let isSignedIn = false;
-  
-  try {
-    const userHook = useUser();
-    isSignedIn = userHook.isSignedIn;
-  } catch (error) {
-    console.log('useUser hook not available');
-  }
+  const { isAuthenticated } = useAuth();
+  const isSignedIn = isAuthenticated;
 
   return (
     <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
@@ -79,21 +73,39 @@ function HomePage() {
           }}
         >
           <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
-            Welcome to NLP to SQL BigQuery
-          </Typography>
-          <Typography variant="caption" sx={{ display: 'block', mb: 2 }}>
-            (This is the HomePage component)
+            Welcome to AXIS.AI
           </Typography>
           <Typography variant="h5" component="p" sx={{ mb: 4, opacity: 0.9 }}>
-            Transform natural language queries into optimized BigQuery SQL
+            AI-Powered Supply Chain Intelligence Platform
           </Typography>
-          {!isSignedIn && (
+          {!isSignedIn ? (
             <Button
               variant="contained"
               size="large"
               sx={{
                 bgcolor: 'white',
                 color: 'primary.main',
+                px: 4,
+                py: 1.5,
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                '&:hover': { bgcolor: 'grey.100' },
+              }}
+              onClick={() => navigate('/login')}
+            >
+              Sign In
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              size="large"
+              sx={{
+                bgcolor: 'white',
+                color: 'primary.main',
+                px: 4,
+                py: 1.5,
+                fontSize: '1.1rem',
+                fontWeight: 600,
                 '&:hover': { bgcolor: 'grey.100' },
               }}
               onClick={() => navigate('/chat')}

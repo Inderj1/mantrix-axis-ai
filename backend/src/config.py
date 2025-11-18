@@ -186,5 +186,58 @@ class Settings(BaseSettings):
     enable_redshift: bool = Field(default=True, alias="ENABLE_REDSHIFT")
     enable_databricks: bool = Field(default=True, alias="ENABLE_DATABRICKS")
 
+    # Statistics Extraction Configuration (Optimization Intelligence)
+    stats_extraction_enabled: bool = Field(
+        default=True,
+        alias="STATS_EXTRACTION_ENABLED"
+    )
+
+    stats_extraction_schedule: str = Field(
+        default="weekly",  # Options: "daily", "weekly", "monthly", "manual"
+        alias="STATS_EXTRACTION_SCHEDULE"
+    )
+
+    stats_extraction_day: int = Field(
+        default=0,  # 0 = Sunday, 1 = Monday, ... 6 = Saturday
+        alias="STATS_EXTRACTION_DAY"
+    )
+
+    stats_extraction_hour: int = Field(
+        default=2,  # 2 AM
+        alias="STATS_EXTRACTION_HOUR"
+    )
+
+    stats_max_age_days: int = Field(
+        default=7,  # Re-extract statistics older than 7 days
+        alias="STATS_MAX_AGE_DAYS"
+    )
+
+    # Sampling configuration (cost optimization)
+    stats_use_sampling: bool = Field(
+        default=True,
+        alias="STATS_USE_SAMPLING"
+    )
+
+    stats_sample_percent: int = Field(
+        default=10,  # 10% sample for large tables
+        alias="STATS_SAMPLE_PERCENT"
+    )
+
+    stats_sampling_threshold_gb: float = Field(
+        default=10.0,  # Use sampling for tables > 10GB
+        alias="STATS_SAMPLING_THRESHOLD_GB"
+    )
+
+    # Table filtering for stats extraction
+    stats_critical_tables: Optional[str] = Field(
+        default=None,  # Comma-separated list of critical tables (if set, only extract for these)
+        alias="STATS_CRITICAL_TABLES"
+    )
+
+    stats_skip_tables: Optional[str] = Field(
+        default=None,  # Comma-separated list of tables to skip
+        alias="STATS_SKIP_TABLES"
+    )
+
 
 settings = Settings()

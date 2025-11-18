@@ -20,11 +20,11 @@ import {
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import SaveIcon from '@mui/icons-material/Save';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
 
 const UserProfileManager = () => {
-  const { user } = useUser();
+  const { user } = useAuth();
   const [profile, setProfile] = useState(null);
   const [roleTemplates, setRoleTemplates] = useState([]);
   const [selectedRole, setSelectedRole] = useState('custom');
@@ -71,8 +71,8 @@ const UserProfileManager = () => {
     if (user && !profile) {
       // Only auto-populate if no existing profile and fields are empty
       if (!formData.name && !formData.email) {
-        const userName = user.fullName || user.firstName || '';
-        const userEmail = user.primaryEmailAddress?.emailAddress || '';
+        const userName = user?.username || '';
+        const userEmail = '';
 
         setFormData(prev => ({
           ...prev,

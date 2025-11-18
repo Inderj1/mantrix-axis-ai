@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Box,
   Grid,
@@ -32,7 +32,7 @@ import {
 import { apiService } from '../services/api';
 
 const ProjectsHub = () => {
-  const { user } = useUser();
+  const { user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
