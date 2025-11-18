@@ -18,6 +18,7 @@ from src.core.federated_query_planner import (
     TableReference
 )
 from src.core.sql_dialect_translator import SQLDialectTranslator
+from src.core.query_pushdown_optimizer import QueryPushdownOptimizer
 from src.db.connector_factory import ConnectorFactory
 
 logger = structlog.get_logger()
@@ -60,17 +61,27 @@ class CrossDatabaseExecutor:
     - Result merging
     """
 
-    def __init__(self, connector_factory: Optional[ConnectorFactory] = None):
+    def __init__(
+        self,
+        connector_factory: Optional[ConnectorFactory] = None,
+        enable_pushdown: bool = True
+    ):
         """
         Initialize the cross-database executor.
 
         Args:
             connector_factory: Factory for creating database connectors
+            enable_pushdown: Enable query pushdown optimization (default: True)
         """
         self.factory = connector_factory or ConnectorFactory()
         self.translator = SQLDialectTranslator()
+        self.pushdown_optimizer = QueryPushdownOptimizer() if enable_pushdown else None
         self._temp_tables = {}  # Track temporary tables created
-        logger.info("CrossDatabaseExecutor initialized")
+        self.enable_pushdown = enable_pushdown
+        logger.info(
+            "CrossDatabaseExecutor initialized",
+            pushdown_enabled=enable_pushdown
+        )
 
     async def execute_plan(
         self,
@@ -203,7 +214,9 @@ class CrossDatabaseExecutor:
         join_type: str = 'INNER',
         user_id: str = 'anonymous',
         organization_id: str = 'default',
-        database_configs: Optional[Dict[str, Dict[str, Any]]] = None
+        database_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        left_table_name: Optional[str] = None,
+        right_table_name: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Execute JOIN between tables in different databases.
@@ -218,6 +231,8 @@ class CrossDatabaseExecutor:
             user_id: User ID
             organization_id: Organization ID
             database_configs: Optional configs for database connections
+            left_table_name: Optional table name for left side (for pushdown optimization)
+            right_table_name: Optional table name for right side (for pushdown optimization)
 
         Returns:
             DataFrame with joined results
@@ -226,25 +241,44 @@ class CrossDatabaseExecutor:
             "Executing cross-database JOIN",
             left_db=left_db,
             right_db=right_db,
-            join_type=join_type
+            join_type=join_type,
+            pushdown_enabled=self.enable_pushdown
         )
 
         # Get configs or use empty dict
         configs = database_configs or {}
+
+        # Optimize queries with pushdown if enabled and table names provided
+        optimized_left_query = left_query
+        optimized_right_query = right_query
+
+        if self.enable_pushdown and self.pushdown_optimizer:
+            if left_table_name:
+                optimized_left_query = self._apply_pushdown(
+                    left_query,
+                    left_table_name,
+                    "left"
+                )
+            if right_table_name:
+                optimized_right_query = self._apply_pushdown(
+                    right_query,
+                    right_table_name,
+                    "right"
+                )
 
         # Fetch from left database
         left_connector = self.factory.create_connector(
             left_db,
             config=configs.get(left_db, {})
         )
-        left_df = await self._execute_query(left_connector, left_query)
+        left_df = await self._execute_query(left_connector, optimized_left_query)
 
         # Fetch from right database
         right_connector = self.factory.create_connector(
             right_db,
             config=configs.get(right_db, {})
         )
-        right_df = await self._execute_query(right_connector, right_query)
+        right_df = await self._execute_query(right_connector, optimized_right_query)
 
         # Parse join condition to extract columns
         # Simplified: assumes format "left.col = right.col"
@@ -501,6 +535,56 @@ class CrossDatabaseExecutor:
         right_col = right_part.split('.')[-1] if '.' in right_part else right_part
 
         return left_col, right_col
+
+    def _apply_pushdown(
+        self,
+        query: str,
+        table_name: str,
+        table_alias: Optional[str] = None
+    ) -> str:
+        """
+        Apply query pushdown optimization to reduce data transfer.
+
+        Args:
+            query: Original SQL query
+            table_name: Table being queried
+            table_alias: Optional alias for the table
+
+        Returns:
+            Optimized SQL query
+        """
+        if not self.pushdown_optimizer:
+            return query
+
+        try:
+            # Analyze pushdown opportunities
+            analysis = self.pushdown_optimizer.analyze_pushdown_opportunities(
+                query,
+                table_name,
+                table_alias
+            )
+
+            # Log optimization results
+            if analysis.can_pushdown_filters or analysis.can_pushdown_projections:
+                logger.info(
+                    "Query pushdown optimization applied",
+                    table=table_name,
+                    filters_pushed=len(analysis.pushdown_filters),
+                    columns_selected=len(analysis.required_columns) if analysis.required_columns else 0,
+                    estimated_reduction=f"{analysis.estimated_reduction_percent:.1f}%"
+                )
+
+                # Use optimized query if available
+                if analysis.optimized_sql:
+                    return analysis.optimized_sql
+
+        except Exception as e:
+            logger.warning(
+                "Failed to apply pushdown optimization, using original query",
+                error=str(e)
+            )
+
+        return query
 
     async def _cleanup_temp_tables(self):
         """Clean up any temporary tables created during execution."""
