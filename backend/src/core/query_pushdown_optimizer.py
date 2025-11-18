@@ -128,12 +128,15 @@ class QueryPushdownOptimizer:
                 analysis.limit_value = limit
                 logger.debug(f"Found LIMIT clause", limit=limit)
 
-            # 4. Estimate reduction
+            # 4. Extract full table reference (with schema if present)
+            table_ref = self._extract_table_reference(parsed, table_name, table_alias)
+
+            # 5. Estimate reduction
             analysis.estimated_reduction_percent = self._estimate_reduction(analysis)
 
-            # 5. Generate optimized SQL
+            # 6. Generate optimized SQL
             analysis.optimized_sql = self._generate_optimized_query(
-                table_name,
+                table_ref or table_name,  # Use full table ref if available
                 analysis
             )
 
@@ -270,6 +273,38 @@ class QueryPushdownOptimizer:
                 return int(str(limit_expr.expression))
             except ValueError:
                 return None
+        return None
+
+    def _extract_table_reference(
+        self,
+        parsed_sql: exp.Expression,
+        table_name: str,
+        table_alias: Optional[str]
+    ) -> Optional[str]:
+        """
+        Extract the full table reference (including schema if present) from the query.
+
+        Args:
+            parsed_sql: Parsed SQL expression
+            table_name: Table name to find
+            table_alias: Alias used for the table
+
+        Returns:
+            Full table reference (e.g., "schema.table") or None
+        """
+        # Find all table references in FROM clause
+        for table_expr in parsed_sql.find_all(exp.Table):
+            # Check if this is our table (match by name or alias)
+            if table_expr.name == table_name:
+                # Build full reference
+                parts = []
+                if table_expr.catalog:
+                    parts.append(table_expr.catalog)
+                if table_expr.db:
+                    parts.append(table_expr.db)
+                parts.append(table_expr.name)
+                return ".".join(parts)
+
         return None
 
     def _estimate_reduction(self, analysis: PushdownAnalysis) -> float:
