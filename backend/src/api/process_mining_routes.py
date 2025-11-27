@@ -13,8 +13,20 @@ from ..core.process_mining.insights_engine import InsightsEngine
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/process-mining", tags=["process-mining"])
 
-# Initialize extractor
-event_extractor = EventExtractor()
+# Lazy initialize extractor to avoid startup failures when BigQuery isn't configured
+_event_extractor = None
+
+
+def get_event_extractor():
+    """Lazy initialization of EventExtractor"""
+    global _event_extractor
+    if _event_extractor is None:
+        try:
+            _event_extractor = EventExtractor()
+        except Exception as e:
+            logger.warning("Failed to initialize EventExtractor", error=str(e))
+            raise HTTPException(status_code=503, detail="Process mining service unavailable - BigQuery not configured")
+    return _event_extractor
 
 
 # Request/Response Models
@@ -44,7 +56,8 @@ async def get_available_processes():
     Get list of processes that can be mined from available data
     """
     try:
-        processes = event_extractor.get_available_processes()
+        extractor = get_event_extractor()
+        processes = extractor.get_available_processes()
 
         return {
             "success": True,
@@ -76,20 +89,21 @@ async def discover_process(request: DiscoverProcessRequest):
         logger.info(f"Discovering {request.process_type} process from {request.date_from} to {request.date_to}")
 
         # Step 1: Extract events
+        extractor = get_event_extractor()
         if request.process_type == 'order-to-cash':
-            events = event_extractor.extract_o2c_events(
+            events = extractor.extract_o2c_events(
                 date_from=request.date_from,
                 date_to=request.date_to,
                 filters=request.filters
             )
         elif request.process_type == 'quote-to-cash':
-            events = event_extractor.extract_q2c_events(
+            events = extractor.extract_q2c_events(
                 date_from=request.date_from,
                 date_to=request.date_to,
                 filters=request.filters
             )
         elif request.process_type == 'procure-to-pay':
-            events = event_extractor.extract_p2p_events(
+            events = extractor.extract_p2p_events(
                 date_from=request.date_from,
                 date_to=request.date_to,
                 filters=request.filters
@@ -231,10 +245,11 @@ async def get_process_variants(
     """
     try:
         # Extract events
+        extractor = get_event_extractor()
         if process_type == 'order-to-cash':
-            events = event_extractor.extract_o2c_events(date_from, date_to)
+            events = extractor.extract_o2c_events(date_from, date_to)
         elif process_type == 'quote-to-cash':
-            events = event_extractor.extract_q2c_events(date_from, date_to)
+            events = extractor.extract_q2c_events(date_from, date_to)
         else:
             raise HTTPException(status_code=400, detail=f"Unknown process type: {process_type}")
 
@@ -278,10 +293,11 @@ async def get_process_performance(
     """
     try:
         # Extract events
+        extractor = get_event_extractor()
         if process_type == 'order-to-cash':
-            events = event_extractor.extract_o2c_events(date_from, date_to)
+            events = extractor.extract_o2c_events(date_from, date_to)
         elif process_type == 'quote-to-cash':
-            events = event_extractor.extract_q2c_events(date_from, date_to)
+            events = extractor.extract_q2c_events(date_from, date_to)
         else:
             raise HTTPException(status_code=400, detail=f"Unknown process type: {process_type}")
 
@@ -335,10 +351,11 @@ async def get_activity_statistics(
     """
     try:
         # Extract events
+        extractor = get_event_extractor()
         if process_type == 'order-to-cash':
-            events = event_extractor.extract_o2c_events(date_from, date_to)
+            events = extractor.extract_o2c_events(date_from, date_to)
         elif process_type == 'quote-to-cash':
-            events = event_extractor.extract_q2c_events(date_from, date_to)
+            events = extractor.extract_q2c_events(date_from, date_to)
         else:
             raise HTTPException(status_code=400, detail=f"Unknown process type: {process_type}")
 
@@ -428,18 +445,19 @@ async def check_conformance(request: ConformanceCheckRequest):
         logger.info(f"Checking conformance for {request.process_type}")
 
         # Extract events
+        extractor = get_event_extractor()
         if request.process_type == 'order-to-cash':
-            events = event_extractor.extract_o2c_events(
+            events = extractor.extract_o2c_events(
                 date_from=request.date_from,
                 date_to=request.date_to
             )
         elif request.process_type == 'quote-to-cash':
-            events = event_extractor.extract_q2c_events(
+            events = extractor.extract_q2c_events(
                 date_from=request.date_from,
                 date_to=request.date_to
             )
         elif request.process_type == 'procure-to-pay':
-            events = event_extractor.extract_p2p_events(
+            events = extractor.extract_p2p_events(
                 date_from=request.date_from,
                 date_to=request.date_to
             )
@@ -536,7 +554,8 @@ async def health_check():
     """
     try:
         # Test BigQuery connection
-        processes = event_extractor.get_available_processes()
+        extractor = get_event_extractor()
+        processes = extractor.get_available_processes()
 
         return {
             "success": True,

@@ -3,8 +3,13 @@ Snowflake Database Connector
 
 Implements the BaseDatabaseConnector interface for Snowflake.
 Provides query execution, schema introspection, and metadata operations for Snowflake.
+
+Features connection pooling for efficient connection reuse.
 """
 from typing import List, Dict, Any, Optional
+from contextlib import contextmanager
+import threading
+from queue import Queue, Empty
 import structlog
 
 try:
@@ -27,13 +32,20 @@ from src.config import settings
 
 logger = structlog.get_logger()
 
+# Default pool settings
+DEFAULT_MIN_CONNECTIONS = 2
+DEFAULT_MAX_CONNECTIONS = 10
+CONNECTION_ACQUIRE_TIMEOUT = 30  # seconds
+
 
 class SnowflakeConnector(BaseDatabaseConnector):
     """
-    Snowflake database connector.
+    Snowflake database connector with connection pooling.
 
     Implements the BaseDatabaseConnector interface for Snowflake,
     providing query execution, schema introspection, and metadata operations.
+
+    Features thread-safe connection pooling for efficient connection reuse.
     """
 
     def __init__(
@@ -44,10 +56,13 @@ class SnowflakeConnector(BaseDatabaseConnector):
         warehouse: Optional[str] = None,
         database: Optional[str] = None,
         schema: Optional[str] = None,
-        role: Optional[str] = None
+        role: Optional[str] = None,
+        min_connections: int = DEFAULT_MIN_CONNECTIONS,
+        max_connections: int = DEFAULT_MAX_CONNECTIONS,
+        use_pool: bool = True
     ):
         """
-        Initialize Snowflake connector.
+        Initialize Snowflake connector with connection pooling.
 
         Args:
             account: Snowflake account identifier (e.g., 'xy12345.us-east-1')
@@ -57,6 +72,9 @@ class SnowflakeConnector(BaseDatabaseConnector):
             database: Database name
             schema: Schema name (default: PUBLIC)
             role: Role to use (default: account default role)
+            min_connections: Minimum connections to keep in pool (default: 2)
+            max_connections: Maximum connections allowed in pool (default: 10)
+            use_pool: Whether to use connection pooling (default: True)
         """
         if not SNOWFLAKE_AVAILABLE:
             raise ImportError(
@@ -75,7 +93,18 @@ class SnowflakeConnector(BaseDatabaseConnector):
         self.schema = schema or getattr(settings, 'snowflake_schema', 'PUBLIC')
         self.role = role or getattr(settings, 'snowflake_role', None)
 
-        self.connection: Optional[snowflake.connector.SnowflakeConnection] = None
+        # Pool configuration
+        self.min_connections = min_connections
+        self.max_connections = max_connections
+        self.use_pool = use_pool
+
+        # Connection pool state
+        self._pool: Optional[Queue] = None
+        self._pool_lock = threading.Lock()
+        self._pool_size = 0  # Track total connections created
+
+        # Single connection fallback (when pooling disabled)
+        self._connection: Optional[snowflake.connector.SnowflakeConnection] = None
         self._capabilities = SNOWFLAKE_CAPABILITIES
 
         # Validate required parameters
@@ -89,39 +118,63 @@ class SnowflakeConnector(BaseDatabaseConnector):
         # Auto-connect on initialization
         self.connect()
 
+    def _create_connection(self) -> snowflake.connector.SnowflakeConnection:
+        """Create a new Snowflake connection."""
+        connection_params = {
+            'account': self.account,
+            'user': self.user,
+            'password': self.password,
+        }
+
+        # Add optional parameters if provided
+        if self.warehouse:
+            connection_params['warehouse'] = self.warehouse
+        if self.database:
+            connection_params['database'] = self.database
+        if self.schema:
+            connection_params['schema'] = self.schema
+        if self.role:
+            connection_params['role'] = self.role
+
+        return snowflake.connector.connect(**connection_params)
+
     def connect(self) -> None:
         """
-        Establish connection to Snowflake.
+        Initialize connection pool or single connection to Snowflake.
 
         Raises:
             ConnectionError: If connection initialization fails
         """
         try:
-            connection_params = {
-                'account': self.account,
-                'user': self.user,
-                'password': self.password,
-            }
+            if self.use_pool:
+                # Initialize connection pool
+                self._pool = Queue(maxsize=self.max_connections)
 
-            # Add optional parameters if provided
-            if self.warehouse:
-                connection_params['warehouse'] = self.warehouse
-            if self.database:
-                connection_params['database'] = self.database
-            if self.schema:
-                connection_params['schema'] = self.schema
-            if self.role:
-                connection_params['role'] = self.role
+                # Pre-create minimum connections
+                for _ in range(self.min_connections):
+                    conn = self._create_connection()
+                    self._pool.put(conn)
+                    self._pool_size += 1
 
-            self.connection = snowflake.connector.connect(**connection_params)
-
-            logger.info(
-                "Snowflake connector initialized",
-                account=self.account,
-                warehouse=self.warehouse,
-                database=self.database,
-                schema=self.schema
-            )
+                logger.info(
+                    "Snowflake connection pool initialized",
+                    account=self.account,
+                    warehouse=self.warehouse,
+                    database=self.database,
+                    schema=self.schema,
+                    min_connections=self.min_connections,
+                    max_connections=self.max_connections
+                )
+            else:
+                # Single connection mode
+                self._connection = self._create_connection()
+                logger.info(
+                    "Snowflake single connection initialized",
+                    account=self.account,
+                    warehouse=self.warehouse,
+                    database=self.database,
+                    schema=self.schema
+                )
 
         except Exception as e:
             logger.error(f"Failed to connect to Snowflake: {e}")
@@ -129,15 +182,102 @@ class SnowflakeConnector(BaseDatabaseConnector):
 
     def disconnect(self) -> None:
         """
-        Close Snowflake connection.
+        Close all Snowflake connections in the pool.
         """
-        if self.connection:
+        if self._pool:
+            with self._pool_lock:
+                # Close all connections in the pool
+                while not self._pool.empty():
+                    try:
+                        conn = self._pool.get_nowait()
+                        conn.close()
+                    except Empty:
+                        break
+                    except Exception as e:
+                        logger.warning(f"Error closing pooled connection: {e}")
+                self._pool = None
+                self._pool_size = 0
+                logger.info("Snowflake connection pool closed")
+
+        if self._connection:
             try:
-                self.connection.close()
-                self.connection = None
-                logger.info("Snowflake connector disconnected")
+                self._connection.close()
+                self._connection = None
+                logger.info("Snowflake connection closed")
             except Exception as e:
                 logger.warning(f"Error closing Snowflake connection: {e}")
+
+    @contextmanager
+    def _get_connection(self):
+        """
+        Context manager to get a connection from the pool.
+
+        Automatically returns the connection to the pool when done.
+        Creates a new connection if pool is empty but under max capacity.
+        """
+        conn = None
+        created_new = False
+
+        try:
+            if self._pool is not None:
+                # Try to get from pool
+                try:
+                    conn = self._pool.get(timeout=CONNECTION_ACQUIRE_TIMEOUT)
+                except Empty:
+                    # Pool empty, try to create new connection if under limit
+                    with self._pool_lock:
+                        if self._pool_size < self.max_connections:
+                            conn = self._create_connection()
+                            self._pool_size += 1
+                            created_new = True
+                            logger.debug(f"Created new pooled connection (size: {self._pool_size})")
+                        else:
+                            raise ConnectorConnectionError(
+                                f"Connection pool exhausted (max: {self.max_connections})"
+                            )
+                yield conn
+            elif self._connection:
+                yield self._connection
+            else:
+                raise ConnectorConnectionError("Snowflake connection not established")
+
+        finally:
+            # Return connection to pool
+            if conn and self._pool is not None:
+                try:
+                    # Check if connection is still valid
+                    if not conn.is_closed():
+                        self._pool.put_nowait(conn)
+                    else:
+                        # Connection was closed, decrement pool size
+                        with self._pool_lock:
+                            self._pool_size -= 1
+                        logger.debug("Discarded closed connection from pool")
+                except Exception:
+                    # If we can't return it, close it
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    with self._pool_lock:
+                        self._pool_size -= 1
+
+    # Legacy property for backward compatibility
+    @property
+    def connection(self):
+        """Backward compatibility: returns a connection (not recommended for pooled use)."""
+        if self._pool:
+            # Warning: caller is responsible for returning connection
+            try:
+                return self._pool.get_nowait()
+            except Empty:
+                return self._create_connection()
+        return self._connection
+
+    @connection.setter
+    def connection(self, value):
+        """Backward compatibility setter."""
+        self._connection = value
 
     def execute_query(
         self,
@@ -147,6 +287,8 @@ class SnowflakeConnector(BaseDatabaseConnector):
     ) -> Dict[str, Any]:
         """
         Execute a SQL query and return results.
+
+        Uses connection pooling for efficient connection reuse.
 
         Args:
             query: SQL query to execute
@@ -167,7 +309,7 @@ class SnowflakeConnector(BaseDatabaseConnector):
         Raises:
             QueryExecutionError: If query execution fails
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
@@ -189,29 +331,33 @@ class SnowflakeConnector(BaseDatabaseConnector):
                 has_parameters=parameters is not None
             )
 
-            # Create cursor with DictCursor for dictionary results
-            cursor = self.connection.cursor(DictCursor)
+            # Use connection from pool via context manager
+            with self._get_connection() as conn:
+                # Create cursor with DictCursor for dictionary results
+                cursor = conn.cursor(DictCursor)
 
-            # Set timeout if specified
-            if timeout:
-                cursor.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}")
+                try:
+                    # Set timeout if specified
+                    if timeout:
+                        cursor.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}")
 
-            # Execute query
-            if parameters:
-                cursor.execute(modified_query, parameters)
-            else:
-                cursor.execute(modified_query)
+                    # Execute query
+                    if parameters:
+                        cursor.execute(modified_query, parameters)
+                    else:
+                        cursor.execute(modified_query)
 
-            # Fetch all results
-            rows = cursor.fetchall()
+                    # Fetch all results
+                    rows = cursor.fetchall()
 
-            # Get row count
-            row_count = len(rows)
+                    # Get row count
+                    row_count = len(rows)
 
-            # Get query metadata
-            query_id = cursor.sfqid if hasattr(cursor, 'sfqid') else None
+                    # Get query metadata
+                    query_id = cursor.sfqid if hasattr(cursor, 'sfqid') else None
 
-            cursor.close()
+                finally:
+                    cursor.close()
 
             logger.info(
                 f"Snowflake query returned {row_count} rows",
@@ -255,7 +401,7 @@ class SnowflakeConnector(BaseDatabaseConnector):
         Raises:
             TableNotFoundError: If table doesn't exist
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
@@ -278,29 +424,32 @@ class SnowflakeConnector(BaseDatabaseConnector):
             ORDER BY c.ORDINAL_POSITION
             """
 
-            cursor = self.connection.cursor(DictCursor)
-            cursor.execute(query, {'schema': target_schema.upper(), 'table': table_name.upper()})
-            columns = cursor.fetchall()
+            with self._get_connection() as conn:
+                cursor = conn.cursor(DictCursor)
+                try:
+                    cursor.execute(query, {'schema': target_schema.upper(), 'table': table_name.upper()})
+                    columns = cursor.fetchall()
 
-            if not columns:
-                raise TableNotFoundError(f"Table {target_schema}.{table_name} not found")
+                    if not columns:
+                        raise TableNotFoundError(f"Table {target_schema}.{table_name} not found")
 
-            # Get table-level information
-            table_query = f"""
-            SELECT
-                ROW_COUNT,
-                BYTES,
-                CREATED,
-                LAST_ALTERED,
-                COMMENT
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = %(schema)s
-              AND TABLE_NAME = %(table)s
-            """
+                    # Get table-level information
+                    table_query = f"""
+                    SELECT
+                        ROW_COUNT,
+                        BYTES,
+                        CREATED,
+                        LAST_ALTERED,
+                        COMMENT
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = %(schema)s
+                      AND TABLE_NAME = %(table)s
+                    """
 
-            cursor.execute(table_query, {'schema': target_schema.upper(), 'table': table_name.upper()})
-            table_info = cursor.fetchone()
-            cursor.close()
+                    cursor.execute(table_query, {'schema': target_schema.upper(), 'table': table_name.upper()})
+                    table_info = cursor.fetchone()
+                finally:
+                    cursor.close()
 
             schema_info = {
                 "table_name": table_name,
@@ -349,7 +498,7 @@ class SnowflakeConnector(BaseDatabaseConnector):
         Raises:
             SchemaNotFoundError: If schema doesn't exist
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
@@ -363,10 +512,13 @@ class SnowflakeConnector(BaseDatabaseConnector):
             ORDER BY TABLE_NAME
             """
 
-            cursor = self.connection.cursor(DictCursor)
-            cursor.execute(query, {'schema': target_schema.upper()})
-            tables = cursor.fetchall()
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor(DictCursor)
+                try:
+                    cursor.execute(query, {'schema': target_schema.upper()})
+                    tables = cursor.fetchall()
+                finally:
+                    cursor.close()
 
             return [table['TABLE_NAME'] for table in tables]
 
@@ -413,17 +565,20 @@ class SnowflakeConnector(BaseDatabaseConnector):
         Returns:
             Dictionary with validation results
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
             # Use EXPLAIN to validate query syntax
             explain_query = f"EXPLAIN {query}"
 
-            cursor = self.connection.cursor(DictCursor)
-            cursor.execute(explain_query)
-            explain_result = cursor.fetchall()
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor(DictCursor)
+                try:
+                    cursor.execute(explain_query)
+                    explain_result = cursor.fetchall()
+                finally:
+                    cursor.close()
 
             return {
                 "valid": True,
@@ -470,16 +625,22 @@ class SnowflakeConnector(BaseDatabaseConnector):
         """
         Switch to a different virtual warehouse.
 
+        Note: This only affects the current connection context.
+        For pooled connections, use warehouse parameter in queries.
+
         Args:
             warehouse: Warehouse name
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(f"USE WAREHOUSE {warehouse}")
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(f"USE WAREHOUSE {warehouse}")
+                finally:
+                    cursor.close()
             self.warehouse = warehouse
             logger.info(f"Switched to warehouse: {warehouse}")
         except Exception as e:
@@ -490,16 +651,22 @@ class SnowflakeConnector(BaseDatabaseConnector):
         """
         Switch to a different database.
 
+        Note: This only affects the current connection context.
+        For pooled connections, use fully qualified table names.
+
         Args:
             database: Database name
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(f"USE DATABASE {database}")
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(f"USE DATABASE {database}")
+                finally:
+                    cursor.close()
             self.database = database
             logger.info(f"Switched to database: {database}")
         except Exception as e:
@@ -510,16 +677,22 @@ class SnowflakeConnector(BaseDatabaseConnector):
         """
         Switch to a different schema.
 
+        Note: This only affects the current connection context.
+        For pooled connections, use fully qualified table names.
+
         Args:
             schema: Schema name
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("Snowflake connection not established")
 
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(f"USE SCHEMA {schema}")
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(f"USE SCHEMA {schema}")
+                finally:
+                    cursor.close()
             self.schema = schema
             logger.info(f"Switched to schema: {schema}")
         except Exception as e:

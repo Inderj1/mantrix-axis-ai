@@ -311,10 +311,21 @@ class MarketSignalsDB:
 _db_instance: Optional[MarketSignalsDB] = None
 
 
-def get_market_signals_db() -> MarketSignalsDB:
-    """Get or create the singleton MarketSignalsDB instance"""
+def get_market_signals_db() -> Optional[MarketSignalsDB]:
+    """
+    Get or create the singleton MarketSignalsDB instance.
+    Returns None if MongoDB is not available or configured.
+    """
     global _db_instance
     if _db_instance is None:
-        _db_instance = MarketSignalsDB()
-        _db_instance.connect()
+        # Check if MongoDB URL is configured
+        if not settings.mongodb_url or settings.mongodb_url.strip() == '':
+            logger.warning("mongodb_not_configured", message="MongoDB URL not configured, market signals DB unavailable")
+            return None
+        try:
+            _db_instance = MarketSignalsDB()
+            _db_instance.connect()
+        except Exception as e:
+            logger.warning("mongodb_connection_failed", error=str(e), message="Market signals DB unavailable")
+            return None
     return _db_instance

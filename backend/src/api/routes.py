@@ -95,11 +95,71 @@ active_research_plans = {}  # Store active research plans
 active_research_executions = {}  # Store active executions
 
 
-def get_sql_generator() -> SQLGenerator:
+def get_sql_generator(organization_id: str = None) -> SQLGenerator:
+    """Get SQL generator instance with optional organization context."""
     global sql_generator
     if sql_generator is None:
-        sql_generator = SQLGenerator()
+        # Create with default organization_id if not provided
+        sql_generator = SQLGenerator(organization_id=organization_id)
+    elif organization_id and sql_generator.organization_id != organization_id:
+        # Create new instance if organization_id differs
+        sql_generator = SQLGenerator(organization_id=organization_id)
     return sql_generator
+
+
+async def initialize_sql_generators_for_organizations():
+    """
+    Initialize SQLGenerator instances for all organizations with enabled databases.
+    Called at application startup to ensure fast first query response.
+    """
+    try:
+        from src.db.mongodb_client import get_mongodb_client
+
+        logger.info("Initializing SQLGenerator for organizations with enabled databases...")
+
+        # Get MongoDB client
+        mongo_client = get_mongodb_client()
+        db = mongo_client.get_database()
+        connectors_collection = db["database_connectors"]
+
+        # Find all organizations with at least one enabled database
+        enabled_connectors = list(connectors_collection.find({
+            "enabled_for_chat": True,
+            "status": {"$in": ["connected", "active"]}
+        }))
+
+        # Get unique organization IDs
+        org_ids = set()
+        for connector in enabled_connectors:
+            org_id = connector.get("organization_id", "default")
+            org_ids.add(org_id)
+
+        logger.info(f"Found {len(org_ids)} organizations with enabled databases")
+
+        # Initialize SQLGenerator for each organization
+        for org_id in org_ids:
+            try:
+                start_time = datetime.now()
+                logger.info(f"Initializing SQLGenerator for organization: {org_id}")
+
+                # This will trigger the lazy initialization
+                generator = get_sql_generator(organization_id=org_id)
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    f"SQLGenerator initialized for {org_id}",
+                    elapsed_seconds=elapsed,
+                    databases_enabled=len([c for c in enabled_connectors if c.get("organization_id", "default") == org_id])
+                )
+            except Exception as e:
+                logger.error(f"Error initializing SQLGenerator for {org_id}: {e}")
+                # Continue with other organizations even if one fails
+
+        logger.info(f"Completed SQLGenerator initialization for {len(org_ids)} organizations")
+
+    except Exception as e:
+        logger.error(f"Error in initialize_sql_generators_for_organizations: {e}")
+        raise
 
 
 def get_bq_client() -> BigQueryClient:
@@ -342,16 +402,22 @@ async def process_query(
 
             # Create database-specific generator (config only if admin)
             logger.info(f"Creating SQL generator for database type: {request.database_type}")
+            # Get organization_id from user token
+            organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
                 database_type=request.database_type,
-                database_config=request.database_config if user and user.get('is_admin') else None
+                database_config=request.database_config if user and user.get('is_admin') else None,
+                organization_id=organization_id
             )
         elif request.database_config:
             # Use custom config even for BigQuery (admin only - already checked above)
             logger.info("Creating SQL generator with custom database config")
+            # Get organization_id from user token
+            organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
                 database_type=request.database_type or 'bigquery',
-                database_config=request.database_config
+                database_config=request.database_config,
+                organization_id=organization_id
             )
 
         # Override dataset if provided (for BigQuery backward compatibility)
@@ -548,6 +614,50 @@ async def process_query(
         if suggestions:
             response_data["follow_up_suggestions"] = suggestions
 
+        # Add chart intelligence (backend-driven visualization recommendations)
+        if execute and result.get("execution", {}).get("results"):
+            try:
+                from src.core.column_metadata_service import get_column_metadata_service
+
+                column_service = get_column_metadata_service()
+
+                # Get column metadata from execution results
+                execution_data = result.get("execution", {})
+                columns = execution_data.get("columns", [])
+
+                # If columns not in standard format, try to infer from results
+                if not columns and execution_data.get("results"):
+                    # Analyze actual result data
+                    chart_metadata = column_service.analyze_query_result(
+                        data=execution_data.get("results", []),
+                        sql=result.get("sql")
+                    )
+                else:
+                    # Convert column list to expected format
+                    column_info = [{"name": col.get("name", col) if isinstance(col, dict) else col,
+                                   "type": col.get("type", "STRING") if isinstance(col, dict) else "STRING"}
+                                  for col in columns]
+                    chart_metadata = column_service.analyze_columns(column_info)
+
+                # Add chart intelligence to response
+                response_data["chart_recommendations"] = chart_metadata.get("recommended_charts")
+                response_data["dimensions"] = chart_metadata.get("dimensions")
+                response_data["measures"] = chart_metadata.get("measures")
+                response_data["time_columns"] = chart_metadata.get("time_columns")
+                response_data["drill_paths"] = chart_metadata.get("drill_paths")
+                response_data["semantic_types"] = chart_metadata.get("semantic_types")
+                response_data["default_aggregations"] = chart_metadata.get("default_aggregations")
+                response_data["visualization_config"] = chart_metadata.get("visualization_config")
+
+                logger.debug("Chart intelligence added to response",
+                           recommended_charts=response_data.get("chart_recommendations"),
+                           dimensions_count=len(response_data.get("dimensions", [])),
+                           measures_count=len(response_data.get("measures", [])))
+
+            except Exception as e:
+                logger.warning(f"Failed to add chart intelligence: {e}")
+                # Continue without chart intelligence on error
+
         return QueryResponse(**response_data)
         
     except Exception as e:
@@ -660,16 +770,22 @@ async def generate_sql(
 
             # Create database-specific generator (config only if admin)
             logger.info(f"Creating SQL generator for database type: {request.database_type}")
+            # Get organization_id from user token
+            organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
                 database_type=request.database_type,
-                database_config=request.database_config if user and user.get('is_admin') else None
+                database_config=request.database_config if user and user.get('is_admin') else None,
+                organization_id=organization_id
             )
         elif request.database_config:
             # Use custom config even for BigQuery (admin only - already checked above)
             logger.info("Creating SQL generator with custom database config")
+            # Get organization_id from user token
+            organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
                 database_type=request.database_type or 'bigquery',
-                database_config=request.database_config
+                database_config=request.database_config,
+                organization_id=organization_id
             )
 
         result = generator.generate_sql(

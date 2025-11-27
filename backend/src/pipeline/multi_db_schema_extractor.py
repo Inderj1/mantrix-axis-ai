@@ -38,16 +38,18 @@ class MultiDatabaseSchemaExtractor:
         table_count = extractor.get_table_count_by_database()
     """
 
-    def __init__(self, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, cache_manager: Optional[CacheManager] = None, organization_id: str = None):
         """
         Initialize multi-database schema extractor.
 
         Args:
             cache_manager: Optional cache manager for schema caching
+            organization_id: Organization ID for multi-tenancy
         """
         self.factory = ConnectorFactory()
         self.cache_manager = cache_manager
         self.schema_cache_prefix = "multi_db_schema:"
+        self.organization_id = organization_id or settings.get('DEFAULT_ORG_ID', 'default')
 
     def extract_all_schemas(self) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -104,9 +106,10 @@ class MultiDatabaseSchemaExtractor:
                 # Extract schema using the connector
                 tables = self._extract_database_schema(connector, db_type)
 
-                # Add source_database_type to each table
+                # Add source_database_type and organization_id to each table
                 for table in tables:
                     table["source_database_type"] = db_type
+                    table["organization_id"] = self.organization_id
 
                 results[db_type] = tables
                 logger.info(

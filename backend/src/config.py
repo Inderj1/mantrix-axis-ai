@@ -20,14 +20,38 @@ class Settings(BaseSettings):
         default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL"
     )
 
-    # Google Cloud / BigQuery
-    google_cloud_project: str = Field(..., alias="GOOGLE_CLOUD_PROJECT")
+    # Google Cloud / BigQuery (optional - only required if using BigQuery)
+    google_cloud_project: Optional[str] = Field(default=None, alias="GOOGLE_CLOUD_PROJECT")
     google_application_credentials: Optional[str] = Field(
         None, alias="GOOGLE_APPLICATION_CREDENTIALS"
     )
-    bigquery_dataset: str = Field(..., alias="BIGQUERY_DATASET")
+    bigquery_dataset: Optional[str] = Field(default=None, alias="BIGQUERY_DATASET")
     bigquery_query_timeout_seconds: int = Field(default=60, alias="BIGQUERY_QUERY_TIMEOUT_SECONDS")
     default_query_timeout_seconds: int = Field(default=60, alias="DEFAULT_QUERY_TIMEOUT_SECONDS")
+
+    # BigQuery Workload Identity Federation (for keyless authentication)
+    # Clients create a WIF pool in their GCP project that trusts this AWS account
+    mantrix_aws_account_id: str = Field(
+        default="709141244278",
+        alias="MANTRIX_AWS_ACCOUNT_ID",
+        description="Mantrix AWS Account ID - share with clients for WIF setup"
+    )
+
+    # Google OAuth Configuration (for BigQuery connections without service account keys)
+    google_oauth_client_id: Optional[str] = Field(
+        None, alias="GOOGLE_OAUTH_CLIENT_ID"
+    )
+    google_oauth_client_secret: Optional[str] = Field(
+        None, alias="GOOGLE_OAUTH_CLIENT_SECRET"
+    )
+    google_oauth_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/connectors/bigquery/oauth/callback",
+        alias="GOOGLE_OAUTH_REDIRECT_URI"
+    )
+    # Fernet encryption key for storing OAuth tokens securely (generate with: Fernet.generate_key())
+    oauth_encryption_key: Optional[str] = Field(
+        None, alias="OAUTH_ENCRYPTION_KEY"
+    )
 
     # Weaviate
     weaviate_url: str = Field(default="http://localhost:8082", alias="WEAVIATE_URL")
@@ -42,6 +66,10 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     api_env: str = Field(default="development", alias="API_ENV")
+
+    # Multi-Database Configuration
+    max_chat_databases: int = Field(default=2, alias="MAX_CHAT_DATABASES")
+    default_org_id: str = Field(default="default", alias="DEFAULT_ORG_ID")
 
     # Logging
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -179,6 +207,21 @@ class Settings(BaseSettings):
     cognito_app_client_id: Optional[str] = Field(None, alias="COGNITO_APP_CLIENT_ID")
     cognito_admin_group: str = Field(default="Admins", alias="COGNITO_ADMIN_GROUP")
 
+    # AWS Credentials (for Cognito admin operations)
+    aws_profile: Optional[str] = Field(None, alias="AWS_PROFILE")
+    aws_access_key_id: Optional[str] = Field(None, alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: Optional[str] = Field(None, alias="AWS_SECRET_ACCESS_KEY")
+    aws_session_token: Optional[str] = Field(None, alias="AWS_SESSION_TOKEN")
+
+    # S3 Federation Configuration (for 10-100GB+ cross-database JOINs)
+    # Default strategy for AWS Marketplace deployment uses Redshift Spectrum
+    federation_enabled: bool = Field(default=True, alias="FEDERATION_ENABLED")
+    federation_s3_bucket: Optional[str] = Field(None, alias="FEDERATION_S3_BUCKET")
+    federation_s3_prefix: str = Field(default="federation", alias="FEDERATION_S3_PREFIX")
+    federation_redshift_schema: str = Field(default="federation_temp", alias="FEDERATION_REDSHIFT_SCHEMA")
+    federation_chunk_size: int = Field(default=100000, alias="FEDERATION_CHUNK_SIZE")
+    federation_ttl_hours: int = Field(default=24, alias="FEDERATION_TTL_HOURS")
+
     # Database Feature Flags (Global Enable/Disable)
     enable_bigquery: bool = Field(default=True, alias="ENABLE_BIGQUERY")
     enable_snowflake: bool = Field(default=True, alias="ENABLE_SNOWFLAKE")
@@ -238,6 +281,23 @@ class Settings(BaseSettings):
         default=None,  # Comma-separated list of tables to skip
         alias="STATS_SKIP_TABLES"
     )
+
+    # SMTP Email Configuration (for alerts and notifications)
+    smtp_enabled: bool = Field(default=False, alias="SMTP_ENABLED")
+    smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: Optional[str] = Field(None, alias="SMTP_USER")
+    smtp_password: Optional[str] = Field(None, alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="noreply@mantrix.ai", alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field(default="Mantrix Axis AI", alias="SMTP_FROM_NAME")
+    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
+    smtp_use_ssl: bool = Field(default=False, alias="SMTP_USE_SSL")
+
+    # Alert Notification Settings
+    alert_check_interval_seconds: int = Field(default=60, alias="ALERT_CHECK_INTERVAL_SECONDS")
+    alert_notification_batch_size: int = Field(default=100, alias="ALERT_NOTIFICATION_BATCH_SIZE")
+    alert_retry_max_attempts: int = Field(default=3, alias="ALERT_RETRY_MAX_ATTEMPTS")
+    alert_retry_delay_seconds: int = Field(default=300, alias="ALERT_RETRY_DELAY_SECONDS")
 
 
 settings = Settings()

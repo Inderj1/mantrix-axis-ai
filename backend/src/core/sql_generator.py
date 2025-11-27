@@ -13,10 +13,11 @@ from src.core.metrics_precalculation import FinancialMetricsPreCalculator
 from src.core.precalc_integration import PreCalcIntegrator, PreCalcRegistry, QueryDecomposer
 from src.core.table_registry import table_registry, TableDomain
 from src.core.business_config import (
-    BusinessConfigManager, 
+    BusinessConfigManager,
     mapping_registry,
     QueryContextEnhancer
 )
+from src.core.cross_database_validator import CrossDatabaseValidator
 try:
     from src.core.knowledge_graph import GraphTraversalEngine
     from src.core.knowledge_graph.jena_singleton import (
@@ -43,14 +44,17 @@ class SQLGenerator:
     def __init__(
         self,
         database_type: str = 'bigquery',
-        database_config: Optional[Dict[str, Any]] = None
+        database_config: Optional[Dict[str, Any]] = None,
+        organization_id: str = None
     ):
         """Initialize SQL Generator with multi-database support.
 
         Args:
             database_type: Type of database ('bigquery', 'snowflake', 'postgresql', 'redshift', 'databricks')
             database_config: Database-specific configuration (optional, uses settings for BigQuery)
+            organization_id: Organization ID for multi-tenancy
         """
+        self.organization_id = organization_id or getattr(settings, 'default_org_id', 'default')
         # Store database type and config
         self.database_type = database_type
         self.database_config = database_config or {}
@@ -95,6 +99,9 @@ class SQLGenerator:
 
         # Keep bq_client reference for backward compatibility (will be removed in later tasks)
         self.bq_client = self.db_client
+
+        # Initialize cross-database validator
+        self.cross_db_validator = CrossDatabaseValidator(organization_id=self.organization_id)
 
         self.format_normalizer = None  # Will be initialized after cache_manager
         
@@ -170,10 +177,16 @@ class SQLGenerator:
                 
             if KNOWLEDGE_GRAPH_AVAILABLE:
                 self.knowledge_graph = get_jena_knowledge_graph(redis_client)
-                self.kg_query_resolver = get_jena_query_resolver()
+                # Pass organization and database context to query resolver
+                from src.core.knowledge_graph.jena_query_resolver import JenaQueryResolver
+                self.kg_query_resolver = JenaQueryResolver(
+                    graph_client=self.knowledge_graph,
+                    organization_id=self.organization_id,
+                    database_type=self.database_type
+                )
                 # Note: GraphTraversalEngine might need updating for Jena
                 # self.kg_traversal = GraphTraversalEngine(self.knowledge_graph)
-                logger.info("Jena/RDF knowledge graph components initialized (Redis-cached)")
+                logger.info("Jena/RDF knowledge graph components initialized (Redis-cached, org-aware)")
             else:
                 self.knowledge_graph = None
                 self.kg_query_resolver = None
@@ -584,7 +597,12 @@ class SQLGenerator:
                         try:
                             from src.core.knowledge_graph.join_path_finder import JoinPathFinder
 
-                            finder = JoinPathFinder(self.knowledge_graph)
+                            # Pass organization and database context to JoinPathFinder
+                            finder = JoinPathFinder(
+                                self.knowledge_graph,
+                                organization_id=self.organization_id,
+                                database_type=self.database_type
+                            )
                             join_order = finder.recommend_join_order(selected_table_names)
 
                             # Convert JoinPath objects to join hints
@@ -1011,10 +1029,12 @@ class SQLGenerator:
             # Adjust limit based on query complexity indicators
             adjusted_limit = self._determine_search_limit(query, limit)
             
-            # Search for similar tables with adjusted limit
+            # Search for similar tables with adjusted limit, filtered by organization and database
             similar_tables = self.vector_client.search_similar_tables(
-                query_embedding, 
-                limit=adjusted_limit
+                query_embedding,
+                limit=adjusted_limit,
+                database_type=self.database_type,
+                organization_id=self.organization_id
             )
             
             # Analyze if multiple tables are needed based on similarity scores

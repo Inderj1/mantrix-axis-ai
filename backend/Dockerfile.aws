@@ -1,0 +1,78 @@
+# Mantrix Axis AI - Backend Dockerfile for AWS ECS
+# Multi-stage build for optimized production image
+
+# =============================================================================
+# Stage 1: Builder
+# =============================================================================
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    curl \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# =============================================================================
+# Stage 2: Runtime
+# =============================================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN useradd -m -u 1000 -s /bin/bash mantrix && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/mantrix/.local
+
+# Copy application code
+COPY --chown=mantrix:mantrix src/ ./src/
+
+# Copy entrypoint script
+COPY --chown=mantrix:mantrix entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
+# Create credentials directory for GCP
+RUN mkdir -p /app/credentials && chown mantrix:mantrix /app/credentials
+
+# Create files directory for GL mappings and other runtime data
+RUN mkdir -p /app/files/gl_mappings && chown -R mantrix:mantrix /app/files
+
+# Create CrewAI storage directory
+RUN mkdir -p /home/mantrix/.local/share/app && chown -R mantrix:mantrix /home/mantrix/.local/share
+
+# Switch to non-root user
+USER mantrix
+
+# Set PATH to include user-installed packages
+ENV PATH=/home/mantrix/.local/bin:$PATH
+
+# Environment variables (defaults, override at runtime)
+ENV API_ENV=production
+ENV API_HOST=0.0.0.0
+ENV API_PORT=8000
+ENV LOG_LEVEL=INFO
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# Entrypoint
+ENTRYPOINT ["./entrypoint.sh"]

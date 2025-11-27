@@ -53,7 +53,18 @@ class ConnectorFactory:
             'class': BigQueryConnector,
             'available': True,
             'required_config': ['project_id', 'dataset_id'],
-            'optional_config': ['credentials_path', 'location']
+            'optional_config': [
+                'credentials_path',
+                'location',
+                # Multi-auth support
+                'auth_method',           # 'service_account', 'workload_identity', 'oauth'
+                'credentials_json',      # Service account JSON as string
+                # Workload Identity Federation
+                'wif_provider_resource_name',
+                'wif_service_account_email',
+                # OAuth (handled separately via /bigquery/oauth/* endpoints)
+                'oauth_credentials',
+            ]
         },
         'snowflake': {
             'class': SnowflakeConnector if SNOWFLAKE_AVAILABLE else None,

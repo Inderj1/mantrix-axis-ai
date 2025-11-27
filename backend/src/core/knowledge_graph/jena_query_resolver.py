@@ -48,27 +48,42 @@ class ResolvedQuery:
 class JenaQueryResolver:
     """Query resolver using SPARQL against RDF knowledge graph."""
 
-    def __init__(self, graph_client: Optional[JenaKnowledgeGraph] = None):
+    def __init__(self, graph_client: Optional[JenaKnowledgeGraph] = None,
+                 organization_id: str = None,
+                 database_type: str = None):
         self.graph = graph_client or JenaKnowledgeGraph()
+        self.organization_id = organization_id or 'default'
+        self.database_type = database_type
 
     def get_column_mappings(self) -> Dict[str, List[Dict[str, Any]]]:
         """Get all column synonym mappings for prompt enhancement.
 
         Returns a dictionary mapping user terms to column information.
         """
-        sparql = """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        sparql = f"""
         PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
         SELECT ?synonym_term ?column_name ?table_name ?confidence ?description
-        WHERE {
+        WHERE {{
             ?synonym a fin:ColumnSynonym ;
                      fin:term ?synonym_term ;
                      fin:synonymOf ?column ;
                      fin:confidence ?confidence .
-            OPTIONAL { ?synonym fin:description ?description }
-            ?column fin:columnName ?column_name ;
-                    fin:belongsToTable ?table .
-            ?table fin:tableName ?table_name .
-        }
+            OPTIONAL {{ ?synonym fin:description ?description }}
+            ?column schema:columnName ?column_name ;
+                    schema:belongsToTable ?table .
+            ?table schema:tableName ?table_name .
+            {filter_clause}
+        }}
         ORDER BY DESC(?confidence)
         """
 
@@ -244,196 +259,224 @@ class JenaQueryResolver:
             return "unknown"
     
     def _get_relevant_metrics(self, query: str, query_type: str) -> List[MetricFormula]:
-        """Get relevant metrics from RDF based on query."""
+        """Get relevant metrics from RDF based on query.
+
+        Optimized: Single SPARQL query with OPTIONAL clauses to avoid N+1 problem.
+        """
         metrics = []
         query_lower = query.lower()
 
-        # SPARQL to find all L1 metrics
+        # Single SPARQL query to get metrics with all their related data
+        # Uses OPTIONAL to include formula components and buckets in one query
         sparql = """
         PREFIX fin: <http://example.com/finance#>
-        SELECT ?metric ?code ?name ?formula ?order
+        SELECT ?metric ?code ?name ?formula ?order ?component_name ?sql_expr ?bucket_code
         WHERE {
             ?metric a fin:L1Metric ;
                     fin:code ?code ;
                     fin:name ?name ;
                     fin:formula ?formula ;
                     fin:calculationOrder ?order .
+            OPTIONAL {
+                ?metric fin:usesFormula ?formula_node .
+                ?formula_node fin:componentName ?component_name ;
+                              fin:sqlExpression ?sql_expr .
+            }
+            OPTIONAL {
+                ?metric fin:contains ?bucket .
+                ?bucket fin:code ?bucket_code .
+            }
         }
         ORDER BY ?order
         """
 
-        metric_results = self.graph.query(sparql)
+        # Execute query once and collect into list
+        all_results = list(self.graph.query(sparql))
+        logger.info(f"Total L1 metric rows in KG: {len(all_results)}")
 
-        logger.info(f"Total L1 metrics in KG: {len(list(metric_results))}")
-
-        # Re-query since we consumed the generator
-        metric_results = self.graph.query(sparql)
-
-        # Filter metrics that match the query
-        matched_metrics = []
-        for row in metric_results:
+        # Group results by metric URI
+        metric_data = {}
+        for row in all_results:
+            metric_uri = str(row["metric"])
             code = str(row["code"]).lower()
             name = str(row["name"]).lower()
-            logger.info(f"Checking metric: code='{code}', name='{name}' against query='{query_lower}'")
-            if code in query_lower or name in query_lower:
+
+            # Only process metrics that match the query
+            if code not in query_lower and name not in query_lower:
+                continue
+
+            if metric_uri not in metric_data:
                 logger.info(f"✓ MATCHED metric: {code}")
-                matched_metrics.append(row)
-            else:
-                logger.debug(f"✗ No match for metric: {code}")
+                metric_data[metric_uri] = {
+                    "code": str(row["code"]),
+                    "name": str(row["name"]),
+                    "formula": str(row["formula"]),
+                    "order": row["order"],
+                    "formula_components": {},
+                    "sub_buckets": set()
+                }
 
-        logger.info(f"Matched {len(matched_metrics)} metrics from query")
+            # Collect formula components (may have multiple)
+            if row.get("component_name") and row.get("sql_expr"):
+                component_name = str(row["component_name"])
+                sql_expr = str(row["sql_expr"])
+                metric_data[metric_uri]["formula_components"][component_name] = sql_expr
 
-        # Process matched metrics
-        metric_results = matched_metrics
-        
-        for row in metric_results:
-            metric_uri = row["metric"]
-            metric_code = str(row["code"])
-            
-            # Get formula components
-            formula_sparql = f"""
-            PREFIX fin: <http://example.com/finance#>
-            SELECT ?component_name ?sql_expr
-            WHERE {{
-                <{metric_uri}> fin:usesFormula ?formula .
-                ?formula fin:componentName ?component_name ;
-                         fin:sqlExpression ?sql_expr .
-            }}
-            """
-            
-            formula_results = self.graph.query(formula_sparql)
-            
-            formula_components = {}
-            for f_row in formula_results:
-                formula_components[str(f_row["component_name"])] = str(f_row["sql_expr"])
-            
-            # Get sub-buckets
-            bucket_sparql = f"""
-            PREFIX fin: <http://example.com/finance#>
-            SELECT ?bucket_code
-            WHERE {{
-                <{metric_uri}> fin:contains ?bucket .
-                ?bucket fin:code ?bucket_code .
-            }}
-            """
-            
-            bucket_results = self.graph.query(bucket_sparql)
-            
-            sub_buckets = [str(b["bucket_code"]) for b in bucket_results]
-            
+            # Collect sub-buckets (may have multiple)
+            if row.get("bucket_code"):
+                metric_data[metric_uri]["sub_buckets"].add(str(row["bucket_code"]))
+
+        logger.info(f"Matched {len(metric_data)} unique metrics from query")
+
+        # Convert to MetricFormula objects
+        for data in metric_data.values():
             metric = MetricFormula(
-                metric_code=metric_code,
-                metric_name=str(row["name"]),
-                formula=str(row["formula"]),
-                formula_components=formula_components,
-                sub_buckets=sub_buckets
+                metric_code=data["code"],
+                metric_name=data["name"],
+                formula=data["formula"],
+                formula_components=data["formula_components"],
+                sub_buckets=list(data["sub_buckets"])
             )
             metrics.append(metric)
-                
+
         return metrics
     
-    def _get_relevant_gl_accounts(self, query: str, metrics: List[MetricFormula], 
+    def _get_relevant_gl_accounts(self, query: str, metrics: List[MetricFormula],
                                  context: Optional[Dict[str, Any]] = None) -> List[GLMapping]:
-        """Get relevant GL accounts from RDF."""
+        """Get relevant GL accounts from RDF.
+
+        Optimized: Single batched query for all bucket codes instead of N+1.
+        """
         gl_accounts = []
+        seen_accounts = set()  # Avoid duplicates
         client_id = context.get("client_id") if context else None
-        
-        # If we have metrics with buckets, get GL accounts for those buckets
-        if metrics:
-            for metric in metrics:
-                for bucket_code in metric.sub_buckets:
-                    sparql = f"""
-                    PREFIX fin: <http://example.com/finance#>
-                    SELECT ?gl ?account_num ?desc ?bucket_code ?active
-                    WHERE {{
-                        ?gl a fin:GLAccount ;
-                            fin:accountNumber ?account_num ;
-                            fin:description ?desc ;
-                            fin:isActive ?active ;
-                            fin:partOf ?bucket .
-                        ?bucket fin:code "{bucket_code}" .
-                        OPTIONAL {{ ?gl fin:bucketCode ?bucket_code }}
-                    """
-                    
-                    # Add client filter if specified
-                    if client_id:
-                        sparql += f"""
-                        ?gl fin:belongsTo ?client .
-                        ?client fin:code "{client_id}" .
-                        """
-                        
-                    sparql += "}"
-                    
-                    results = self.graph.query(sparql)
-                    
-                    for row in results:
-                        gl_mapping = GLMapping(
-                            account_number=str(row["account_num"]),
-                            description=str(row["desc"]),
-                            bucket_code=str(row.get("bucket_code", "")),
-                            client_id=client_id,
-                            is_active=bool(row["active"])
-                        )
-                        gl_accounts.append(gl_mapping)
-        
-        # Check for direct GL account references
-        gl_pattern = re.compile(r'\b(?:gl|account)\s*(\d{4,})\b', re.IGNORECASE)
-        matches = gl_pattern.findall(query)
-        
-        for account_num in matches:
+
+        # Collect all bucket codes from all metrics
+        all_bucket_codes = set()
+        for metric in metrics:
+            all_bucket_codes.update(metric.sub_buckets)
+
+        # If we have bucket codes, get GL accounts for all buckets in one query
+        if all_bucket_codes:
+            # Build VALUES clause for SPARQL
+            bucket_values = " ".join([f'"{code}"' for code in all_bucket_codes])
+
             sparql = f"""
             PREFIX fin: <http://example.com/finance#>
-            SELECT ?gl ?desc ?bucket_code ?active
+            SELECT ?gl ?account_num ?desc ?actual_bucket_code ?active
             WHERE {{
+                VALUES ?bucket_code {{ {bucket_values} }}
                 ?gl a fin:GLAccount ;
-                    fin:accountNumber "{account_num}" ;
+                    fin:accountNumber ?account_num ;
+                    fin:description ?desc ;
+                    fin:isActive ?active ;
+                    fin:partOf ?bucket .
+                ?bucket fin:code ?bucket_code .
+                OPTIONAL {{ ?gl fin:bucketCode ?actual_bucket_code }}
+            """
+
+            # Add client filter if specified
+            if client_id:
+                sparql += f"""
+                ?gl fin:belongsTo ?client .
+                ?client fin:code "{client_id}" .
+                """
+
+            sparql += "}"
+
+            results = self.graph.query(sparql)
+
+            for row in results:
+                account_num = str(row["account_num"])
+                if account_num not in seen_accounts:
+                    seen_accounts.add(account_num)
+                    gl_mapping = GLMapping(
+                        account_number=account_num,
+                        description=str(row["desc"]),
+                        bucket_code=str(row.get("actual_bucket_code", "")),
+                        client_id=client_id,
+                        is_active=bool(row["active"])
+                    )
+                    gl_accounts.append(gl_mapping)
+
+        # Check for direct GL account references in query
+        gl_pattern = re.compile(r'\b(?:gl|account)\s*(\d{4,})\b', re.IGNORECASE)
+        matches = gl_pattern.findall(query)
+
+        if matches:
+            # Batch query for all directly referenced account numbers
+            account_values = " ".join([f'"{num}"' for num in matches])
+
+            sparql = f"""
+            PREFIX fin: <http://example.com/finance#>
+            SELECT ?gl ?account_num ?desc ?bucket_code ?active
+            WHERE {{
+                VALUES ?account_num {{ {account_values} }}
+                ?gl a fin:GLAccount ;
+                    fin:accountNumber ?account_num ;
                     fin:description ?desc ;
                     fin:isActive ?active .
                 OPTIONAL {{ ?gl fin:bucketCode ?bucket_code }}
             }}
             """
-            
+
             results = self.graph.query(sparql)
-            
+
             for row in results:
-                gl_mapping = GLMapping(
-                    account_number=account_num,
-                    description=str(row["desc"]),
-                    bucket_code=str(row.get("bucket_code", "")),
-                    client_id=client_id,
-                    is_active=bool(row["active"])
-                )
-                gl_accounts.append(gl_mapping)
-                    
+                account_num = str(row["account_num"])
+                if account_num not in seen_accounts:
+                    seen_accounts.add(account_num)
+                    gl_mapping = GLMapping(
+                        account_number=account_num,
+                        description=str(row["desc"]),
+                        bucket_code=str(row.get("bucket_code", "")),
+                        client_id=client_id,
+                        is_active=bool(row["active"])
+                    )
+                    gl_accounts.append(gl_mapping)
+
         return gl_accounts
     
-    def _get_business_rules(self, metrics: List[MetricFormula], 
+    def _get_business_rules(self, metrics: List[MetricFormula],
                            context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Get applicable business rules from RDF."""
+        """Get applicable business rules from RDF.
+
+        Optimized: Single batched query for all metric codes instead of N+1.
+        """
+        if not metrics:
+            return []
+
+        # Build VALUES clause with all metric codes
+        metric_codes = [f'"{m.metric_code}"' for m in metrics]
+        metric_values = " ".join(metric_codes)
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        SELECT ?rule ?name ?desc ?type ?condition ?action ?priority
+        WHERE {{
+            VALUES ?metric_code {{ {metric_values} }}
+            ?rule a fin:BusinessRule ;
+                  fin:name ?name ;
+                  fin:description ?desc ;
+                  fin:ruleType ?type ;
+                  fin:condition ?condition ;
+                  fin:action ?action ;
+                  fin:priority ?priority ;
+                  fin:isActive true ;
+                  fin:appliesTo ?metric .
+            ?metric fin:code ?metric_code .
+        }}
+        ORDER BY ?priority
+        """
+
         rules = []
-        
-        for metric in metrics:
-            sparql = f"""
-            PREFIX fin: <http://example.com/finance#>
-            SELECT ?rule ?name ?desc ?type ?condition ?action ?priority
-            WHERE {{
-                ?rule a fin:BusinessRule ;
-                      fin:name ?name ;
-                      fin:description ?desc ;
-                      fin:ruleType ?type ;
-                      fin:condition ?condition ;
-                      fin:action ?action ;
-                      fin:priority ?priority ;
-                      fin:isActive true ;
-                      fin:appliesTo ?metric .
-                ?metric fin:code "{metric.metric_code}" .
-            }}
-            ORDER BY ?priority
-            """
-            
-            results = self.graph.query(sparql)
-            
-            for row in results:
+        seen_rules = set()  # Avoid duplicates
+        results = self.graph.query(sparql)
+
+        for row in results:
+            rule_uri = str(row["rule"])
+            if rule_uri not in seen_rules:
+                seen_rules.add(rule_uri)
                 rules.append({
                     "name": str(row["name"]),
                     "description": str(row["desc"]),
@@ -442,7 +485,7 @@ class JenaQueryResolver:
                     "action": str(row["action"]),
                     "priority": int(row["priority"])
                 })
-                    
+
         return rules
     
     def _generate_suggested_query(self, query_type: str, metrics: List[MetricFormula],

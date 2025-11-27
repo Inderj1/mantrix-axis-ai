@@ -44,6 +44,7 @@ class TableSchemaSnapshot:
     """Complete snapshot of a table's schema"""
     table_name: str
     database_type: str  # bigquery, postgresql, mongodb, snowflake
+    organization_id: str  # Organization ID for multi-tenancy
     dataset: str
     project: str
     description: Optional[str]
@@ -259,33 +260,65 @@ class SchemaExtractor:
             logger.error(f"Failed to extract schema for {table_name}: {e}")
             raise
 
-    def extract_all_schemas(self, force_refresh: bool = False) -> List[TableSchemaSnapshot]:
+    def extract_all_schemas(self, force_refresh: bool = False, organization_id: str = None) -> List[TableSchemaSnapshot]:
         """
-        Extract schemas for all tables in dataset.
+        Extract schemas for all tables from all configured databases.
 
         Args:
             force_refresh: Skip cache and re-extract all
+            organization_id: Organization ID for multi-tenancy
 
         Returns:
             List of TableSchemaSnapshot objects
         """
-        logger.info(f"Extracting all schemas from {self.bq_client.dataset_id}")
+        # Import here to avoid circular dependency
+        from src.pipeline.multi_db_schema_extractor import MultiDatabaseSchemaExtractor
+
+        org_id = organization_id or getattr(settings, 'DEFAULT_ORG_ID', 'default')
+
+        logger.info(f"Extracting all schemas for organization {org_id}")
 
         try:
-            # Get list of tables
-            table_names = self.bq_client.list_tables()
-            logger.info(f"Found {len(table_names)} tables")
+            # Use multi-database extractor
+            multi_extractor = MultiDatabaseSchemaExtractor(
+                cache_manager=self.cache_manager,
+                organization_id=org_id
+            )
 
+            # Extract from all databases
+            all_db_schemas = multi_extractor.extract_all_schemas()
             snapshots = []
-            for table_name in table_names:
-                try:
-                    snapshot = self.extract_schema(table_name, force_refresh=force_refresh)
-                    snapshots.append(snapshot)
-                except Exception as e:
-                    logger.error(f"Failed to extract {table_name}: {e}")
-                    continue
 
-            logger.info(f"Successfully extracted {len(snapshots)} schemas")
+            for db_type, schemas in all_db_schemas.items():
+                for schema in schemas:
+                    try:
+                        # Convert to TableSchemaSnapshot format
+                        schema['database_type'] = db_type
+                        schema['organization_id'] = org_id
+                        schema['snapshot_timestamp'] = datetime.now().isoformat()
+                        schema['version'] = 1
+
+                        # Add default values for missing fields
+                        schema.setdefault('table_name', schema.get('name', 'unknown'))
+                        schema.setdefault('dataset', schema.get('schema', 'default'))
+                        schema.setdefault('project', schema.get('database', 'default'))
+                        schema.setdefault('description', None)
+                        schema.setdefault('row_count', 0)
+                        schema.setdefault('size_bytes', 0)
+                        schema.setdefault('created_at', None)
+                        schema.setdefault('modified_at', None)
+                        schema.setdefault('columns', [])
+
+                        # Compute schema hash
+                        schema['schema_hash'] = self._compute_schema_hash(schema)
+
+                        snapshot = TableSchemaSnapshot.from_dict(schema)
+                        snapshots.append(snapshot)
+                    except Exception as e:
+                        logger.error(f"Failed to create snapshot for {schema.get('table_name', 'unknown')}: {e}")
+                        continue
+
+            logger.info(f"Successfully extracted {len(snapshots)} schemas across {len(all_db_schemas)} databases")
             return snapshots
 
         except Exception as e:

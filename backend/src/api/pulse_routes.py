@@ -10,8 +10,20 @@ from ..core.pulse_monitor_service import PulseMonitorService
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/pulse", tags=["enterprise-pulse"])
 
-# Initialize service
-pulse_service = PulseMonitorService()
+# Lazy initialize service to avoid startup failures when BigQuery isn't configured
+_pulse_service = None
+
+
+def get_pulse_service():
+    """Lazy initialization of PulseMonitorService"""
+    global _pulse_service
+    if _pulse_service is None:
+        try:
+            _pulse_service = PulseMonitorService()
+        except Exception as e:
+            logger.warning("Failed to initialize PulseMonitorService", error=str(e))
+            raise HTTPException(status_code=503, detail="Pulse service unavailable - BigQuery not configured")
+    return _pulse_service
 
 
 # Request/Response Models
@@ -63,7 +75,8 @@ async def create_monitor(request: CreateMonitorRequest):
     Returns generated SQL, preview data, and suggestions
     """
     try:
-        result = await pulse_service.create_monitor_from_nl(
+        service = get_pulse_service()
+        result = await service.create_monitor_from_nl(
             user_id=request.user_id,
             natural_language=request.natural_language,
             name=request.name,
@@ -89,8 +102,9 @@ async def save_monitor(request: SaveMonitorRequest):
     Step 2: Save monitor configuration after user review
     """
     try:
+        service = get_pulse_service()
         monitor_config = request.dict()
-        monitor_id = await pulse_service.save_monitor(monitor_config)
+        monitor_id = await service.save_monitor(monitor_config)
 
         return {
             "success": True,
@@ -115,7 +129,8 @@ async def list_monitors(
     Get all monitors for a user
     """
     try:
-        monitors = await pulse_service.get_user_monitors(
+        service = get_pulse_service()
+        monitors = await service.get_user_monitors(
             user_id=user_id,
             include_disabled=include_disabled
         )
@@ -140,7 +155,8 @@ async def get_monitor(monitor_id: str):
     Get monitor details by ID
     """
     try:
-        monitor = pulse_service._get_monitor(monitor_id)
+        service = get_pulse_service()
+        monitor = service._get_monitor(monitor_id)
 
         if not monitor:
             raise HTTPException(status_code=404, detail="Monitor not found")
@@ -167,7 +183,8 @@ async def refine_monitor(monitor_id: str, request: RefineMonitorRequest):
     Agent regenerates improved query using LLM
     """
     try:
-        result = await pulse_service.refine_query_with_feedback(
+        service = get_pulse_service()
+        result = await service.refine_query_with_feedback(
             monitor_id=monitor_id,
             feedback=request.feedback
         )
@@ -192,7 +209,8 @@ async def test_monitor(monitor_id: str):
     Test monitor immediately (execute query and check conditions)
     """
     try:
-        result = await pulse_service.execute_monitor(monitor_id)
+        service = get_pulse_service()
+        result = await service.execute_monitor(monitor_id)
 
         return {
             "success": True,
@@ -214,6 +232,7 @@ async def toggle_monitor(monitor_id: str, enabled: bool = Query(...)):
     Enable or disable a monitor
     """
     try:
+        service = get_pulse_service()
         query = """
         UPDATE pulse_monitors
         SET enabled = %s, updated_at = CURRENT_TIMESTAMP
@@ -221,7 +240,7 @@ async def toggle_monitor(monitor_id: str, enabled: bool = Query(...)):
         RETURNING id
         """
 
-        result = pulse_service.pg_client.execute_query(
+        result = service.pg_client.execute_query(
             query,
             (enabled, monitor_id)
         )
@@ -252,6 +271,7 @@ async def delete_monitor(monitor_id: str):
     Delete a monitor (soft delete - just disable it)
     """
     try:
+        service = get_pulse_service()
         query = """
         UPDATE pulse_monitors
         SET enabled = false, updated_at = CURRENT_TIMESTAMP
@@ -259,7 +279,7 @@ async def delete_monitor(monitor_id: str):
         RETURNING id
         """
 
-        result = pulse_service.pg_client.execute_query(query, (monitor_id,))
+        result = service.pg_client.execute_query(query, (monitor_id,))
 
         if not result:
             raise HTTPException(status_code=404, detail="Monitor not found")
@@ -290,7 +310,8 @@ async def get_alerts(
     Get recent alerts for user's monitors
     """
     try:
-        alerts = await pulse_service.get_recent_alerts(
+        service = get_pulse_service()
+        alerts = await service.get_recent_alerts(
             user_id=user_id,
             limit=limit,
             status=status
@@ -317,6 +338,7 @@ async def submit_alert_feedback(alert_id: str, request: AlertFeedbackRequest):
     This helps the agent learn and improve
     """
     try:
+        service = get_pulse_service()
         # Update alert with feedback
         query = """
         UPDATE pulse_alerts
@@ -325,7 +347,7 @@ async def submit_alert_feedback(alert_id: str, request: AlertFeedbackRequest):
         RETURNING monitor_id
         """
 
-        result = pulse_service.pg_client.execute_query(
+        result = service.pg_client.execute_query(
             query,
             (request.feedback, request.notes, alert_id)
         )
@@ -349,7 +371,7 @@ async def submit_alert_feedback(alert_id: str, request: AlertFeedbackRequest):
             WHERE id = %s
             """
 
-        pulse_service.pg_client.execute_query(counter_query, (monitor_id,))
+        service.pg_client.execute_query(counter_query, (monitor_id,))
 
         return {
             "success": True,
@@ -374,6 +396,7 @@ async def acknowledge_alert(alert_id: str):
     Acknowledge an alert
     """
     try:
+        service = get_pulse_service()
         query = """
         UPDATE pulse_alerts
         SET status = 'acknowledged',
@@ -382,7 +405,7 @@ async def acknowledge_alert(alert_id: str):
         RETURNING id
         """
 
-        result = pulse_service.pg_client.execute_query(query, (alert_id,))
+        result = service.pg_client.execute_query(query, (alert_id,))
 
         if not result:
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -428,7 +451,8 @@ async def get_monitor_templates(
 
         query += " ORDER BY category, usage_count DESC"
 
-        templates = pulse_service.pg_client.execute_query(
+        service = get_pulse_service()
+        templates = service.pg_client.execute_query(
             query,
             tuple(params) if params else None
         )
@@ -453,6 +477,7 @@ async def get_pulse_stats(user_id: str = Query(..., description="User ID")):
     Get Enterprise Pulse statistics for a user
     """
     try:
+        service = get_pulse_service()
         # Get monitor stats
         monitor_stats_query = """
         SELECT
@@ -465,7 +490,7 @@ async def get_pulse_stats(user_id: str = Query(..., description="User ID")):
         WHERE user_id = %s
         """
 
-        monitor_stats = pulse_service.pg_client.execute_query(
+        monitor_stats = service.pg_client.execute_query(
             monitor_stats_query,
             (user_id,)
         )
@@ -483,7 +508,7 @@ async def get_pulse_stats(user_id: str = Query(..., description="User ID")):
         WHERE m.user_id = %s
         """
 
-        alert_stats = pulse_service.pg_client.execute_query(
+        alert_stats = service.pg_client.execute_query(
             alert_stats_query,
             (user_id,)
         )

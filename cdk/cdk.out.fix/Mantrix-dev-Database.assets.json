@@ -1,0 +1,21 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "d449d25116376cb26e08402101387dbe82cbdd591904e4054b2cff20bbd354fc": {
+      "displayName": "Mantrix-dev-Database Template",
+      "source": {
+        "path": "Mantrix-dev-Database.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "709141244278-us-east-1-d97dbe98": {
+          "bucketName": "cdk-hnb659fds-assets-709141244278-us-east-1",
+          "objectKey": "d449d25116376cb26e08402101387dbe82cbdd591904e4054b2cff20bbd354fc.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::709141244278:role/cdk-hnb659fds-file-publishing-role-709141244278-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

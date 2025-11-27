@@ -4,12 +4,12 @@ This provides much faster SPARQL query performance than parsing from file each t
 """
 
 import os
+import gzip
 import structlog
 from typing import Optional
 from rdflib import Graph
 from rdflib.plugins.stores.memory import Memory
 from pathlib import Path
-import pickle
 import hashlib
 
 logger = structlog.get_logger()
@@ -26,7 +26,7 @@ class JenaMemoryStore:
         self.cache_dir.mkdir(exist_ok=True)
         self.graph: Optional[Graph] = None
         self.ttl_file = "financial_kg.ttl"
-        self.cache_file = self.cache_dir / "financial_kg.pickle"
+        self.cache_file = self.cache_dir / "financial_kg.ttl.gz"  # Safe format instead of pickle
         
     def _get_file_hash(self, filepath: Path) -> str:
         """Get MD5 hash of file for cache validation."""
@@ -36,17 +36,17 @@ class JenaMemoryStore:
             return hashlib.md5(f.read()).hexdigest()
     
     def _load_from_cache(self) -> bool:
-        """Try to load graph from pickle cache."""
+        """Try to load graph from gzip-compressed turtle cache (safe, no pickle)."""
         try:
             if not self.cache_file.exists():
                 return False
-                
+
             # Check if TTL file has changed
             ttl_path = Path(self.ttl_file)
             if ttl_path.exists():
                 current_hash = self._get_file_hash(ttl_path)
                 hash_file = self.cache_dir / "financial_kg.hash"
-                
+
                 if hash_file.exists():
                     stored_hash = hash_file.read_text().strip()
                     if current_hash != stored_hash:
@@ -54,33 +54,37 @@ class JenaMemoryStore:
                         return False
                 else:
                     return False
-            
-            # Load from pickle
-            with open(self.cache_file, 'rb') as f:
-                self.graph = pickle.load(f)
-            logger.info("Loaded RDF graph from cache")
+
+            # Load from gzip-compressed turtle (safe - no arbitrary code execution)
+            with gzip.open(self.cache_file, 'rt', encoding='utf-8') as f:
+                turtle_data = f.read()
+
+            self.graph = Graph(store=Memory())
+            self.graph.parse(data=turtle_data, format='turtle')
+            logger.info("Loaded RDF graph from cache", triples=len(self.graph))
             return True
-            
+
         except Exception as e:
             logger.warning(f"Failed to load from cache: {e}")
             return False
     
     def _save_to_cache(self):
-        """Save graph to pickle cache."""
+        """Save graph to gzip-compressed turtle cache (safe, no pickle)."""
         try:
-            # Save graph
-            with open(self.cache_file, 'wb') as f:
-                pickle.dump(self.graph, f, protocol=pickle.HIGHEST_PROTOCOL)
-            
+            # Serialize to turtle format and compress
+            turtle_data = self.graph.serialize(format='turtle')
+            with gzip.open(self.cache_file, 'wt', encoding='utf-8') as f:
+                f.write(turtle_data)
+
             # Save TTL file hash
             ttl_path = Path(self.ttl_file)
             if ttl_path.exists():
                 current_hash = self._get_file_hash(ttl_path)
                 hash_file = self.cache_dir / "financial_kg.hash"
                 hash_file.write_text(current_hash)
-            
-            logger.info("Saved RDF graph to cache")
-            
+
+            logger.info("Saved RDF graph to cache", triples=len(self.graph))
+
         except Exception as e:
             logger.warning(f"Failed to save to cache: {e}")
     

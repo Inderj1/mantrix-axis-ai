@@ -1,7 +1,7 @@
 {
   "authentication": {
     "enabled": true,
-    "provider": "clerk",
+    "provider": "cognito",
     "sso": {
       "enabled": true,
       "providers": ["google", "microsoft", "saml"]

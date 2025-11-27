@@ -38,7 +38,7 @@ function AuthButton() {
     await clearCache();
     clearNavigationState();
     await logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const handleProfile = () => {
@@ -47,7 +47,7 @@ function AuthButton() {
   };
 
   const handleSignIn = () => {
-    navigate('/login');
+    navigate('/');
   };
 
   if (loading) {
@@ -89,24 +89,63 @@ function AuthButton() {
     );
   }
 
-  // Extract username from Cognito user object
-  const username = user?.username || 'User';
-  const userInitial = username.charAt(0).toUpperCase();
+  // Extract name from Cognito user attributes (set in AuthContext)
+  // Priority: name > given_name + family_name > email > loginId > 'User'
+  let displayName = 'User';
+
+  if (user?.attributes) {
+    const { name, given_name, family_name, email } = user.attributes;
+
+    if (name) {
+      // Use full name if available
+      displayName = name;
+    } else if (given_name || family_name) {
+      // Construct name from first and last name
+      displayName = [given_name, family_name].filter(Boolean).join(' ');
+    } else if (email) {
+      // Extract name from email (before @)
+      const emailName = email.split('@')[0];
+      // Replace dots and underscores with spaces, capitalize each word
+      displayName = emailName.replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+  }
+
+  // Fallback to loginId if no attributes available
+  if (displayName === 'User' && user?.signInDetails?.loginId) {
+    const loginId = user.signInDetails.loginId;
+    // Check if it's an email
+    if (loginId.includes('@')) {
+      const emailName = loginId.split('@')[0];
+      displayName = emailName.replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    } else {
+      displayName = loginId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+  }
+
+  const userInitial = displayName.charAt(0).toUpperCase();
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-      <Typography variant="body2" sx={{ mr: 2, display: { xs: 'none', sm: 'block' } }}>
-        {username}
+      <Typography
+        variant="body1"
+        sx={{
+          mr: 1,
+          display: { xs: 'none', sm: 'block' },
+          fontWeight: 500,
+          color: 'text.primary',
+        }}
+      >
+        {displayName}
       </Typography>
       <IconButton
-        size="large"
+        size="medium"
         aria-label="account of current user"
         aria-controls="menu-appbar"
         aria-haspopup="true"
         onClick={handleMenu}
-        color="inherit"
+        sx={{ color: 'text.primary' }}
       >
-        <Avatar sx={{ width: 32, height: 32 }}>
+        <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main' }}>
           {userInitial}
         </Avatar>
       </IconButton>
@@ -127,7 +166,7 @@ function AuthButton() {
       >
         <Box sx={{ px: 2, py: 1 }}>
           <Typography variant="subtitle1">
-            {username}
+            {displayName}
           </Typography>
         </Box>
         <Divider />

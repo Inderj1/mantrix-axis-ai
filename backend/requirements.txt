@@ -2,9 +2,13 @@ fastapi
 uvicorn
 structlog
 pydantic-settings
+email-validator
 anthropic
 openai
 google-cloud-bigquery
+google-auth>=2.23.0  # For Workload Identity Federation support
+google-auth-oauthlib>=1.0.0  # For OAuth flow
+cryptography>=41.0.0  # For OAuth token encryption
 snowflake-connector-python
 databricks-sql-connector>=2.0.0
 weaviate-client
@@ -35,6 +39,7 @@ python-multipart
 rdflib
 crewai
 python-dotenv
+boto3>=1.26.0
 
 # Testing
 pytest>=9.0.0

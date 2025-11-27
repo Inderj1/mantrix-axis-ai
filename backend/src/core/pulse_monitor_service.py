@@ -31,9 +31,34 @@ class PulseMonitorService:
 
     def __init__(self):
         self.pg_client = PostgreSQLClient(database="customer_analytics")
-        self.bq_client = BigQueryClient()
-        self.sql_generator = SQLGenerator()
-        self.llm_client = LLMClient()
+        self._bq_client = None  # Lazy initialization
+        self._sql_generator = None  # Lazy initialization
+        self._llm_client = None  # Lazy initialization
+
+    @property
+    def bq_client(self):
+        """Lazy initialization of BigQuery client"""
+        if self._bq_client is None:
+            try:
+                self._bq_client = BigQueryClient()
+            except Exception as e:
+                logger.warning(f"BigQuery client not available: {e}")
+                raise
+        return self._bq_client
+
+    @property
+    def sql_generator(self):
+        """Lazy initialization of SQL generator"""
+        if self._sql_generator is None:
+            self._sql_generator = SQLGenerator()
+        return self._sql_generator
+
+    @property
+    def llm_client(self):
+        """Lazy initialization of LLM client"""
+        if self._llm_client is None:
+            self._llm_client = LLMClient()
+        return self._llm_client
 
     async def create_monitor_from_nl(
         self,

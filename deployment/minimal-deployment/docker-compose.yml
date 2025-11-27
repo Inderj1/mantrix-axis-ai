@@ -1,0 +1,233 @@
+version: '3.8'
+
+services:
+  # Backend API Service (simulates ECS task)
+  backend:
+    build:
+      context: ../..
+      dockerfile: deployment/minimal-deployment/Dockerfile.backend
+    container_name: mantrix-backend
+    environment:
+      # API Configuration
+      API_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      LOG_LEVEL: INFO
+
+      # Database Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: mantrix_madison
+      POSTGRES_USER: mantrix
+      POSTGRES_PASSWORD: mantrix123
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # MongoDB Configuration
+      MONGODB_URL: mongodb://mongodb:27017
+
+      # Weaviate Configuration
+      WEAVIATE_URL: http://weaviate:8080
+
+      # AWS Cognito (from .env file)
+      AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      AWS_COGNITO_REGION: ${AWS_COGNITO_REGION}
+      AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+
+      # AI Services (from .env file)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Google Cloud (from .env file)
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+      BIGQUERY_DATASET: ${BIGQUERY_DATASET}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+
+      # Other external database configs (optional)
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER:-}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-}
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - mongodb
+      - weaviate
+    networks:
+      - mantrix-network
+    volumes:
+      - ./logs:/app/logs
+      - ./query_logs:/app/query_logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Service (simulates ECS task)
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deployment/minimal-deployment/Dockerfile.frontend
+    container_name: mantrix-frontend
+    environment:
+      # These would be baked into the build in production
+      VITE_API_URL: http://backend:8000
+      VITE_AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      VITE_AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+      VITE_AWS_REGION: ${AWS_COGNITO_REGION}
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database (simulates RDS)
+  postgres:
+    image: postgres:16-alpine
+    container_name: mantrix-postgres
+    environment:
+      POSTGRES_DB: mantrix_madison
+      POSTGRES_USER: mantrix
+      POSTGRES_PASSWORD: mantrix123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=en_US.utf8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../backend/src/db/schema:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"  # Use 5433 to avoid conflicts with local PostgreSQL
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mantrix -d mantrix_madison"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache (simulates ElastiCache)
+  redis:
+    image: redis:7-alpine
+    container_name: mantrix-redis
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB (simulates DocumentDB)
+  mongodb:
+    image: mongo:5
+    container_name: mantrix-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: nlp_sql_conversations
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    ports:
+      - "27017:27017"
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Weaviate Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:1.23.7
+    container_name: mantrix-weaviate
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: text2vec-openai
+      ENABLE_MODULES: text2vec-openai
+      OPENAI_APIKEY: ${OPENAI_API_KEY}
+      CLUSTER_HOSTNAME: "weaviate"
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    ports:
+      - "8082:8080"
+      - "50051:50051"
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Neo4j (if needed)
+  # neo4j:
+  #   image: neo4j:5-community
+  #   container_name: mantrix-neo4j
+  #   environment:
+  #     NEO4J_AUTH: neo4j/password123
+  #     NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+  #     NEO4J_dbms_memory_heap_initial__size: 512m
+  #     NEO4J_dbms_memory_heap_max__size: 1G
+  #     NEO4J_dbms_memory_pagecache_size: 512m
+  #   volumes:
+  #     - neo4j-data:/data
+  #   ports:
+  #     - "7474:7474"
+  #     - "7687:7687"
+  #   networks:
+  #     - mantrix-network
+  #   restart: unless-stopped
+
+  # Nginx Load Balancer (simulates ALB)
+  nginx-lb:
+    image: nginx:alpine
+    container_name: mantrix-lb
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"  # Access the app via http://localhost:8080
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - mantrix-network
+    restart: unless-stopped
+
+networks:
+  mantrix-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+volumes:
+  postgres-data:
+  redis-data:
+  mongodb-data:
+  mongodb-config:
+  weaviate-data:
+  # neo4j-data:

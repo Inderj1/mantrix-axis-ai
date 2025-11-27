@@ -82,6 +82,7 @@ class WeaviateClient:
                     Property(name="schema_hash", data_type=DataType.TEXT),
                     Property(name="column_count", data_type=DataType.INT),
                     Property(name="database_type", data_type=DataType.TEXT),
+                    Property(name="organization_id", data_type=DataType.TEXT),  # Add organization ID
                     Property(name="created_at", data_type=DataType.TEXT),
                     Property(name="modified_at", data_type=DataType.TEXT),
                     Property(name="indexed_at", data_type=DataType.TEXT),
@@ -197,7 +198,8 @@ class WeaviateClient:
                 "columns": json.dumps(schema["columns"]),
                 "row_count": schema.get("row_count", 0),
                 "combined_text": combined_text.strip(),
-                "database_type": schema.get("source_database_type", schema.get("database_type", "bigquery"))  # Support both field names
+                "database_type": schema.get("source_database_type", schema.get("database_type", "bigquery")),  # Support both field names
+                "organization_id": schema.get("organization_id", "default")  # Add organization ID
             }
             
             collection.data.insert(
@@ -210,15 +212,61 @@ class WeaviateClient:
             logger.error(f"Failed to index schema: {e}")
             raise
     
-    def search_similar_tables(self, query_embedding: List[float], limit: int = 5) -> List[Dict[str, Any]]:
-        """Search for tables similar to the query."""
+    def search_similar_tables(
+        self,
+        query_embedding: List[float],
+        limit: int = 5,
+        database_type: str = None,
+        organization_id: str = None,
+        enabled_databases: List[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for tables similar to the query with optional filtering.
+
+        Args:
+            query_embedding: The query vector
+            limit: Maximum number of results
+            database_type: Filter by specific database type
+            organization_id: Filter by organization ID
+            enabled_databases: List of enabled database types to filter by
+        """
         try:
             import json
             collection = self.client.collections.get(self.collection_name)
 
+            # Build filter conditions
+            filters = None
+            if organization_id or database_type or enabled_databases:
+                filter_conditions = []
+
+                # Organization filter
+                if organization_id:
+                    filter_conditions.append(
+                        wvc.query.Filter.by_property("organization_id").equal(organization_id)
+                    )
+
+                # Database type filter
+                if database_type:
+                    filter_conditions.append(
+                        wvc.query.Filter.by_property("database_type").equal(database_type)
+                    )
+                elif enabled_databases:  # Use enabled databases list if no specific database
+                    filter_conditions.append(
+                        wvc.query.Filter.by_property("database_type").contains_any(enabled_databases)
+                    )
+
+                # Combine filters with AND
+                if len(filter_conditions) == 1:
+                    filters = filter_conditions[0]
+                else:
+                    filters = filter_conditions[0]
+                    for condition in filter_conditions[1:]:
+                        filters = filters & condition
+
             # Specify which properties to return to avoid None values
             response = collection.query.near_vector(
                 near_vector=query_embedding,
+                where=filters,  # Apply filters
                 limit=limit,
                 return_metadata=wvc.query.MetadataQuery(distance=True),
                 return_properties=[
@@ -228,7 +276,9 @@ class WeaviateClient:
                     "description",
                     "columns",
                     "row_count",
-                    "combined_text"
+                    "combined_text",
+                    "database_type",
+                    "organization_id"
                 ]
             )
 

@@ -39,19 +39,23 @@ class MultiHopPath:
 class JoinPathFinder:
     """Find join paths between tables using Jena knowledge graph."""
 
-    def __init__(self, knowledge_graph):
+    def __init__(self, knowledge_graph, organization_id: str = None, database_type: str = None):
         """
         Initialize join path finder.
 
         Args:
             knowledge_graph: JenaKnowledgeGraph instance
+            organization_id: Organization ID for filtering
+            database_type: Database type for filtering
         """
         self.kg = knowledge_graph
         self.FIN = knowledge_graph.FIN
+        self.organization_id = organization_id or 'default'
+        self.database_type = database_type
 
     def find_direct_join(self, table1: str, table2: str) -> List[JoinPath]:
         """
-        Find direct join paths between two tables.
+        Find direct join paths between two tables within the same database and organization.
 
         Args:
             table1: Source table name
@@ -60,8 +64,24 @@ class JoinPathFinder:
         Returns:
             List of possible JoinPath objects
         """
+        # Build filters for organization and database context
+        filters = []
+        if self.organization_id:
+            filters.append(f'''
+                ?source <http://example.com/schema#organizationId> "{self.organization_id}" .
+                ?target <http://example.com/schema#organizationId> "{self.organization_id}" .
+            ''')
+        if self.database_type:
+            filters.append(f'''
+                ?source <http://example.com/schema#databaseType> "{self.database_type}" .
+                ?target <http://example.com/schema#databaseType> "{self.database_type}" .
+            ''')
+
+        filter_clause = "\n".join(filters)
+
         query = f"""
         PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
 
         SELECT ?joinColumn ?columnType ?joinType
         WHERE {{
@@ -73,8 +93,9 @@ class JoinPathFinder:
 
             OPTIONAL {{ ?rel fin:joinType ?joinType }}
 
-            ?source fin:tableName "{table1}" .
-            ?target fin:tableName "{table2}" .
+            ?source schema:tableName "{table1}" .
+            ?target schema:tableName "{table2}" .
+            {filter_clause}
         }}
         """
 

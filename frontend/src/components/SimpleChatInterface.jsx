@@ -74,6 +74,8 @@ import EnhancedAnalyticsModal from './EnhancedAnalyticsModal';
 import MantraxResultsView from './MantraxResultsView';
 import FollowUpSuggestions from './FollowUpSuggestions';
 import PlotlyVisualization from './PlotlyVisualization';
+import DatabaseSelector from './DatabaseSelector';
+import DashboardCreationPreview from './dashboard/DashboardCreationPreview';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-sql';
 import 'ace-builds/src-noconflict/theme-monokai';
@@ -200,6 +202,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [selectedDatabase, setSelectedDatabase] = useState('bigquery');
+  const [multiDatabases, setMultiDatabases] = useState(null);
   const [showVisualization, setShowVisualization] = useState({});
   const [conversations, setConversations] = useState([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -224,6 +228,11 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [showDeepResearch, setShowDeepResearch] = useState(false);
   const [deepResearchQuestion, setDeepResearchQuestion] = useState('');
   const initializationRef = useRef(false);
+
+  // Dashboard creation from chat state
+  const [dashboardPreviewOpen, setDashboardPreviewOpen] = useState(false);
+  const [dashboardPreviewData, setDashboardPreviewData] = useState(null);
+  const [dashboardPreviewQuery, setDashboardPreviewQuery] = useState('');
 
   console.log('SimpleChatInterface rendering, mode:', mode, 'userId:', userId);
 
@@ -435,6 +444,37 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || loading) return;
 
+    // Check for dashboard creation intent first
+    const dashboardIntentPatterns = [
+      /create\s+(a\s+)?(new\s+)?dashboard/i,
+      /build\s+(a\s+)?(new\s+)?dashboard/i,
+      /make\s+(a\s+)?(new\s+)?dashboard/i,
+      /new\s+dashboard\s+(for|with|showing)/i,
+      /dashboard\s+(for|with|showing)/i,
+    ];
+
+    const hasDashboardIntent = dashboardIntentPatterns.some(pattern => pattern.test(inputMessage));
+
+    if (hasDashboardIntent) {
+      // Handle dashboard creation flow
+      setLoading(true);
+      try {
+        const response = await apiService.createDashboardFromConversation(inputMessage);
+        const previewData = response.data;
+
+        setDashboardPreviewQuery(inputMessage);
+        setDashboardPreviewData(previewData);
+        setDashboardPreviewOpen(true);
+        setInputMessage('');
+      } catch (error) {
+        console.error('Dashboard creation preview error:', error);
+        // Fall through to regular query if dashboard creation fails
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const userMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -445,7 +485,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setLoading(true);
-    
+
     // Immediately scroll when user sends message
     setTimeout(scrollToBottom, 50);
 
@@ -463,9 +503,19 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         localStorage.setItem(`currentConversationId_${userId}`, actualConversationId);
       }
 
-      // Call API with conversation ID
-      console.log('Sending query:', inputMessage, 'with conversation ID:', actualConversationId);
-      const response = await apiService.executeQuery(inputMessage, { conversationId: actualConversationId });
+      // Call API with conversation ID and database selection
+      console.log('Sending query:', inputMessage, 'with conversation ID:', actualConversationId, 'to database:', selectedDatabase);
+      const queryOptions = {
+        conversationId: actualConversationId,
+        databaseType: selectedDatabase,
+      };
+
+      // Add multi-database support if enabled
+      if (multiDatabases && multiDatabases.length > 0) {
+        queryOptions.multiDatabases = multiDatabases;
+      }
+
+      const response = await apiService.executeQuery(inputMessage, queryOptions);
       const { data } = response;
       
       console.log('API Response:', data);
@@ -1991,7 +2041,12 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         overflow: 'hidden',
       }}>
         {/* Header */}
-        <Paper elevation={1} sx={{ p: 1.5, borderRadius: 0, position: 'relative', zIndex: 10, flexShrink: 0 }}>
+        <Box sx={{
+          p: 2,
+          borderBottom: '1px solid #e0e0e0',
+          bgcolor: '#fff',
+          flexShrink: 0,
+        }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {/* Left section */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -2008,10 +2063,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                 </IconButton>
               )}
               <Box>
-                <Typography variant="h5" fontWeight={600}>
+                <Typography variant="h6" fontWeight={600} color="#1A2332">
                   AXIS AI
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="#5A6677">
                   {mode === 'chat'
                     ? 'Ask Anything'
                     : 'Conduct comprehensive analysis with AI'}
@@ -2019,40 +2074,49 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               </Box>
             </Box>
           </Box>
-        </Paper>
+        </Box>
 
         {/* Conditional Content Based on Mode */}
         {console.log('Current mode:', mode)}
         {mode === 'chat' ? (
           <>
             {/* Sub-tabs for Chat Mode */}
-            <Paper sx={{ mx: 2, mt: 1 }}>
-              <Tabs 
-                value={viewMode} 
+            <Box sx={{ px: 2, bgcolor: '#fff', borderBottom: '1px solid #e0e0e0' }}>
+              <Tabs
+                value={viewMode}
                 onChange={(e, v) => setViewMode(v)}
-                sx={{ 
-                  borderBottom: 1, 
-                  borderColor: 'divider',
+                sx={{
                   '& .MuiTab-root': {
                     textTransform: 'none',
-                    minHeight: 48,
+                    minHeight: '48px',
+                    fontSize: '0.9rem',
+                    fontWeight: 400,
+                    color: '#5A6677',
+                    '&.Mui-selected': {
+                      color: '#0a6ed1',
+                      fontWeight: 500,
+                    }
+                  },
+                  '& .MuiTabs-indicator': {
+                    bgcolor: '#0a6ed1',
+                    height: 3,
                   }
                 }}
               >
-                <Tab 
-                  value="chat" 
-                  label="Chat" 
-                  icon={<ChatIcon sx={{ fontSize: 18 }} />} 
+                <Tab
+                  value="chat"
+                  label="Chat"
+                  icon={<ChatIcon sx={{ fontSize: 18 }} />}
                   iconPosition="start"
                 />
-                <Tab 
-                  value="history" 
-                  label="Execution History" 
-                  icon={<HistoryIcon sx={{ fontSize: 18 }} />} 
+                <Tab
+                  value="history"
+                  label="Execution History"
+                  icon={<HistoryIcon sx={{ fontSize: 18 }} />}
                   iconPosition="start"
                 />
               </Tabs>
-            </Paper>
+            </Box>
 
             {/* Chat View */}
             {viewMode === 'chat' ? (
@@ -2184,6 +2248,18 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         {/* Input Area - Fixed */}
         <Paper elevation={3} sx={{ p: 2, borderRadius: 0, flexShrink: 0 }}>
           <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+            {/* Database Selector */}
+            <Box sx={{ mb: 2 }}>
+              <DatabaseSelector
+                value={selectedDatabase}
+                onChange={(db) => setSelectedDatabase(db)}
+                onMultiSelect={(databases) => setMultiDatabases(databases)}
+                showMultiSelect={true}
+                showAddNew={true}
+                size="small"
+              />
+            </Box>
+
             <Stack direction="row" spacing={2}>
               <TextField
                 fullWidth
@@ -2432,6 +2508,26 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, researchMessage]);
+          }
+        }}
+      />
+
+      {/* Dashboard Creation Preview from Chat */}
+      <DashboardCreationPreview
+        open={dashboardPreviewOpen}
+        onClose={() => {
+          setDashboardPreviewOpen(false);
+          setDashboardPreviewData(null);
+        }}
+        previewData={dashboardPreviewData}
+        originalQuery={dashboardPreviewQuery}
+        onRefresh={async () => {
+          // Regenerate the preview
+          try {
+            const response = await apiService.createDashboardFromConversation(dashboardPreviewQuery);
+            setDashboardPreviewData(response.data);
+          } catch (error) {
+            console.error('Failed to refresh dashboard preview:', error);
           }
         }}
       />

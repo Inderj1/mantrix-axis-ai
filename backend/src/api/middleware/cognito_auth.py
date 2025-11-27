@@ -71,7 +71,7 @@ class CognitoAuth:
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
 
             # Decode and verify the token
-            # Cognito access tokens use "client_id" claim instead of "aud"
+            # Support both ID tokens (aud claim) and access tokens (client_id claim)
             decoded = jwt.decode(
                 token,
                 signing_key.key,
@@ -79,23 +79,33 @@ class CognitoAuth:
                 options={
                     "verify_signature": True,
                     "verify_exp": True,
-                    "verify_aud": False  # Access tokens don't have aud claim
+                    "verify_aud": False  # We verify aud/client_id manually below
                 }
             )
 
-            # Verify token_use claim
-            if decoded.get("token_use") != "access":
+            # Verify token_use claim - accept both "id" and "access" tokens
+            token_use = decoded.get("token_use")
+            if token_use not in ("id", "access"):
                 raise HTTPException(
                     status_code=401,
-                    detail="Invalid token type. Expected access token."
+                    detail=f"Invalid token type: {token_use}. Expected 'id' or 'access' token."
                 )
 
-            # Verify client_id (access tokens use client_id instead of aud)
-            if decoded.get("client_id") != self.app_client_id:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"Invalid client_id. Expected {self.app_client_id}"
-                )
+            # Verify client/audience based on token type
+            # - ID tokens use "aud" claim
+            # - Access tokens use "client_id" claim
+            if token_use == "id":
+                if decoded.get("aud") != self.app_client_id:
+                    raise HTTPException(
+                        status_code=401,
+                        detail=f"Invalid audience. Expected {self.app_client_id}"
+                    )
+            else:  # access token
+                if decoded.get("client_id") != self.app_client_id:
+                    raise HTTPException(
+                        status_code=401,
+                        detail=f"Invalid client_id. Expected {self.app_client_id}"
+                    )
 
             return decoded
 
@@ -141,7 +151,9 @@ class CognitoAuth:
                 - organization_id: Organization ID (from custom attributes)
         """
         user_id = token_payload.get("sub")
-        username = token_payload.get("username")
+        # ID tokens use "cognito:username", access tokens use "username"
+        username = token_payload.get("cognito:username") or token_payload.get("username")
+        # Email is only in ID tokens
         email = token_payload.get("email")
 
         # Extract Cognito groups

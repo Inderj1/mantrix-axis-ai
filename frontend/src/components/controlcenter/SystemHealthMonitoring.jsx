@@ -126,9 +126,13 @@ const SystemHealthMonitoring = () => {
 
       if (data.success && data.history) {
         setMetricsData(data.history);
+      } else if (data.message) {
+        // No data available yet
+        setMetricsData([]);
       }
     } catch (err) {
       console.error('Error fetching metrics history:', err);
+      setMetricsData([]);
     }
   };
 
@@ -483,30 +487,39 @@ const SystemHealthMonitoring = () => {
               System Performance
             </Typography>
             <Box sx={{ height: 300, mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={metricsData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
-                  <XAxis dataKey="time" fontSize={12} />
-                  <YAxis fontSize={12} />
-                  <ChartTooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="cpu"
-                    stroke={theme.palette.primary.main}
-                    strokeWidth={2}
-                    name="CPU %"
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="memory"
-                    stroke={theme.palette.secondary.main}
-                    strokeWidth={2}
-                    name="Memory %"
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {metricsData.length === 0 ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <Alert severity="info" sx={{ width: '100%' }}>
+                    <AlertTitle>No Metrics Data Available</AlertTitle>
+                    Metrics collection will begin shortly. Refresh to see updated data.
+                  </Alert>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={metricsData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
+                    <XAxis dataKey="time" fontSize={12} />
+                    <YAxis fontSize={12} />
+                    <ChartTooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="cpu"
+                      stroke={theme.palette.primary.main}
+                      strokeWidth={2}
+                      name="CPU %"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="memory"
+                      stroke={theme.palette.secondary.main}
+                      strokeWidth={2}
+                      name="Memory %"
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </Box>
           </Paper>
         </Grid>
@@ -517,30 +530,39 @@ const SystemHealthMonitoring = () => {
               Request Volume & Latency
             </Typography>
             <Box sx={{ height: 300, mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={metricsData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
-                  <XAxis dataKey="time" fontSize={12} />
-                  <YAxis fontSize={12} />
-                  <ChartTooltip />
-                  <Area
-                    type="monotone"
-                    dataKey="requests"
-                    stroke={theme.palette.success.main}
-                    fill={alpha(theme.palette.success.main, 0.2)}
-                    strokeWidth={2}
-                    name="Requests/min"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="latency"
-                    stroke={theme.palette.warning.main}
-                    fill={alpha(theme.palette.warning.main, 0.2)}
-                    strokeWidth={2}
-                    name="Latency (ms)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {metricsData.length === 0 ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <Alert severity="info" sx={{ width: '100%' }}>
+                    <AlertTitle>No Metrics Data Available</AlertTitle>
+                    Metrics collection will begin shortly. Refresh to see updated data.
+                  </Alert>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={metricsData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
+                    <XAxis dataKey="time" fontSize={12} />
+                    <YAxis fontSize={12} />
+                    <ChartTooltip />
+                    <Area
+                      type="monotone"
+                      dataKey="requests"
+                      stroke={theme.palette.success.main}
+                      fill={alpha(theme.palette.success.main, 0.2)}
+                      strokeWidth={2}
+                      name="Requests/min"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="latency"
+                      stroke={theme.palette.warning.main}
+                      fill={alpha(theme.palette.warning.main, 0.2)}
+                      strokeWidth={2}
+                      name="Latency (ms)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </Box>
           </Paper>
         </Grid>

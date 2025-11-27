@@ -1,14 +1,17 @@
 """
 Redis-based caching for Jena RDF graphs.
 Uses the existing Redis instance for shared caching across processes.
+
+Optimized with gzip compression and turtle format for reduced memory usage
+and faster serialization/deserialization.
 """
 
 import os
+import gzip
 import structlog
 import hashlib
-import json
 from typing import Optional
-from rdflib import Graph, Namespace, Literal, URIRef
+from rdflib import Graph, Namespace
 from rdflib.plugins.stores.memory import Memory
 from pathlib import Path
 import redis
@@ -48,13 +51,48 @@ class JenaRedisStore:
             return hashlib.md5(f.read()).hexdigest()
     
     def _serialize_graph(self, graph: Graph) -> bytes:
-        """Serialize graph to N-Triples format for Redis storage."""
-        return graph.serialize(format='nt').encode('utf-8')
-    
+        """
+        Serialize graph to gzip-compressed turtle format for Redis storage.
+
+        Turtle is more compact than N-Triples, and gzip compression
+        typically achieves 5-10x size reduction for RDF data.
+        """
+        # Serialize to turtle (more compact than N-Triples)
+        turtle_data = graph.serialize(format='turtle')
+
+        # Compress with gzip
+        compressed = gzip.compress(turtle_data.encode('utf-8'), compresslevel=6)
+
+        logger.debug(
+            "Serialized graph",
+            original_size=len(turtle_data),
+            compressed_size=len(compressed),
+            compression_ratio=f"{len(turtle_data) / len(compressed):.1f}x"
+        )
+
+        return compressed
+
     def _deserialize_graph(self, data: bytes) -> Graph:
-        """Deserialize graph from N-Triples format."""
+        """Deserialize graph from gzip-compressed turtle format."""
+        # Decompress
+        try:
+            decompressed = gzip.decompress(data)
+            turtle_data = decompressed.decode('utf-8')
+        except gzip.BadGzipFile:
+            # Fallback for legacy uncompressed data (N-Triples format)
+            logger.warning("Found uncompressed cache data, falling back to N-Triples")
+            turtle_data = data.decode('utf-8')
+            # Re-save in compressed format on next write
+            return self._deserialize_legacy_nt(turtle_data)
+
         g = Graph(store=Memory())
-        g.parse(data=data.decode('utf-8'), format='nt')
+        g.parse(data=turtle_data, format='turtle')
+        return g
+
+    def _deserialize_legacy_nt(self, data: str) -> Graph:
+        """Deserialize legacy N-Triples format for backwards compatibility."""
+        g = Graph(store=Memory())
+        g.parse(data=data, format='nt')
         return g
     
     def _load_from_redis(self) -> bool:
@@ -92,22 +130,27 @@ class JenaRedisStore:
             return False
     
     def _save_to_redis(self):
-        """Save graph to Redis cache."""
+        """Save graph to Redis cache with gzip compression."""
         try:
-            # Serialize graph
+            # Serialize graph (now with gzip compression)
             serialized = self._serialize_graph(self.graph)
-            
+
             # Save to Redis with TTL
             self.redis.setex(self.cache_key, self.cache_ttl, serialized)
-            
+
             # Save TTL file hash
             ttl_path = Path(self.ttl_file)
             if ttl_path.exists():
                 current_hash = self._get_file_hash(ttl_path)
                 self.redis.setex(self.hash_key, self.cache_ttl, current_hash)
-            
-            logger.info(f"Saved RDF graph to Redis cache ({len(serialized)} bytes)")
-            
+
+            logger.info(
+                "Saved RDF graph to Redis cache",
+                compressed_bytes=len(serialized),
+                triples=len(self.graph),
+                format="turtle+gzip"
+            )
+
         except Exception as e:
             logger.warning(f"Failed to save to Redis cache: {e}")
     
@@ -150,21 +193,28 @@ class JenaRedisStore:
             logger.warning(f"Failed to clear Redis cache: {e}")
     
     def get_cache_info(self) -> dict:
-        """Get cache information."""
+        """Get cache information including compression details."""
         try:
             cache_exists = bool(self.redis.exists(self.cache_key))
             cache_size = self.redis.memory_usage(self.cache_key) if cache_exists else 0
             ttl = self.redis.ttl(self.cache_key) if cache_exists else 0
-            
+
+            # Get raw data size for compression ratio calculation
+            raw_data = self.redis.get(self.cache_key) if cache_exists else None
+            compressed_size = len(raw_data) if raw_data else 0
+
             return {
                 "exists": cache_exists,
                 "size_bytes": cache_size,
+                "compressed_size_bytes": compressed_size,
                 "ttl_seconds": ttl,
-                "triples_count": len(self.graph) if self.graph else 0
+                "triples_count": len(self.graph) if self.graph else 0,
+                "format": "turtle+gzip",
+                "cache_key": self.cache_key
             }
         except Exception as e:
             logger.warning(f"Failed to get cache info: {e}")
-            return {}
+            return {"error": str(e)}
 
 
 # Global singleton instance with Redis

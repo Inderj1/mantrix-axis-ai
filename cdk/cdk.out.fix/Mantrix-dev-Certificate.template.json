@@ -1,0 +1,100 @@
+{
+ "Description": "Mantrix Axis AI - SSL Certificate (ACM)",
+ "Resources": {
+  "Certificate4E7ABB08": {
+   "Type": "AWS::CertificateManager::Certificate",
+   "Properties": {
+    "DomainName": "axis-dev.cloudmantra.ai",
+    "DomainValidationOptions": [
+     {
+      "DomainName": "axis-dev.cloudmantra.ai",
+      "HostedZoneId": "Z0436109NKVO9GB2ZM67"
+     }
+    ],
+    "SubjectAlternativeNames": [
+     "*.axis-dev.cloudmantra.ai"
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-cert"
+     }
+    ],
+    "ValidationMethod": "DNS"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Certificate/Certificate/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/03IQQ6CQAxA0bOwn6mT7lxzABM8gKmlmIIMZtqBBeHuxrjQ1c/7CIhnSA1tFrmf4lPvsF+deAqd2FILS6DNbizFdVAml5kyPaTA3v5eaIf8x+PjS/VX9SPkpRcY7bQiAiZIzWiqsdTsOgt0374BpT4wKogAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Certificate/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "CertificateArn": {
+   "Description": "ACM Certificate ARN",
+   "Value": {
+    "Ref": "Certificate4E7ABB08"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Certificate-CertificateArn"
+   }
+  },
+  "DomainName": {
+   "Description": "Full domain name",
+   "Value": "axis-dev.cloudmantra.ai"
+  },
+  "HostedZoneId": {
+   "Description": "Route 53 Hosted Zone ID",
+   "Value": "Z0436109NKVO9GB2ZM67"
+  },
+  "ExportsOutputRefCertificate4E7ABB08F7C8AF50": {
+   "Value": {
+    "Ref": "Certificate4E7ABB08"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Certificate:ExportsOutputRefCertificate4E7ABB08F7C8AF50"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

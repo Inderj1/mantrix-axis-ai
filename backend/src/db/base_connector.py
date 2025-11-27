@@ -3,9 +3,11 @@ Base Database Connector
 
 Abstract base class that defines the interface for all database connectors.
 All database-specific clients (BigQuery, Snowflake, PostgreSQL, etc.) must implement this interface.
+
+Supports both batch and streaming query execution for cross-database federation.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterator, Iterator
 from .database_capabilities import DatabaseCapabilities
 
 
@@ -74,6 +76,129 @@ class BaseDatabaseConnector(ABC):
             TimeoutError: If query exceeds timeout
         """
         pass
+
+    def execute_query_streaming(
+        self,
+        query: str,
+        parameters: Optional[Dict[str, Any]] = None,
+        chunk_size: int = 10000,
+        **kwargs
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Execute a SQL query and yield results in chunks (streaming mode).
+
+        This is useful for large result sets that don't fit in memory,
+        particularly for cross-database federation operations.
+
+        Default implementation uses pagination via execute_query.
+        Subclasses can override for native streaming support.
+
+        Args:
+            query: SQL query string to execute
+            parameters: Optional query parameters for parameterized queries
+            chunk_size: Number of rows per chunk (default: 10000)
+            **kwargs: Additional database-specific options
+
+        Yields:
+            Dictionary containing:
+                - rows: List of result rows for this chunk
+                - chunk_number: Current chunk number (0-indexed)
+                - total_fetched: Total rows fetched so far
+                - has_more: Boolean indicating if more chunks available
+                - metadata: Chunk metadata
+
+        Raises:
+            QueryExecutionError: If query execution fails
+        """
+        offset = 0
+        chunk_number = 0
+        total_fetched = 0
+
+        while True:
+            # Execute paginated query
+            result = self.execute_query(
+                query,
+                parameters=parameters,
+                limit=chunk_size,
+                offset=offset,
+                **kwargs
+            )
+
+            rows = result.get('rows', [])
+            if not rows:
+                break
+
+            total_fetched += len(rows)
+            has_more = len(rows) == chunk_size  # Assume more if we got full chunk
+
+            yield {
+                'rows': rows,
+                'chunk_number': chunk_number,
+                'total_fetched': total_fetched,
+                'has_more': has_more,
+                'metadata': result.get('metadata', {})
+            }
+
+            if len(rows) < chunk_size:
+                # Got fewer rows than requested, we're done
+                break
+
+            offset += chunk_size
+            chunk_number += 1
+
+    async def execute_query_streaming_async(
+        self,
+        query: str,
+        parameters: Optional[Dict[str, Any]] = None,
+        chunk_size: int = 10000,
+        **kwargs
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Async version of execute_query_streaming.
+
+        Default implementation wraps the sync iterator.
+        Subclasses can override for native async streaming support.
+
+        Args:
+            query: SQL query string to execute
+            parameters: Optional query parameters
+            chunk_size: Number of rows per chunk
+            **kwargs: Additional options
+
+        Yields:
+            Same format as execute_query_streaming
+        """
+        import asyncio
+
+        # Run sync streaming in executor
+        loop = asyncio.get_event_loop()
+
+        # Create sync iterator
+        sync_iter = self.execute_query_streaming(
+            query, parameters, chunk_size, **kwargs
+        )
+
+        # Yield chunks asynchronously
+        for chunk in sync_iter:
+            yield chunk
+            # Allow other tasks to run
+            await asyncio.sleep(0)
+
+    def estimate_row_count(self, query: str) -> Optional[int]:
+        """
+        Estimate the number of rows a query will return.
+
+        Useful for federation strategy selection (pandas vs cloud-native).
+        Default implementation returns None (unknown).
+        Subclasses can override with EXPLAIN-based estimation.
+
+        Args:
+            query: SQL query to estimate
+
+        Returns:
+            Estimated row count, or None if estimation not supported
+        """
+        return None
 
     @abstractmethod
     def get_table_schema(self, table_name: str, schema: Optional[str] = None) -> Dict[str, Any]:

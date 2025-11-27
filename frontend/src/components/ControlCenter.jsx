@@ -22,6 +22,7 @@ import {
   Error as ErrorIcon,
   Refresh as RefreshIcon,
   CloudSync as CloudSyncIcon,
+  Hub as HubIcon,
 } from '@mui/icons-material';
 
 // Import the components
@@ -42,42 +43,36 @@ const ControlCenter = ({ apiHealth, onRefreshStatus }) => {
       icon: <StorageIcon />,
       component: <DataSourcesConnections />,
       status: 'healthy',
-      badge: '9 Active',
     },
     {
       label: 'System Health',
       icon: <MonitorIcon />,
       component: <SystemHealthMonitoring />,
       status: 'healthy',
-      badge: '99.9%',
     },
     {
       label: 'Pipeline',
       icon: <CloudSyncIcon />,
       component: <PipelineManagement />,
       status: 'healthy',
-      badge: 'Daily',
     },
     {
       label: 'Settings',
       icon: <SettingsIcon />,
       component: <PlatformSettings />,
       status: 'healthy',
-      badge: 'Config',
     },
     {
       label: 'AI Persona',
       icon: <PersonaIcon />,
       component: <UserProfileManager />,
       status: 'healthy',
-      badge: 'Profile',
     },
     {
       label: 'COMMS Config',
       icon: <SettingsIcon />,
       component: <CommsConfig />,
       status: 'healthy',
-      badge: 'Comms',
     },
   ];
 

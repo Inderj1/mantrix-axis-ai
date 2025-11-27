@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "DeploymentSize",
+    "ParameterValue": "Small"
+  },
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "CreateNewVpc",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "AnthropicApiKey",
+    "ParameterValue": "YOUR_ANTHROPIC_API_KEY"
+  },
+  {
+    "ParameterKey": "OpenAIApiKey",
+    "ParameterValue": "YOUR_OPENAI_API_KEY"
+  },
+  {
+    "ParameterKey": "GCPCredentialsJson",
+    "ParameterValue": "{\"type\":\"service_account\",\"project_id\":\"YOUR_PROJECT\"}"
+  }
+]

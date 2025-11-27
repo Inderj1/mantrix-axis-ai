@@ -1,0 +1,21 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "748b630be45d166a38f8273f4f9604580c27963f67e3f78ec2da108c390d65ee": {
+      "displayName": "Mantrix-dev-Certificate Template",
+      "source": {
+        "path": "Mantrix-dev-Certificate.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "709141244278-us-east-1-034d144e": {
+          "bucketName": "cdk-hnb659fds-assets-709141244278-us-east-1",
+          "objectKey": "748b630be45d166a38f8273f4f9604580c27963f67e3f78ec2da108c390d65ee.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::709141244278:role/cdk-hnb659fds-file-publishing-role-709141244278-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

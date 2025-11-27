@@ -62,10 +62,83 @@ cd frontend && npm run lint
 ```bash
 docker-compose up -d                                       # Start all services
 docker-compose up -d mongodb neo4j weaviate redis postgres # Start specific services
+docker-compose up -d postgres-external                     # Start external test PostgreSQL database
 docker-compose down                                        # Stop all services
 docker-compose logs -f [service-name]                      # View logs
 docker-compose ps                                          # Check service health
 ```
+
+### External PostgreSQL Test Database
+
+A pre-configured PostgreSQL database with SAP-style test data is available for testing the PostgreSQL connector and multi-database query capabilities.
+
+**Quick Start:**
+
+```bash
+# Start the external test database
+docker-compose up -d postgres-external
+
+# Verify database is loaded
+cd backend
+source venv/bin/activate
+python test_external_postgres_connector.py
+
+# Access the database directly (optional)
+psql -h localhost -p 5434 -U test_user -d sap_test_db
+# Password: test_password
+```
+
+**Database Details:**
+- **Host**: `localhost` (from host) or `postgres-external` (from Docker network)
+- **Port**: `5434`
+- **Database**: `sap_test_db`
+- **User**: `test_user`
+- **Password**: `test_password`
+- **Schema**: `supply_chain`
+
+**Test Data:**
+- 500 customers with leading zero IDs (e.g., `0000001234`)
+- 50 materials/products
+- 5,000 sales orders (2022-2024)
+- 10,000+ order line items
+- Pre-built views for analytics
+- RFM customer segmentation
+- ABC classification
+
+**Connecting via UI:**
+
+1. Navigate to: **Database Configuration** (Admin → Database Connectors)
+2. Click **Add Connection**
+3. Fill in details:
+   - Connection Name: `SAP Test Database`
+   - Database Type: `PostgreSQL`
+   - Host: `localhost` (or `postgres-external` from Docker)
+   - Port: `5434`
+   - Database: `sap_test_db`
+   - User: `test_user`
+   - Password: `test_password`
+   - Schema: `supply_chain`
+4. Click **Test Connection**
+5. Click **Add** to save
+6. Toggle **Enable for Chat** to use in NLP queries
+
+**Sample Test Queries:**
+- "Show me the top 10 customers by revenue"
+- "Which materials have the highest gross margin?"
+- "What are the monthly sales trends for 2024?"
+- "Find customers in the 'At Risk' RFM segment"
+- "Show me revenue by country"
+- "Which products are selling the most in Q4 2024?"
+
+**Testing Leading Zero Normalization:**
+- Customer IDs use SAP-style leading zeros (`0000001234`)
+- Tests FormatNormalizer functionality
+- Validates automatic `LTRIM(column, '0')` transformations
+
+**Files:**
+- Schema & Data: `backend/tests/fixtures/sap_supply_chain_init.sql`
+- Test Script: `backend/test_external_postgres_connector.py`
+- Docker Service: `docker-compose.yml` (`postgres-external`)
 
 ## Architecture
 

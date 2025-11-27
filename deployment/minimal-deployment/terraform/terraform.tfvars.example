@@ -1,0 +1,46 @@
+# Mantrix Axis AI - Terraform Variables
+# Copy this file to terraform.tfvars and customize values
+
+# AWS Configuration
+aws_region  = "us-east-1"
+environment = "minimal"
+
+# Project naming
+project_name = "mantrix"
+
+# Network Configuration
+vpc_cidr             = "10.0.0.0/16"
+private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
+public_subnet_cidrs  = ["10.0.101.0/24", "10.0.102.0/24"]
+
+# RDS Configuration (Minimal for testing)
+rds_instance_class    = "db.t3.micro"  # Smallest instance
+rds_allocated_storage = 20             # Minimum storage
+rds_database_name     = "mantrix_madison"
+rds_username          = "mantrix"
+
+# ElastiCache Configuration (Minimal for testing)
+redis_node_type       = "cache.t3.micro"  # Smallest instance
+redis_num_cache_nodes = 1                 # Single node
+
+# ECS Configuration (Minimal for testing)
+backend_cpu           = 512   # 0.5 vCPU
+backend_memory        = 1024  # 1 GB
+backend_desired_count = 1     # Single instance
+
+frontend_cpu           = 256  # 0.25 vCPU
+frontend_memory        = 512  # 512 MB
+frontend_desired_count = 1    # Single instance
+
+# Secrets Manager ARNs (create these separately)
+# anthropic_api_key_arn  = "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:mantrix/anthropic-key"
+# openai_api_key_arn     = "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:mantrix/openai-key"
+# cognito_pool_id_arn    = "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:mantrix/cognito-pool-id"
+# cognito_client_id_arn  = "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:mantrix/cognito-client-id"
+
+# Additional tags
+additional_tags = {
+  Owner       = "Engineering"
+  CostCenter  = "Development"
+  Terraform   = "true"
+}

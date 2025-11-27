@@ -14,10 +14,31 @@ import { sapChartColors } from '../themes/sapFioriTheme';
  *
  * Automatically selects the best chart type for the data and displays it with
  * rich contextual information including data insights and statistics.
+ *
+ * Props:
+ * - data: Array of objects to visualize
+ * - title: Chart title
+ * - chartType: Override chart type (optional)
+ * - enableCrossFilter: Enable cross-chart filtering on click (default: false)
+ * - onClick: Callback when chart element is clicked (for cross-filtering)
+ * - dimensions: Array of dimension column names (from backend intelligence)
+ * - measures: Array of measure column names (from backend intelligence)
+ * - drillPaths: Array of drill-down paths (e.g., [['country', 'region', 'city']])
+ * - onDrillDown: Callback when drill-down is triggered (dimension, value)
  */
-const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
+const PlotlyVisualization = ({
+  data,
+  title = 'Data Visualization',
+  chartType: propChartType,
+  enableCrossFilter = false,
+  onClick,
+  dimensions,
+  measures,
+  drillPaths,
+  onDrillDown
+}) => {
   const theme = useTheme();
-  const [selectedChartType, setSelectedChartType] = useState('auto');
+  const [selectedChartType, setSelectedChartType] = useState(propChartType || 'auto');
 
   // Analyze data and select best visualization
   const analysis = useMemo(() => analyzeData(data, theme, selectedChartType), [data, theme, selectedChartType]);
@@ -39,6 +60,27 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
   }
 
   const { chartType, traces, layout, insights, statistics } = analysis;
+
+  // Handle chart click for cross-filtering
+  const handlePlotClick = (event) => {
+    if (!event.points || event.points.length === 0) return;
+
+    const point = event.points[0];
+
+    // Extract dimension and value from the clicked point
+    const dimension = dimensions?.[0] || analysis.labelColumn || 'value';
+    const value = point.x || point.label || point.text || point.y;
+
+    // Call onClick callback if provided (for cross-filtering)
+    if (onClick) {
+      onClick(event);
+    }
+
+    // Trigger drill-down if enabled and paths available
+    if (onDrillDown && drillPaths?.length > 0) {
+      onDrillDown(dimension, value);
+    }
+  };
 
   return (
     <Paper
@@ -152,7 +194,7 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
         </Box>
 
         {/* Center - Chart */}
-        <Box sx={{ minHeight: 500 }}>
+        <Box sx={{ minHeight: 500, cursor: enableCrossFilter ? 'pointer' : 'default' }}>
           <Plot
             data={traces}
             layout={{
@@ -173,6 +215,7 @@ const PlotlyVisualization = ({ data, title = 'Data Visualization' }) => {
                 orientation: 'h'
               }
             }}
+            onClick={enableCrossFilter ? handlePlotClick : undefined}
             config={{
               responsive: true,
               displayModeBar: true,

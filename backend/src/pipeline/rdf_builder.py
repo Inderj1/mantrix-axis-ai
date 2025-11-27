@@ -190,12 +190,14 @@ class RDFBuilder:
         Convert TableSchemaSnapshot to RDF triples.
 
         Creates:
-        - fin:Table node for the table
+        - fin:Table node for the table (with org and database namespace)
         - schema:Column nodes for each column
         - Properties: name, type, description, row_count, etc.
         """
-        # Create table URI
-        table_uri = FIN[f"Table_{snapshot.table_name}"]
+        # Create table URI with organization and database namespacing
+        # Format: Table_{org_id}_{database_type}_{table_name}
+        org_id = snapshot.organization_id if hasattr(snapshot, 'organization_id') else 'default'
+        table_uri = FIN[f"Table_{org_id}_{snapshot.database_type}_{snapshot.table_name}"]
 
         # Table metadata
         self.graph.add((table_uri, RDF.type, FIN.Table))
@@ -203,6 +205,7 @@ class RDFBuilder:
         self.graph.add((table_uri, SCHEMA.dataset, Literal(snapshot.dataset)))
         self.graph.add((table_uri, SCHEMA.project, Literal(snapshot.project)))
         self.graph.add((table_uri, SCHEMA.databaseType, Literal(snapshot.database_type)))
+        self.graph.add((table_uri, SCHEMA.organizationId, Literal(org_id)))
 
         if snapshot.description:
             self.graph.add((table_uri, DCTERMS.description, Literal(snapshot.description)))
@@ -217,14 +220,16 @@ class RDFBuilder:
 
         # Add columns
         for col in snapshot.columns:
-            self._add_column_to_graph(table_uri, snapshot.table_name, col)
+            self._add_column_to_graph(table_uri, snapshot, col)
 
         logger.debug(f"Added table {snapshot.table_name} to RDF graph")
 
-    def _add_column_to_graph(self, table_uri: URIRef, table_name: str, column: Dict[str, Any]):
+    def _add_column_to_graph(self, table_uri: URIRef, snapshot: TableSchemaSnapshot, column: Dict[str, Any]):
         """Add column as RDF node connected to table"""
         col_name = column['name']
-        col_uri = FIN[f"Column_{table_name}_{col_name}"]
+        # Include organization and database in column URI
+        org_id = snapshot.organization_id if hasattr(snapshot, 'organization_id') else 'default'
+        col_uri = FIN[f"Column_{org_id}_{snapshot.database_type}_{snapshot.table_name}_{col_name}"]
 
         # Column metadata
         self.graph.add((col_uri, RDF.type, FIN.Column))
@@ -263,7 +268,9 @@ class RDFBuilder:
         - Table size indicators
         - Data freshness metrics
         """
-        table_uri = FIN[f"Table_{snapshot.table_name}"]
+        # Use namespaced URI with organization and database
+        org_id = snapshot.organization_id if hasattr(snapshot, 'organization_id') else 'default'
+        table_uri = FIN[f"Table_{org_id}_{snapshot.database_type}_{snapshot.table_name}"]
 
         # Row count bucket (for quick size assessment)
         row_bucket = self._get_row_bucket(snapshot.row_count)

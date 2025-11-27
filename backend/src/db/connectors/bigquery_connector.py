@@ -3,12 +3,19 @@ BigQuery Database Connector
 
 Implements the BaseDatabaseConnector interface for Google BigQuery.
 This is a refactored version of the original BigQueryClient that conforms to the generic connector pattern.
+
+Supports multiple authentication methods:
+- service_account: Traditional service account JSON key file
+- workload_identity: AWS/Azure/GCP Workload Identity Federation (keyless)
+- oauth: Google OAuth 2.0 user credentials
 """
 from typing import List, Dict, Any, Optional
 from google.cloud import bigquery
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.auth import default
 import json
+import os
 import re
 import structlog
 
@@ -24,6 +31,12 @@ from src.config import settings
 
 logger = structlog.get_logger()
 
+# Valid authentication methods
+AUTH_METHOD_SERVICE_ACCOUNT = "service_account"
+AUTH_METHOD_WORKLOAD_IDENTITY = "workload_identity"
+AUTH_METHOD_OAUTH = "oauth"
+VALID_AUTH_METHODS = [AUTH_METHOD_SERVICE_ACCOUNT, AUTH_METHOD_WORKLOAD_IDENTITY, AUTH_METHOD_OAUTH]
+
 
 class BigQueryConnector(BaseDatabaseConnector):
     """
@@ -31,15 +44,40 @@ class BigQueryConnector(BaseDatabaseConnector):
 
     Implements the BaseDatabaseConnector interface for BigQuery,
     providing query execution, schema introspection, and metadata operations.
+
+    Supports multiple authentication methods:
+    - service_account: Traditional JSON key file (via file path or JSON string)
+    - workload_identity: AWS/Azure Workload Identity Federation (keyless)
+    - oauth: Google OAuth 2.0 user credentials
     """
 
-    def __init__(self, project_id: Optional[str] = None, dataset_id: Optional[str] = None):
+    def __init__(
+        self,
+        project_id: Optional[str] = None,
+        dataset_id: Optional[str] = None,
+        auto_connect: bool = False,
+        # Authentication method selection
+        auth_method: str = AUTH_METHOD_SERVICE_ACCOUNT,
+        # Service account options (JSON string or file path)
+        credentials_json: Optional[str] = None,
+        # Workload Identity Federation options
+        wif_provider_resource_name: Optional[str] = None,
+        wif_service_account_email: Optional[str] = None,
+        # OAuth options
+        oauth_credentials: Optional[Dict[str, Any]] = None,
+    ):
         """
         Initialize BigQuery connector.
 
         Args:
             project_id: GCP project ID (defaults to settings.google_cloud_project)
             dataset_id: BigQuery dataset ID (defaults to settings.bigquery_dataset)
+            auto_connect: If True, connect immediately. If False, connect lazily on first use.
+            auth_method: Authentication method - 'service_account', 'workload_identity', or 'oauth'
+            credentials_json: Service account JSON as a string (alternative to file)
+            wif_provider_resource_name: WIF provider resource name (for workload_identity)
+            wif_service_account_email: Service account to impersonate (for workload_identity)
+            oauth_credentials: OAuth credentials dict with access_token, refresh_token, etc.
         """
         super().__init__()
         self.project_id = project_id or settings.google_cloud_project
@@ -47,66 +85,196 @@ class BigQueryConnector(BaseDatabaseConnector):
         self.client: Optional[bigquery.Client] = None
         self._capabilities = BIGQUERY_CAPABILITIES
 
-        # Auto-connect on initialization (matches original behavior)
-        self.connect()
+        # Authentication configuration
+        if auth_method not in VALID_AUTH_METHODS:
+            raise ValueError(f"Invalid auth_method '{auth_method}'. Must be one of: {VALID_AUTH_METHODS}")
+        self.auth_method = auth_method
+        self._credentials_json = credentials_json
+        self.wif_provider_resource_name = wif_provider_resource_name
+        self.wif_service_account_email = wif_service_account_email
+        self._oauth_credentials = oauth_credentials
+
+        # Only auto-connect if explicitly requested (lazy connection by default)
+        if auto_connect:
+            try:
+                self.connect()
+            except Exception as e:
+                logger.error(f"Failed to initialize BigQuery connector: {e}")
+                # Don't raise - allow service to start without BigQuery
 
     def connect(self) -> None:
         """
         Establish connection to BigQuery.
 
-        Initializes the BigQuery client using either service account credentials
-        or application default credentials.
+        Initializes the BigQuery client using the configured authentication method:
+        - service_account: JSON key file or string
+        - workload_identity: AWS/Azure WIF token exchange
+        - oauth: User OAuth credentials
 
         Raises:
             ConnectionError: If connection initialization fails
         """
         try:
-            if settings.google_application_credentials:
-                # Only try service account if file actually exists
-                import os
-                if os.path.exists(settings.google_application_credentials):
-                    # Check if it's a service account or user credentials file
-                    with open(settings.google_application_credentials, 'r') as f:
-                        cred_data = json.load(f)
-
-                    if cred_data.get('type') == 'service_account':
-                        # Service account credentials
-                        credentials = service_account.Credentials.from_service_account_file(
-                            settings.google_application_credentials
-                        )
-                        self.client = bigquery.Client(
-                            project=self.project_id,
-                            credentials=credentials
-                        )
-                        logger.info("BigQuery connector initialized with service account")
-                    else:
-                        # User credentials or other type - use default credentials
-                        credentials, project = default()
-                        self.client = bigquery.Client(
-                            project=self.project_id,
-                            credentials=credentials
-                        )
-                        logger.info("BigQuery connector initialized with application default credentials")
-                else:
-                    # Fall back to default credentials
-                    credentials, project = default()
-                    self.client = bigquery.Client(
-                        project=self.project_id,
-                        credentials=credentials
-                    )
-                    logger.info("BigQuery connector initialized with default credentials")
+            if self.auth_method == AUTH_METHOD_WORKLOAD_IDENTITY:
+                credentials = self._get_wif_credentials()
+                logger.info("BigQuery connector initialized with Workload Identity Federation")
+            elif self.auth_method == AUTH_METHOD_OAUTH:
+                credentials = self._get_oauth_credentials()
+                logger.info("BigQuery connector initialized with OAuth credentials")
             else:
-                # Use default credentials from gcloud
-                credentials, project = default()
-                self.client = bigquery.Client(
-                    project=self.project_id,
-                    credentials=credentials
-                )
-                logger.info("BigQuery connector initialized with default credentials")
+                # Default: service_account
+                credentials = self._get_service_account_credentials()
+
+            self.client = bigquery.Client(
+                project=self.project_id,
+                credentials=credentials
+            )
 
         except Exception as e:
             logger.error(f"Failed to initialize BigQuery connector: {e}")
             raise ConnectorConnectionError(f"Failed to connect to BigQuery: {e}")
+
+    def _get_service_account_credentials(self):
+        """
+        Get credentials from service account JSON (string or file).
+
+        Returns:
+            google.auth.credentials.Credentials object
+        """
+        # Option 1: JSON string passed directly (from UI/API)
+        if self._credentials_json:
+            try:
+                cred_info = json.loads(self._credentials_json)
+                credentials = service_account.Credentials.from_service_account_info(cred_info)
+                logger.info("Using service account credentials from JSON string")
+                return credentials
+            except json.JSONDecodeError as e:
+                raise ConnectorConnectionError(f"Invalid credentials JSON: {e}")
+
+        # Option 2: File path from environment variable
+        if settings.google_application_credentials:
+            if os.path.exists(settings.google_application_credentials):
+                with open(settings.google_application_credentials, 'r') as f:
+                    cred_data = json.load(f)
+
+                if cred_data.get('type') == 'service_account':
+                    credentials = service_account.Credentials.from_service_account_file(
+                        settings.google_application_credentials
+                    )
+                    logger.info("Using service account credentials from file")
+                    return credentials
+                else:
+                    # User credentials or other type - use default
+                    credentials, _ = default()
+                    logger.info("Using application default credentials (non-service-account file)")
+                    return credentials
+
+        # Option 3: Fall back to application default credentials
+        credentials, _ = default()
+        logger.info("Using application default credentials")
+        return credentials
+
+    def _get_wif_credentials(self):
+        """
+        Get credentials via Workload Identity Federation.
+
+        Uses AWS IAM credentials (from ECS task role) to exchange for GCP credentials
+        via the Security Token Service (STS).
+
+        Returns:
+            google.auth.credentials.Credentials object
+
+        Raises:
+            ConnectionError: If WIF configuration is incomplete
+        """
+        if not self.wif_provider_resource_name:
+            raise ConnectorConnectionError(
+                "Workload Identity Federation requires 'wif_provider_resource_name'"
+            )
+        if not self.wif_service_account_email:
+            raise ConnectorConnectionError(
+                "Workload Identity Federation requires 'wif_service_account_email'"
+            )
+
+        try:
+            # Import google.auth.aws for AWS credential exchange
+            from google.auth import aws as google_aws
+
+            # Build the external account configuration for AWS
+            # This uses the ECS container metadata endpoint to get AWS credentials
+            wif_config = {
+                "type": "external_account",
+                "audience": f"//iam.googleapis.com/{self.wif_provider_resource_name}",
+                "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+                "service_account_impersonation_url": (
+                    f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+                    f"{self.wif_service_account_email}:generateAccessToken"
+                ),
+                "token_url": "https://sts.googleapis.com/v1/token",
+                "credential_source": {
+                    "environment_id": "aws1",
+                    "region_url": "http://169.254.169.254/latest/meta-data/placement/region",
+                    "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials",
+                    "regional_cred_verification_url": (
+                        "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+                    )
+                }
+            }
+
+            credentials = google_aws.Credentials.from_info(wif_config)
+            logger.info(
+                f"WIF credentials created for service account: {self.wif_service_account_email}"
+            )
+            return credentials
+
+        except ImportError:
+            raise ConnectorConnectionError(
+                "Workload Identity Federation requires google-auth>=2.23.0"
+            )
+        except Exception as e:
+            raise ConnectorConnectionError(f"Failed to get WIF credentials: {e}")
+
+    def _get_oauth_credentials(self):
+        """
+        Get credentials from OAuth tokens.
+
+        Uses stored OAuth access/refresh tokens to create credentials.
+
+        Returns:
+            google.oauth2.credentials.Credentials object
+
+        Raises:
+            ConnectionError: If OAuth credentials are missing or invalid
+        """
+        if not self._oauth_credentials:
+            raise ConnectorConnectionError("OAuth auth method requires 'oauth_credentials'")
+
+        access_token = self._oauth_credentials.get('access_token')
+        refresh_token = self._oauth_credentials.get('refresh_token')
+        token_uri = self._oauth_credentials.get('token_uri', 'https://oauth2.googleapis.com/token')
+        client_id = self._oauth_credentials.get('client_id') or settings.google_oauth_client_id
+        client_secret = self._oauth_credentials.get('client_secret') or settings.google_oauth_client_secret
+
+        if not access_token:
+            raise ConnectorConnectionError("OAuth credentials missing 'access_token'")
+
+        try:
+            credentials = OAuthCredentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri=token_uri,
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=[
+                    'https://www.googleapis.com/auth/bigquery',
+                    'https://www.googleapis.com/auth/cloud-platform.read-only'
+                ]
+            )
+            logger.info("Using OAuth credentials for BigQuery")
+            return credentials
+
+        except Exception as e:
+            raise ConnectorConnectionError(f"Failed to create OAuth credentials: {e}")
 
     def disconnect(self) -> None:
         """

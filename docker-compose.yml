@@ -43,13 +43,28 @@ services:
       POSTGRES_USER: mantrix
       POSTGRES_PASSWORD: mantrix123
       POSTGRES_DATABASE: mantrix_madison
-      
+
+      # AWS Cognito Configuration
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID}
+      COGNITO_ADMIN_GROUP: ${COGNITO_ADMIN_GROUP:-Admins}
+
+      # AWS Credentials (for Cognito admin operations)
+      # Use AWS_PROFILE for SSO, or individual credentials for non-SSO
+      AWS_PROFILE: ${AWS_PROFILE:-cloudmantra-admin}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ./query_logs:/app/query_logs
       - ./logs:/app/logs
       - ${GOOGLE_APPLICATION_CREDENTIALS:-./credentials/gcp-key.json}:/app/credentials/gcp-key.json:ro
+      # Mount AWS credentials for SSO (read-only)
+      - ~/.aws:/root/.aws:ro
     depends_on:
       - weaviate
       - redis
@@ -146,7 +161,7 @@ services:
       timeout: 10s
       retries: 5
 
-  # PostgreSQL Database for Mantrix Madison App
+  # PostgreSQL Database for Mantrix Madison App (Internal)
   postgres:
     image: postgres:16
     ports:
@@ -161,6 +176,26 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mantrix -d mantrix_madison"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # External PostgreSQL Test Database (for connector testing)
+  postgres-external:
+    image: postgres:16
+    container_name: mantrix-postgres-external
+    ports:
+      - "5434:5432"  # External port 5434 for test database
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: sap_test_db
+    volumes:
+      - postgres_external_data:/var/lib/postgresql/data
+      - ./backend/tests/fixtures/sap_supply_chain_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d sap_test_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -196,6 +231,8 @@ volumes:
   neo4j_plugins:
     driver: local
   postgres_data:
+    driver: local
+  postgres_external_data:
     driver: local
 
 networks:

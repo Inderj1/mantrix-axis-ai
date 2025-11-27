@@ -9,24 +9,30 @@ logger = structlog.get_logger()
 
 
 # Type compatibility matrix for BigQuery types
+# Format: (source_type, target_type): (cast_template, apply_to_source)
+# - cast_template: SQL cast expression with {col} placeholder
+# - apply_to_source: True = cast source column, False = cast target column
 TYPE_COMPATIBILITY = {
-    # (source_type, target_type): cast_function
-    ('STRING', 'INTEGER'): 'CAST({col} AS STRING)',
-    ('STRING', 'INT64'): 'CAST({col} AS STRING)',
-    ('INTEGER', 'STRING'): 'SAFE_CAST({col} AS INT64)',  # SAFE_CAST handles nulls
-    ('INT64', 'STRING'): 'SAFE_CAST({col} AS INT64)',
-    ('STRING', 'FLOAT64'): 'CAST({col} AS STRING)',
-    ('FLOAT64', 'STRING'): 'SAFE_CAST({col} AS FLOAT64)',
-    ('INTEGER', 'FLOAT64'): 'CAST({col} AS FLOAT64)',
-    ('INT64', 'FLOAT64'): 'CAST({col} AS FLOAT64)',
-    ('FLOAT64', 'INTEGER'): 'CAST({col} AS INT64)',
-    ('FLOAT64', 'INT64'): 'CAST({col} AS INT64)',
-    ('DATE', 'TIMESTAMP'): 'CAST({col} AS TIMESTAMP)',
-    ('TIMESTAMP', 'DATE'): 'DATE({col})',
-    ('DATE', 'STRING'): 'CAST({col} AS STRING)',
-    ('STRING', 'DATE'): 'SAFE_CAST({col} AS DATE)',
-    ('TIMESTAMP', 'STRING'): 'CAST({col} AS STRING)',
-    ('STRING', 'TIMESTAMP'): 'SAFE_CAST({col} AS TIMESTAMP)',
+    # String <-> Numeric: prefer casting STRING to numeric (better for indexed columns)
+    ('STRING', 'INTEGER'): ('SAFE_CAST({col} AS INT64)', True),   # Cast STRING source to INT64
+    ('STRING', 'INT64'): ('SAFE_CAST({col} AS INT64)', True),     # Cast STRING source to INT64
+    ('INTEGER', 'STRING'): ('SAFE_CAST({col} AS INT64)', False),  # Cast STRING target to INT64
+    ('INT64', 'STRING'): ('SAFE_CAST({col} AS INT64)', False),    # Cast STRING target to INT64
+    # String <-> Float
+    ('STRING', 'FLOAT64'): ('SAFE_CAST({col} AS FLOAT64)', True),   # Cast STRING source to FLOAT64
+    ('FLOAT64', 'STRING'): ('SAFE_CAST({col} AS FLOAT64)', False),  # Cast STRING target to FLOAT64
+    # Numeric conversions (lossless)
+    ('INTEGER', 'FLOAT64'): ('CAST({col} AS FLOAT64)', True),
+    ('INT64', 'FLOAT64'): ('CAST({col} AS FLOAT64)', True),
+    ('FLOAT64', 'INTEGER'): ('CAST({col} AS INT64)', True),
+    ('FLOAT64', 'INT64'): ('CAST({col} AS INT64)', True),
+    # Date/Time conversions
+    ('DATE', 'TIMESTAMP'): ('CAST({col} AS TIMESTAMP)', True),
+    ('TIMESTAMP', 'DATE'): ('DATE({col})', True),
+    ('DATE', 'STRING'): ('CAST({col} AS STRING)', True),
+    ('STRING', 'DATE'): ('SAFE_CAST({col} AS DATE)', True),
+    ('TIMESTAMP', 'STRING'): ('CAST({col} AS STRING)', True),
+    ('STRING', 'TIMESTAMP'): ('SAFE_CAST({col} AS TIMESTAMP)', True),
 }
 
 
@@ -91,15 +97,24 @@ class EnhancedColumnMatcher:
         if type1 == type2:
             return True, None, None
 
-        # Check forward direction
-        cast_template = TYPE_COMPATIBILITY.get((type1, type2))
-        if cast_template:
-            return True, None, cast_template
+        # Check forward direction (source=type1, target=type2)
+        compat_info = TYPE_COMPATIBILITY.get((type1, type2))
+        if compat_info:
+            cast_template, apply_to_source = compat_info
+            if apply_to_source:
+                return True, cast_template, None
+            else:
+                return True, None, cast_template
 
-        # Check reverse direction
-        cast_template = TYPE_COMPATIBILITY.get((type2, type1))
-        if cast_template:
-            return True, cast_template, None
+        # Check reverse direction (source=type2, target=type1)
+        compat_info = TYPE_COMPATIBILITY.get((type2, type1))
+        if compat_info:
+            cast_template, apply_to_source = compat_info
+            # Reverse the application since we're checking reverse
+            if apply_to_source:
+                return True, None, cast_template
+            else:
+                return True, cast_template, None
 
         # Not compatible
         return False, None, None
@@ -153,10 +168,12 @@ class EnhancedColumnMatcher:
             )
 
             if compatible:
-                # Determine which side needs casting
-                cast_func = cast_source or cast_target
-                if cast_func:
-                    cast_func = cast_func.replace('{col}', col1_name)
+                # Apply cast to the correct column
+                cast_func = None
+                if cast_source:
+                    cast_func = cast_source.replace('{col}', col1_name)  # Source column
+                elif cast_target:
+                    cast_func = cast_target.replace('{col}', col2_name)  # Target column
 
                 return ColumnMatchResult(
                     match_type='type_compatible',
@@ -179,12 +196,12 @@ class EnhancedColumnMatcher:
             )
 
             if compatible:
-                # Determine which side needs casting
-                cast_func = cast_source or cast_target
-                if cast_func:
-                    # For fuzzy matches, we need to know which column name to use
-                    # Use the source column name in the cast
-                    cast_func = cast_func.replace('{col}', col1_name)
+                # Apply cast to the correct column
+                cast_func = None
+                if cast_source:
+                    cast_func = cast_source.replace('{col}', col1_name)  # Source column
+                elif cast_target:
+                    cast_func = cast_target.replace('{col}', col2_name)  # Target column
 
                 return ColumnMatchResult(
                     match_type='fuzzy',

@@ -3,11 +3,17 @@ Cross-Database Executor
 
 Executes queries across multiple databases using federated query plans.
 Handles data movement, result merging, and cross-database JOINs.
+
+Supports multiple execution strategies:
+- Pandas (in-memory): <1GB datasets
+- Staging tables: 1-10GB datasets
+- S3 Federation: 10-100GB+ datasets (via FederationFactory)
 """
 import pandas as pd
 import asyncio
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
+from enum import Enum
 import structlog
 from datetime import datetime
 
@@ -22,6 +28,28 @@ from src.core.query_pushdown_optimizer import QueryPushdownOptimizer
 from src.db.connector_factory import ConnectorFactory
 
 logger = structlog.get_logger()
+
+# Lazy imports for federation (only loaded when needed for large datasets)
+FederationFactory = None
+FederationStrategy = None
+
+
+def _ensure_federation_imports():
+    """Lazy import federation module to avoid loading boto3/pyarrow for small queries."""
+    global FederationFactory, FederationStrategy
+    if FederationFactory is None:
+        from src.core.federation_factory import (
+            FederationFactory as _FederationFactory,
+            FederationStrategy as _FederationStrategy
+        )
+        FederationFactory = _FederationFactory
+        FederationStrategy = _FederationStrategy
+
+
+# Data size thresholds for strategy selection (in rows)
+PANDAS_MAX_ROWS = 1_000_000        # 1M rows (~1GB)
+STAGING_MAX_ROWS = 10_000_000      # 10M rows (~10GB)
+# Above STAGING_MAX_ROWS: use S3 Federation
 
 
 @dataclass
@@ -64,7 +92,9 @@ class CrossDatabaseExecutor:
     def __init__(
         self,
         connector_factory: Optional[ConnectorFactory] = None,
-        enable_pushdown: bool = True
+        enable_pushdown: bool = True,
+        enable_federation: bool = True,
+        federation_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize the cross-database executor.
@@ -72,15 +102,21 @@ class CrossDatabaseExecutor:
         Args:
             connector_factory: Factory for creating database connectors
             enable_pushdown: Enable query pushdown optimization (default: True)
+            enable_federation: Enable S3 federation for large datasets (default: True)
+            federation_config: Optional config for FederationFactory (s3_bucket, etc.)
         """
         self.factory = connector_factory or ConnectorFactory()
         self.translator = SQLDialectTranslator()
         self.pushdown_optimizer = QueryPushdownOptimizer() if enable_pushdown else None
         self._temp_tables = {}  # Track temporary tables created
         self.enable_pushdown = enable_pushdown
+        self.enable_federation = enable_federation
+        self._federation_config = federation_config or {}
+        self._federation_factory = None  # Lazy initialized
         logger.info(
             "CrossDatabaseExecutor initialized",
-            pushdown_enabled=enable_pushdown
+            pushdown_enabled=enable_pushdown,
+            federation_enabled=enable_federation
         )
 
     async def execute_plan(
@@ -216,10 +252,16 @@ class CrossDatabaseExecutor:
         organization_id: str = 'default',
         database_configs: Optional[Dict[str, Dict[str, Any]]] = None,
         left_table_name: Optional[str] = None,
-        right_table_name: Optional[str] = None
+        right_table_name: Optional[str] = None,
+        force_strategy: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Execute JOIN between tables in different databases.
+
+        Uses tiered execution strategy based on estimated data size:
+        - <1M rows: Pandas in-memory join (fast, no setup)
+        - 1-10M rows: Staging table approach
+        - >10M rows: S3 Federation (Redshift Spectrum, BigQuery Omni, etc.)
 
         Args:
             left_db: Left database type
@@ -233,22 +275,158 @@ class CrossDatabaseExecutor:
             database_configs: Optional configs for database connections
             left_table_name: Optional table name for left side (for pushdown optimization)
             right_table_name: Optional table name for right side (for pushdown optimization)
+            force_strategy: Force a specific strategy ('pandas', 'staging', 'federation')
 
         Returns:
             DataFrame with joined results
         """
+        # Get configs or use empty dict
+        configs = database_configs or {}
+
+        # Create connectors
+        left_connector = self.factory.create_connector(
+            left_db,
+            config=configs.get(left_db, {})
+        )
+        right_connector = self.factory.create_connector(
+            right_db,
+            config=configs.get(right_db, {})
+        )
+
+        # Estimate data size to select strategy
+        estimated_left_rows = await self._estimate_row_count(left_connector, left_query)
+        estimated_right_rows = await self._estimate_row_count(right_connector, right_query)
+        total_estimated_rows = max(estimated_left_rows or 0, estimated_right_rows or 0)
+
+        # Select execution strategy
+        strategy = self._select_join_strategy(
+            total_estimated_rows,
+            left_db,
+            right_db,
+            force_strategy
+        )
+
         logger.info(
             "Executing cross-database JOIN",
             left_db=left_db,
             right_db=right_db,
             join_type=join_type,
-            pushdown_enabled=self.enable_pushdown
+            strategy=strategy,
+            estimated_rows=total_estimated_rows,
+            pushdown_enabled=self.enable_pushdown,
+            federation_enabled=self.enable_federation
         )
 
-        # Get configs or use empty dict
-        configs = database_configs or {}
+        # Execute based on strategy
+        if strategy == 'federation' and self.enable_federation:
+            return await self._execute_federated_join(
+                left_connector=left_connector,
+                left_query=left_query,
+                left_db=left_db,
+                right_connector=right_connector,
+                right_query=right_query,
+                right_db=right_db,
+                join_condition=join_condition,
+                join_type=join_type,
+                estimated_rows=total_estimated_rows
+            )
 
-        # Optimize queries with pushdown if enabled and table names provided
+        # Default to pandas strategy (handles 'pandas' and 'staging' for now)
+        return await self._execute_pandas_join(
+            left_connector=left_connector,
+            left_query=left_query,
+            right_connector=right_connector,
+            right_query=right_query,
+            join_condition=join_condition,
+            join_type=join_type,
+            left_table_name=left_table_name,
+            right_table_name=right_table_name
+        )
+
+    def _select_join_strategy(
+        self,
+        estimated_rows: int,
+        left_db: str,
+        right_db: str,
+        force_strategy: Optional[str] = None
+    ) -> str:
+        """
+        Select the appropriate join strategy based on data size.
+
+        Args:
+            estimated_rows: Estimated number of rows
+            left_db: Left database type
+            right_db: Right database type
+            force_strategy: Optional forced strategy
+
+        Returns:
+            Strategy name: 'pandas', 'staging', or 'federation'
+        """
+        if force_strategy:
+            return force_strategy
+
+        # If federation disabled or not configured, always use pandas
+        if not self.enable_federation:
+            return 'pandas'
+
+        # Check if we have S3 bucket configured for federation
+        if not self._federation_config.get('s3_bucket'):
+            logger.debug("No S3 bucket configured, using pandas strategy")
+            return 'pandas'
+
+        # Select based on data size
+        if estimated_rows <= PANDAS_MAX_ROWS:
+            return 'pandas'
+        elif estimated_rows <= STAGING_MAX_ROWS:
+            return 'staging'  # Falls back to pandas for now
+        else:
+            return 'federation'
+
+    async def _estimate_row_count(
+        self,
+        connector: Any,
+        query: str
+    ) -> Optional[int]:
+        """
+        Estimate the number of rows a query will return.
+
+        Args:
+            connector: Database connector
+            query: SQL query
+
+        Returns:
+            Estimated row count, or None if estimation fails
+        """
+        try:
+            # Use connector's estimate method if available
+            if hasattr(connector, 'estimate_row_count'):
+                return connector.estimate_row_count(query)
+
+            # Fallback: use EXPLAIN if supported
+            # This is a simplified approach - production would parse EXPLAIN output
+            return None
+
+        except Exception as e:
+            logger.debug(f"Row count estimation failed: {e}")
+            return None
+
+    async def _execute_pandas_join(
+        self,
+        left_connector: Any,
+        left_query: str,
+        right_connector: Any,
+        right_query: str,
+        join_condition: str,
+        join_type: str,
+        left_table_name: Optional[str] = None,
+        right_table_name: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Execute cross-database JOIN using pandas (in-memory).
+
+        Best for datasets <1M rows.
+        """
+        # Optimize queries with pushdown if enabled
         optimized_left_query = left_query
         optimized_right_query = right_query
 
@@ -266,22 +444,11 @@ class CrossDatabaseExecutor:
                     "right"
                 )
 
-        # Fetch from left database
-        left_connector = self.factory.create_connector(
-            left_db,
-            config=configs.get(left_db, {})
-        )
+        # Fetch data from both databases
         left_df = await self._execute_query(left_connector, optimized_left_query)
-
-        # Fetch from right database
-        right_connector = self.factory.create_connector(
-            right_db,
-            config=configs.get(right_db, {})
-        )
         right_df = await self._execute_query(right_connector, optimized_right_query)
 
         # Parse join condition to extract columns
-        # Simplified: assumes format "left.col = right.col"
         left_col, right_col = self._parse_join_condition(join_condition)
 
         # Perform pandas merge
@@ -295,13 +462,101 @@ class CrossDatabaseExecutor:
         )
 
         logger.info(
-            "Cross-database JOIN complete",
+            "Pandas cross-database JOIN complete",
             left_rows=len(left_df),
             right_rows=len(right_df),
             result_rows=len(result_df)
         )
 
         return result_df
+
+    async def _execute_federated_join(
+        self,
+        left_connector: Any,
+        left_query: str,
+        left_db: str,
+        right_connector: Any,
+        right_query: str,
+        right_db: str,
+        join_condition: str,
+        join_type: str,
+        estimated_rows: int
+    ) -> pd.DataFrame:
+        """
+        Execute cross-database JOIN using federation (S3 + Spectrum/Omni).
+
+        Best for datasets >10M rows (10-100GB+).
+        """
+        _ensure_federation_imports()
+
+        # Get or create federation factory
+        if self._federation_factory is None:
+            self._federation_factory = FederationFactory(
+                s3_bucket=self._federation_config.get('s3_bucket'),
+                s3_prefix=self._federation_config.get('s3_prefix', 'federation'),
+                aws_region=self._federation_config.get('aws_region', 'us-east-1')
+            )
+
+        # Determine which database is larger (source) and which to use as target
+        # Generally, we stream the smaller dataset to S3 and join in the larger DB
+        # For simplicity, assume left is source (streamed) and right is target
+        source_connector = left_connector
+        source_query = left_query
+        target_connector = right_connector
+        target_db = right_db
+
+        # Parse join condition
+        left_col, right_col = self._parse_join_condition(join_condition)
+
+        logger.info(
+            "Starting federated JOIN via S3",
+            source_db=left_db,
+            target_db=right_db,
+            estimated_rows=estimated_rows
+        )
+
+        try:
+            # Execute federated query
+            result = await self._federation_factory.execute_federated_query(
+                source_connector=source_connector,
+                source_query=source_query,
+                target_connector=target_connector,
+                join_condition=f"e.{left_col} = t.{right_col}",
+                join_type=join_type,
+                estimated_rows=estimated_rows
+            )
+
+            # Convert result to DataFrame
+            if isinstance(result, dict):
+                rows = result.get('rows', [])
+                result_df = pd.DataFrame(rows)
+
+                logger.info(
+                    "Federated JOIN complete",
+                    rows=len(result_df),
+                    federation_metadata=result.get('federation_metadata', {})
+                )
+                return result_df
+            elif isinstance(result, pd.DataFrame):
+                return result
+            else:
+                logger.warning(f"Unexpected federation result type: {type(result)}")
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(
+                "Federated JOIN failed, falling back to pandas",
+                error=str(e)
+            )
+            # Fall back to pandas for robustness
+            return await self._execute_pandas_join(
+                left_connector=left_connector,
+                left_query=left_query,
+                right_connector=right_connector,
+                right_query=right_query,
+                join_condition=join_condition,
+                join_type=join_type
+            )
 
     async def _check_permissions(
         self,
@@ -602,3 +857,58 @@ class CrossDatabaseExecutor:
                 logger.warning(f"Failed to drop temp table {table_name}", error=str(e))
 
         self._temp_tables.clear()
+
+
+# Singleton instance and factory function
+_executor_instance: Optional[CrossDatabaseExecutor] = None
+
+
+def get_cross_database_executor(
+    connector_factory: Optional[ConnectorFactory] = None
+) -> CrossDatabaseExecutor:
+    """
+    Get or create a configured CrossDatabaseExecutor singleton.
+
+    Uses settings from config.py for federation configuration.
+
+    Args:
+        connector_factory: Optional custom connector factory
+
+    Returns:
+        Configured CrossDatabaseExecutor instance
+    """
+    global _executor_instance
+
+    if _executor_instance is None:
+        from src.config import settings
+
+        # Build federation config from settings
+        federation_config = {
+            's3_bucket': settings.federation_s3_bucket,
+            's3_prefix': settings.federation_s3_prefix,
+            'redshift_schema': settings.federation_redshift_schema,
+            'aws_region': settings.aws_region,
+            'chunk_size': settings.federation_chunk_size,
+            'ttl_hours': settings.federation_ttl_hours
+        }
+
+        _executor_instance = CrossDatabaseExecutor(
+            connector_factory=connector_factory,
+            enable_pushdown=True,
+            enable_federation=settings.federation_enabled,
+            federation_config=federation_config
+        )
+
+        logger.info(
+            "Created CrossDatabaseExecutor singleton",
+            federation_enabled=settings.federation_enabled,
+            s3_bucket=settings.federation_s3_bucket
+        )
+
+    return _executor_instance
+
+
+def reset_executor():
+    """Reset the executor singleton (useful for testing)."""
+    global _executor_instance
+    _executor_instance = None

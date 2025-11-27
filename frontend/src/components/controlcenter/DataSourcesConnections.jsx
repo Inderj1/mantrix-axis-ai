@@ -37,13 +37,12 @@ import {
   useTheme,
   alpha,
   CircularProgress,
+  Snackbar,
+  FormGroup,
 } from '@mui/material';
 import {
   Storage as DatabaseIcon,
   Cloud as CloudIcon,
-  Api as ApiIcon,
-  Hub as HubIcon,
-  Memory as StorageIcon,
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
@@ -52,579 +51,358 @@ import {
   Warning as WarningIcon,
   Refresh as RefreshIcon,
   Key as KeyIcon,
-  Link as LinkIcon,
   Settings as SettingsIcon,
-  CheckCircle as TestIcon,
-  Circle as CircleIcon,
-  VpnKey as VpnKeyIcon,
-  ContentCopy as CopyIcon,
+  PlayArrow as TestIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   CloudQueue as BigQueryIcon,
-  Psychology as AnthropicIcon,
-  AutoAwesome as OpenAIIcon,
-  AccountTree as SupersetIcon,
-  DataUsage as DataUsageIcon,
+  DataArray as SnowflakeIcon,
+  DataObject as PostgreSQLIcon,
+  Storage as RedshiftIcon,
+  Insights as DatabricksIcon,
+  Chat as ChatIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
+import { apiService } from '../../services/api';
+import DatabaseToggleCard from './DatabaseToggleCard';
 
-// Import DataCatalog component
-import DataCatalog from '../DataCatalog';
-
-// Mock data for connections
-const connections = {
-  databases: [
-    {
-      id: 'bigquery-prod',
-      name: 'BigQuery Production',
-      type: 'bigquery',
-      icon: <BigQueryIcon />,
-      status: 'connected',
-      host: 'arizona-beverages.us-central1',
-      database: 'analytics_prod',
-      lastSync: '2 minutes ago',
-      tables: 156,
-      size: '2.4 TB',
-      config: {
-        project: 'arizona-beverages',
-        dataset: 'analytics_prod',
-        location: 'us-central1',
-      },
-    },
-    {
-      id: 'postgres-staging',
-      name: 'PostgreSQL Staging',
-      type: 'postgresql',
-      icon: <DatabaseIcon />,
-      status: 'connected',
-      host: 'pg-staging.arizona.internal',
-      database: 'staging_db',
-      lastSync: '5 minutes ago',
-      tables: 89,
-      size: '156 GB',
-      config: {
-        host: 'pg-staging.arizona.internal',
-        port: 5432,
-        ssl: true,
-      },
-    },
-    {
-      id: 'mongodb-conversations',
-      name: 'MongoDB Conversations',
-      type: 'mongodb',
-      icon: <StorageIcon />,
-      status: 'connected',
-      host: 'mongodb://localhost:27017',
-      database: 'conversations',
-      lastSync: 'Real-time',
-      collections: 12,
-      size: '8.3 GB',
-      config: {
-        replicaSet: 'rs0',
-        authSource: 'admin',
-      },
-    },
-    {
-      id: 'snowflake-analytics',
-      name: 'Snowflake Analytics',
-      type: 'snowflake',
-      icon: <CloudIcon />,
-      status: 'disconnected',
-      host: 'arizona.snowflakecomputing.com',
-      database: 'ANALYTICS',
-      lastSync: 'Never',
-      tables: 0,
-      size: '0 B',
-      config: {
-        account: 'arizona',
-        warehouse: 'COMPUTE_WH',
-        role: 'ANALYTICS_ROLE',
-      },
-    },
-  ],
-  apis: [
-    {
-      id: 'anthropic-claude',
-      name: 'Anthropic Claude',
-      type: 'llm',
-      icon: <AnthropicIcon />,
-      status: 'connected',
-      endpoint: 'https://api.anthropic.com/v1',
-      model: 'claude-3-opus-20240229',
-      usage: {
-        requests: 12450,
-        tokens: 8.5,
-        cost: 127.50,
-      },
-      quotaUsed: 42,
-      quotaLimit: 100000,
-    },
-    {
-      id: 'openai-embeddings',
-      name: 'OpenAI Embeddings',
-      type: 'embeddings',
-      icon: <OpenAIIcon />,
-      status: 'connected',
-      endpoint: 'https://api.openai.com/v1',
-      model: 'text-embedding-3-small',
-      usage: {
-        requests: 34500,
-        tokens: 12.3,
-        cost: 4.85,
-      },
-      quotaUsed: 12,
-      quotaLimit: 1000000,
-    },
-    {
-      id: 'google-cloud',
-      name: 'Google Cloud Platform',
-      type: 'cloud',
-      icon: <CloudIcon />,
-      status: 'connected',
-      endpoint: 'https://bigquery.googleapis.com',
-      project: 'arizona-beverages',
-      services: ['BigQuery', 'Cloud Storage', 'Cloud Functions'],
-      billing: {
-        current: 2450.00,
-        projected: 3200.00,
-        limit: 5000.00,
-      },
-    },
-  ],
-  integrations: [
-    {
-      id: 'weaviate-vector',
-      name: 'Weaviate Vector DB',
-      type: 'vectordb',
-      icon: <HubIcon />,
-      status: 'warning',
-      endpoint: 'http://localhost:8080',
-      schemas: 24,
-      objects: 156000,
-      indexSize: '2.1 GB',
-      message: 'High memory usage detected',
-    },
-    {
-      id: 'redis-cache',
-      name: 'Redis Cache',
-      type: 'cache',
-      icon: <StorageIcon />,
-      status: 'connected',
-      endpoint: 'redis://localhost:6379',
-      memory: '4.2 GB',
-      keys: 45600,
-      hitRate: 94.5,
-      evictions: 120,
-    },
-    {
-      id: 'apache-superset',
-      name: 'Apache Superset',
-      type: 'bi',
-      icon: <SupersetIcon />,
-      status: 'connected',
-      endpoint: 'http://localhost:8088',
-      dashboards: 12,
-      charts: 89,
-      users: 45,
-      lastSync: '10 minutes ago',
-    },
-  ],
+// Database type configurations
+const DATABASE_CONFIGS = {
+  bigquery: {
+    name: 'BigQuery',
+    icon: <BigQueryIcon />,
+    color: '#4285F4',
+    fields: [
+      { name: 'project_id', label: 'Project ID', required: true },
+      { name: 'dataset_id', label: 'Dataset ID', required: true },
+      { name: 'credentials_json', label: 'Service Account JSON', type: 'json', required: true },
+    ],
+  },
+  snowflake: {
+    name: 'Snowflake',
+    icon: <SnowflakeIcon />,
+    color: '#29B5E8',
+    fields: [
+      { name: 'account', label: 'Account', required: true },
+      { name: 'warehouse', label: 'Warehouse', required: true },
+      { name: 'database', label: 'Database', required: true },
+      { name: 'schema', label: 'Schema', default: 'PUBLIC' },
+      { name: 'username', label: 'Username', required: true },
+      { name: 'password', label: 'Password', type: 'password', required: true },
+      { name: 'role', label: 'Role' },
+    ],
+  },
+  postgresql: {
+    name: 'PostgreSQL',
+    icon: <PostgreSQLIcon />,
+    color: '#336791',
+    fields: [
+      { name: 'host', label: 'Host', required: true },
+      { name: 'port', label: 'Port', default: 5432, type: 'number' },
+      { name: 'database', label: 'Database', required: true },
+      { name: 'username', label: 'Username', required: true },
+      { name: 'password', label: 'Password', type: 'password', required: true },
+      { name: 'ssl', label: 'Use SSL', type: 'checkbox' },
+    ],
+  },
+  redshift: {
+    name: 'Amazon Redshift',
+    icon: <RedshiftIcon />,
+    color: '#FF9900',
+    fields: [
+      { name: 'host', label: 'Cluster Endpoint', required: true },
+      { name: 'port', label: 'Port', default: 5439, type: 'number' },
+      { name: 'database', label: 'Database', required: true },
+      { name: 'username', label: 'Username', required: true },
+      { name: 'password', label: 'Password', type: 'password', required: true },
+      { name: 'schema', label: 'Schema', default: 'public' },
+    ],
+  },
+  databricks: {
+    name: 'Databricks',
+    icon: <DatabricksIcon />,
+    color: '#FF3621',
+    fields: [
+      { name: 'server_hostname', label: 'Server Hostname', required: true },
+      { name: 'http_path', label: 'HTTP Path', required: true },
+      { name: 'catalog', label: 'Catalog', required: true },
+      { name: 'schema', label: 'Schema', required: true },
+      { name: 'token', label: 'Access Token', type: 'password', required: true },
+    ],
+  },
 };
 
 const DataSourcesConnections = () => {
   const theme = useTheme();
   const [activeTab, setActiveTab] = useState(0);
-  const [selectedConnection, setSelectedConnection] = useState(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connections, setConnections] = useState({ databases: [], apis: [], integrations: [] });
+  const [connectors, setConnectors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedConnector, setSelectedConnector] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [showPassword, setShowPassword] = useState({});
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [maxChatDatabases, setMaxChatDatabases] = useState(2);
+  const [enabledCount, setEnabledCount] = useState(0);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [connectorToDelete, setConnectorToDelete] = useState(null);
 
-  // Fetch data sources from API
+  // Fetch connectors on mount
   useEffect(() => {
-    fetchDataSources();
-    const interval = setInterval(fetchDataSources, 30000); // Refresh every 30s
-    return () => clearInterval(interval);
+    fetchConnectors();
+    fetchSettings();
   }, []);
 
-  const fetchDataSources = async () => {
+  const fetchConnectors = async () => {
+    setLoading(true);
     try {
-      const response = await fetch('/api/v1/control-center/data-sources');
-      const data = await response.json();
+      const response = await apiService.getConnectors();
+      if (response.data) {
+        // Transform API data to include UI properties
+        const enrichedConnectors = response.data.connectors.map(conn => ({
+          ...conn,
+          icon: DATABASE_CONFIGS[conn.connector_type]?.icon || <DatabaseIcon />,
+          host: conn.config?.host || conn.config?.server_hostname || conn.config?.account || 'N/A',
+          database: conn.config?.database || conn.config?.dataset_id || conn.config?.catalog || 'N/A',
+          tables: conn.metadata?.table_count || 0,
+          size: conn.metadata?.total_size || 'Unknown',
+          lastSync: conn.metadata?.last_sync
+            ? new Date(conn.metadata.last_sync).toLocaleString()
+            : 'Never',
+        }));
 
-      if (data.success && data.data_sources) {
-        // Enrich data with icons and UI properties
-        const enrichedData = {
-          databases: data.data_sources.databases.map(db => ({
-            ...db,
-            icon: getIconForType(db.type),
-            size: db.size || 'Unknown',
-          })),
-          apis: data.data_sources.apis.map(api => ({
-            ...api,
-            icon: getIconForType(api.type),
-          })),
-          integrations: data.data_sources.integrations.map(int => ({
-            ...int,
-            icon: getIconForType(int.type),
-          })),
-        };
-        setConnections(enrichedData);
+        setConnectors(enrichedConnectors);
+
+        // Count enabled databases
+        const enabled = enrichedConnectors.filter(c => c.enabled_for_chat).length;
+        setEnabledCount(enabled);
       }
-      setLoading(false);
     } catch (error) {
-      console.error('Error fetching data sources:', error);
+      console.error('Error fetching connectors:', error);
+      showSnackbar('Failed to fetch database connectors', 'error');
+    } finally {
       setLoading(false);
     }
   };
 
-  const getIconForType = (type) => {
-    const icons = {
-      bigquery: <BigQueryIcon />,
-      postgresql: <DatabaseIcon />,
-      mongodb: <StorageIcon />,
-      snowflake: <CloudIcon />,
-      llm: <AnthropicIcon />,
-      embeddings: <OpenAIIcon />,
-      cloud: <CloudIcon />,
-      vectordb: <HubIcon />,
-      cache: <StorageIcon />,
-      bi: <SupersetIcon />,
-    };
-    return icons[type] || <DatabaseIcon />;
+  const fetchSettings = async () => {
+    try {
+      const response = await apiService.getControlCenterSettings();
+      if (response.data?.settings) {
+        setMaxChatDatabases(response.data.settings.max_chat_databases || 2);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
   };
 
-  const handleTestConnection = async (connection) => {
+  const handleAddConnector = () => {
+    setSelectedConnector(null);
+    setFormData({ connector_type: 'bigquery' });
+    setDialogOpen(true);
+  };
+
+  const handleEditConnector = (connector) => {
+    setSelectedConnector(connector);
+    setFormData({
+      name: connector.name,
+      connector_type: connector.connector_type,
+      ...connector.config,
+    });
+    setDialogOpen(true);
+  };
+
+  const handleDeleteConnector = (connector) => {
+    setConnectorToDelete(connector);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!connectorToDelete) return;
+
+    try {
+      await apiService.deleteConnector(connectorToDelete.id);
+      showSnackbar('Connector deleted successfully', 'success');
+      fetchConnectors();
+    } catch (error) {
+      console.error('Error deleting connector:', error);
+      showSnackbar('Failed to delete connector', 'error');
+    } finally {
+      setDeleteDialogOpen(false);
+      setConnectorToDelete(null);
+    }
+  };
+
+  const handleSaveConnector = async () => {
+    try {
+      const { name, connector_type, ...config } = formData;
+
+      const payload = {
+        name,
+        connector_type,
+        config,
+      };
+
+      if (selectedConnector) {
+        // Update existing connector
+        await apiService.updateConnector(selectedConnector.id, payload);
+        showSnackbar('Connector updated successfully', 'success');
+      } else {
+        // Create new connector
+        await apiService.createConnector(payload);
+        showSnackbar('Connector created successfully', 'success');
+      }
+
+      setDialogOpen(false);
+      fetchConnectors();
+    } catch (error) {
+      console.error('Error saving connector:', error);
+      showSnackbar('Failed to save connector', 'error');
+    }
+  };
+
+  const handleTestConnection = async () => {
     setTestingConnection(true);
-    // Simulate connection test
-    setTimeout(() => {
+    try {
+      const { name, connector_type, ...config } = formData;
+
+      const response = await apiService.testConnector({
+        connector_type,
+        config,
+      });
+
+      if (response.data?.success) {
+        showSnackbar('Connection test successful!', 'success');
+      } else {
+        showSnackbar(response.data?.error || 'Connection test failed', 'error');
+      }
+    } catch (error) {
+      console.error('Error testing connection:', error);
+      showSnackbar('Connection test failed', 'error');
+    } finally {
       setTestingConnection(false);
-      alert(`Connection test ${connection.status === 'connected' ? 'successful' : 'failed'}`);
-    }, 2000);
-  };
-
-  const handleEditConnection = (connection) => {
-    setSelectedConnection(connection);
-    setEditMode(true);
-    setDialogOpen(true);
-  };
-
-  const handleAddConnection = () => {
-    setSelectedConnection(null);
-    setEditMode(false);
-    setDialogOpen(true);
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'connected': return theme.palette.success.main;
-      case 'warning': return theme.palette.warning.main;
-      case 'disconnected': return theme.palette.error.main;
-      default: return theme.palette.grey[500];
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'connected': return <CheckCircleIcon />;
-      case 'warning': return <WarningIcon />;
-      case 'disconnected': return <ErrorIcon />;
-      default: return <CircleIcon />;
-    }
+  const handleFormChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
-  const renderDatabaseCard = (db) => (
-    <Grid item xs={12} md={6} key={db.id}>
-      <Card sx={{ height: '100%' }}>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar
-                sx={{
-                  bgcolor: alpha(getStatusColor(db.status), 0.1),
-                  color: getStatusColor(db.status),
-                }}
-              >
-                {db.icon}
-              </Avatar>
-              <Box>
-                <Typography variant="h6" fontWeight={600}>
-                  {db.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {db.host}
-                </Typography>
-              </Box>
-            </Box>
-            <Chip
-              size="small"
-              icon={getStatusIcon(db.status)}
-              label={db.status}
-              color={db.status === 'connected' ? 'success' : 'error'}
+  const handleToggleChat = async () => {
+    // Refresh connectors after toggle
+    await fetchConnectors();
+  };
+
+  const showSnackbar = (message, severity = 'success') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const renderConnectorForm = () => {
+    const dbType = formData.connector_type || 'bigquery';
+    const config = DATABASE_CONFIGS[dbType];
+
+    if (!config) return null;
+
+    return (
+      <Stack spacing={3} sx={{ mt: 2 }}>
+        <TextField
+          fullWidth
+          label="Connector Name"
+          value={formData.name || ''}
+          onChange={(e) => handleFormChange('name', e.target.value)}
+          required
+        />
+
+        <FormControl fullWidth>
+          <InputLabel>Database Type</InputLabel>
+          <Select
+            value={dbType}
+            label="Database Type"
+            onChange={(e) => handleFormChange('connector_type', e.target.value)}
+            disabled={!!selectedConnector}
+          >
+            {Object.entries(DATABASE_CONFIGS).map(([type, conf]) => (
+              <MenuItem key={type} value={type}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  {conf.icon}
+                  <span>{conf.name}</span>
+                </Stack>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <Divider />
+
+        {config.fields.map((field) => {
+          if (field.type === 'checkbox') {
+            return (
+              <FormControlLabel
+                key={field.name}
+                control={
+                  <Switch
+                    checked={formData[field.name] || false}
+                    onChange={(e) => handleFormChange(field.name, e.target.checked)}
+                  />
+                }
+                label={field.label}
+              />
+            );
+          }
+
+          if (field.type === 'json') {
+            return (
+              <TextField
+                key={field.name}
+                fullWidth
+                label={field.label}
+                value={formData[field.name] || ''}
+                onChange={(e) => handleFormChange(field.name, e.target.value)}
+                required={field.required}
+                multiline
+                rows={4}
+                placeholder="Paste JSON here..."
+                helperText="Paste the service account JSON credentials"
+              />
+            );
+          }
+
+          return (
+            <TextField
+              key={field.name}
+              fullWidth
+              label={field.label}
+              value={formData[field.name] || field.default || ''}
+              onChange={(e) => handleFormChange(field.name, e.target.value)}
+              required={field.required}
+              type={field.type === 'password' ?
+                (showPassword[field.name] ? 'text' : 'password') :
+                (field.type || 'text')
+              }
+              InputProps={field.type === 'password' ? {
+                endAdornment: (
+                  <IconButton
+                    onClick={() => setShowPassword(prev => ({
+                      ...prev,
+                      [field.name]: !prev[field.name]
+                    }))}
+                    edge="end"
+                    size="small"
+                  >
+                    {showPassword[field.name] ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                  </IconButton>
+                ),
+              } : undefined}
             />
-          </Stack>
-
-          <Box sx={{ mt: 3 }}>
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary">
-                  Database
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  {db.database}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary">
-                  Last Sync
-                </Typography>
-                <Typography variant="body2" fontWeight={500}>
-                  {db.lastSync}
-                </Typography>
-              </Grid>
-              {db.tables !== undefined && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Tables
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {db.tables}
-                  </Typography>
-                </Grid>
-              )}
-              {db.collections !== undefined && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Collections
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {db.collections}
-                  </Typography>
-                </Grid>
-              )}
-              {db.size && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Size
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {db.size}
-                  </Typography>
-                </Grid>
-              )}
-              {db.error && (
-                <Grid item xs={12}>
-                  <Alert severity="error" sx={{ mt: 1 }}>
-                    {db.error}
-                  </Alert>
-                </Grid>
-              )}
-            </Grid>
-          </Box>
-
-        </CardContent>
-      </Card>
-    </Grid>
-  );
-
-  const renderAPICard = (api) => (
-    <Grid item xs={12} md={4} key={api.id}>
-      <Card sx={{ height: '100%' }}>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Avatar
-                sx={{
-                  bgcolor: alpha(theme.palette.primary.main, 0.1),
-                  color: theme.palette.primary.main,
-                }}
-              >
-                {api.icon}
-              </Avatar>
-              <Box>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  {api.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {api.model || api.type}
-                </Typography>
-              </Box>
-            </Box>
-            <Tooltip title={api.status}>
-              <Box sx={{ color: getStatusColor(api.status) }}>
-                {getStatusIcon(api.status)}
-              </Box>
-            </Tooltip>
-          </Stack>
-
-          {api.usage && (
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" color="text.secondary">
-                API Usage
-              </Typography>
-              <Box sx={{ mt: 1 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2">
-                    {api.usage.requests.toLocaleString()} requests
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    ${api.usage.cost.toFixed(2)}
-                  </Typography>
-                </Stack>
-                <LinearProgress
-                  variant="determinate"
-                  value={api.quotaUsed}
-                  sx={{ mt: 1, height: 6, borderRadius: 3 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {api.quotaUsed}% of {(api.quotaLimit / 1000).toFixed(0)}K quota
-                </Typography>
-              </Box>
-            </Box>
-          )}
-
-          {api.billing && (
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" color="text.secondary">
-                Monthly Billing
-              </Typography>
-              <Box sx={{ mt: 1 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2" fontWeight={500}>
-                    ${api.billing.current.toLocaleString()}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    of ${api.billing.limit.toLocaleString()}
-                  </Typography>
-                </Stack>
-                <LinearProgress
-                  variant="determinate"
-                  value={(api.billing.current / api.billing.limit) * 100}
-                  sx={{ mt: 1, height: 6, borderRadius: 3 }}
-                  color={api.billing.current > api.billing.limit * 0.8 ? 'warning' : 'primary'}
-                />
-              </Box>
-            </Box>
-          )}
-
-        </CardContent>
-      </Card>
-    </Grid>
-  );
-
-  const renderIntegrationCard = (integration) => (
-    <Grid item xs={12} md={4} key={integration.id}>
-      <Card sx={{ height: '100%' }}>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Avatar
-                sx={{
-                  bgcolor: alpha(getStatusColor(integration.status), 0.1),
-                  color: getStatusColor(integration.status),
-                }}
-              >
-                {integration.icon}
-              </Avatar>
-              <Box>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  {integration.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {integration.endpoint}
-                </Typography>
-              </Box>
-            </Box>
-            <Tooltip title={integration.status}>
-              <Box sx={{ color: getStatusColor(integration.status) }}>
-                {getStatusIcon(integration.status)}
-              </Box>
-            </Tooltip>
-          </Stack>
-
-          {integration.message && (
-            <Alert severity="warning" sx={{ mt: 2, py: 0 }}>
-              <Typography variant="caption">{integration.message}</Typography>
-            </Alert>
-          )}
-
-          <Box sx={{ mt: 3 }}>
-            <Grid container spacing={1}>
-              {(integration.memory || integration.memory_used_mb !== undefined) && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Memory
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.memory || `${integration.memory_used_mb} MB`}
-                  </Typography>
-                </Grid>
-              )}
-              {integration.keys !== undefined && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Keys
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.keys}
-                  </Typography>
-                </Grid>
-              )}
-              {integration.hitRate && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Hit Rate
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.hitRate}%
-                  </Typography>
-                </Grid>
-              )}
-              {(integration.schemas !== undefined || integration.collections !== undefined) && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    {integration.schemas !== undefined ? 'Schemas' : 'Collections'}
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.schemas || integration.collections}
-                  </Typography>
-                </Grid>
-              )}
-              {integration.dashboards && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Dashboards
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.dashboards}
-                  </Typography>
-                </Grid>
-              )}
-              {integration.objects && (
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Objects
-                  </Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {integration.objects.toLocaleString()}
-                  </Typography>
-                </Grid>
-              )}
-              {integration.error && (
-                <Grid item xs={12}>
-                  <Alert severity="error" sx={{ mt: 1 }}>
-                    {integration.error}
-                  </Alert>
-                </Grid>
-              )}
-            </Grid>
-          </Box>
-
-        </CardContent>
-      </Card>
-    </Grid>
-  );
+          );
+        })}
+      </Stack>
+    );
+  };
 
   if (loading) {
     return (
@@ -637,179 +415,217 @@ const DataSourcesConnections = () => {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Typography variant="h5" fontWeight={600} gutterBottom>
-            Data Sources & Connections
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage database connections, API integrations, and external services
-          </Typography>
-        </Box>
+      <Box sx={{ mb: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Box>
+            <Typography variant="h5" fontWeight={600} gutterBottom>
+              Database Connections
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Manage database connectors and control which databases are available for chat queries
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={2}>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={fetchConnectors}
+            >
+              Refresh
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleAddConnector}
+            >
+              Add Database
+            </Button>
+          </Stack>
+        </Stack>
       </Box>
 
-      {/* Summary Cards */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={4}>
-          <Card>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="h4" fontWeight={600}>
-                    {connections.databases.length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Databases
-                  </Typography>
-                </Box>
-                <DatabaseIcon sx={{ fontSize: 40, color: 'primary.light' }} />
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={4}>
-          <Card>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="h4" fontWeight={600}>
-                    {connections.integrations.length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Integrations
-                  </Typography>
-                </Box>
-                <LinkIcon sx={{ fontSize: 40, color: 'success.light' }} />
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={4}>
-          <Card>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="h4" fontWeight={600} color="success.main">
-                    {connections.databases.filter(d => d.status === 'connected').length +
-                     connections.integrations.filter(i => i.status === 'connected' || i.status === 'healthy').length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Active
-                  </Typography>
-                </Box>
-                <CheckCircleIcon sx={{ fontSize: 40, color: 'success.light' }} />
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      {/* Info Alert */}
+      <Alert severity="info" sx={{ mb: 3 }}>
+        <Stack spacing={1}>
+          <Typography variant="body2">
+            <strong>Chat Database Limit:</strong> Maximum {maxChatDatabases} databases can be enabled for chat at once.
+            Currently {enabledCount} of {maxChatDatabases} enabled.
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={(enabledCount / maxChatDatabases) * 100}
+            sx={{ height: 6, borderRadius: 3 }}
+          />
+        </Stack>
+      </Alert>
 
       {/* Tabs */}
       <Paper sx={{ mb: 3 }}>
-        <Tabs
-          value={activeTab}
-          onChange={(e, v) => setActiveTab(v)}
-          variant="fullWidth"
-        >
-          <Tab label="Databases" icon={<DatabaseIcon />} iconPosition="start" />
-          <Tab label="Integrations" icon={<LinkIcon />} iconPosition="start" />
-          <Tab label="Data Catalog" icon={<DataUsageIcon />} iconPosition="start" />
+        <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
+          <Tab
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <ChatIcon />
+                <span>Chat Enabled ({enabledCount})</span>
+              </Stack>
+            }
+          />
+          <Tab
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <DatabaseIcon />
+                <span>All Databases ({connectors.length})</span>
+              </Stack>
+            }
+          />
         </Tabs>
       </Paper>
 
-      {/* Tab Content */}
-      {activeTab === 0 && (
-        <Grid container spacing={3}>
-          {connections.databases.map(renderDatabaseCard)}
-        </Grid>
-      )}
+      {/* Database Cards */}
+      <Grid container spacing={3}>
+        {activeTab === 0 ? (
+          // Show only chat-enabled databases
+          connectors
+            .filter(conn => conn.enabled_for_chat)
+            .map((connector) => (
+              <Grid item xs={12} md={6} lg={4} key={connector.id}>
+                <DatabaseToggleCard
+                  database={connector}
+                  onToggle={handleToggleChat}
+                  enabledCount={enabledCount}
+                  maxAllowed={maxChatDatabases}
+                />
+                <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    startIcon={<EditIcon />}
+                    onClick={() => handleEditConnector(connector)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="small"
+                    startIcon={<DeleteIcon />}
+                    onClick={() => handleDeleteConnector(connector)}
+                    color="error"
+                  >
+                    Remove
+                  </Button>
+                </Box>
+              </Grid>
+            ))
+        ) : (
+          // Show all databases
+          connectors.map((connector) => (
+            <Grid item xs={12} md={6} lg={4} key={connector.id}>
+              <DatabaseToggleCard
+                database={connector}
+                onToggle={handleToggleChat}
+                enabledCount={enabledCount}
+                maxAllowed={maxChatDatabases}
+              />
+              <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  startIcon={<EditIcon />}
+                  onClick={() => handleEditConnector(connector)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="small"
+                  startIcon={<DeleteIcon />}
+                  onClick={() => handleDeleteConnector(connector)}
+                  color="error"
+                >
+                  Remove
+                </Button>
+              </Box>
+            </Grid>
+          ))
+        )}
 
-      {activeTab === 1 && (
-        <Grid container spacing={3}>
-          {connections.integrations.map(renderIntegrationCard)}
-        </Grid>
-      )}
+        {connectors.length === 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 4, textAlign: 'center' }}>
+              <DatabaseIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                No Database Connectors
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Add your first database connector to start querying data
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddConnector}
+              >
+                Add Database
+              </Button>
+            </Paper>
+          </Grid>
+        )}
+      </Grid>
 
-      {activeTab === 2 && (
-        <Box>
-          <DataCatalog />
-        </Box>
-      )}
-
-      {/* Connection Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      {/* Add/Edit Connector Dialog */}
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>
-          {editMode ? 'Edit Connection' : 'Add New Connection'}
+          {selectedConnector ? 'Edit Database Connector' : 'Add Database Connector'}
         </DialogTitle>
         <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <Stack spacing={3}>
-              <FormControl fullWidth>
-                <InputLabel>Connection Type</InputLabel>
-                <Select defaultValue="bigquery" label="Connection Type">
-                  <MenuItem value="bigquery">BigQuery</MenuItem>
-                  <MenuItem value="postgresql">PostgreSQL</MenuItem>
-                  <MenuItem value="mongodb">MongoDB</MenuItem>
-                  <MenuItem value="snowflake">Snowflake</MenuItem>
-                  <MenuItem value="api">API Service</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField
-                fullWidth
-                label="Connection Name"
-                defaultValue={selectedConnection?.name}
-              />
-              <TextField
-                fullWidth
-                label="Host/Endpoint"
-                defaultValue={selectedConnection?.host}
-              />
-              <TextField
-                fullWidth
-                label="Database/Project"
-                defaultValue={selectedConnection?.database}
-              />
-              <TextField
-                fullWidth
-                label="Username"
-                defaultValue="admin"
-              />
-              <TextField
-                fullWidth
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                InputProps={{
-                  endAdornment: (
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                    </IconButton>
-                  ),
-                }}
-              />
-              <FormControlLabel
-                control={<Switch defaultChecked />}
-                label="Use SSL/TLS"
-              />
-            </Stack>
-          </Box>
+          {renderConnectorForm()}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)}>
+            Cancel
+          </Button>
           <Button
             variant="outlined"
             startIcon={<TestIcon />}
+            onClick={handleTestConnection}
             disabled={testingConnection}
           >
-            Test Connection
+            {testingConnection ? 'Testing...' : 'Test Connection'}
           </Button>
-          <Button variant="contained">
-            {editMode ? 'Save Changes' : 'Add Connection'}
+          <Button
+            variant="contained"
+            onClick={handleSaveConnector}
+            disabled={!formData.name}
+          >
+            {selectedConnector ? 'Save Changes' : 'Add Connector'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the connector "{connectorToDelete?.name}"?
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={confirmDelete} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        message={snackbar.message}
+      />
     </Box>
   );
 };

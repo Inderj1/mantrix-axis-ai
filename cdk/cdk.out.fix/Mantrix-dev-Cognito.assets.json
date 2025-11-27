@@ -1,0 +1,21 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "e4da52e14eb5b5aa739938d35b532d9a1e5b64bed8e05fa538fdca7b78ac8072": {
+      "displayName": "Mantrix-dev-Cognito Template",
+      "source": {
+        "path": "Mantrix-dev-Cognito.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "709141244278-us-east-1-09d782af": {
+          "bucketName": "cdk-hnb659fds-assets-709141244278-us-east-1",
+          "objectKey": "e4da52e14eb5b5aa739938d35b532d9a1e5b64bed8e05fa538fdca7b78ac8072.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::709141244278:role/cdk-hnb659fds-file-publishing-role-709141244278-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

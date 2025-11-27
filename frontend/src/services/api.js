@@ -46,15 +46,8 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized - redirect to login
-      localStorage.removeItem('authToken');
-
-      // Only redirect if not already on login page
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
-    }
+    // Note: Removed automatic redirect on 401 to prevent redirect loops
+    // Components should handle 401 errors individually if needed
     return Promise.reject(error);
   }
 );
@@ -75,12 +68,30 @@ export const apiService = {
   
   executeQuery: (question, options = {}) => {
     // Don't send dataset parameter - let backend use its configured values
-    const { conversationId, ...otherOptions } = options;
-    return api.post('/api/v1/query', { 
+    const { conversationId, databaseType, databaseConfig, multiDatabases, ...otherOptions } = options;
+
+    // Build the request payload
+    const payload = {
       question,
       conversationId: conversationId,
-      options: otherOptions 
-    });
+      options: otherOptions
+    };
+
+    // Add database selection if specified
+    if (databaseType) {
+      payload.database_type = databaseType;
+    }
+
+    if (databaseConfig) {
+      payload.database_config = databaseConfig;
+    }
+
+    // For multi-database queries
+    if (multiDatabases && multiDatabases.length > 0) {
+      payload.multi_databases = multiDatabases;
+    }
+
+    return api.post('/api/v1/query', payload);
   },
   
   // Schema endpoints
@@ -453,18 +464,14 @@ export const apiService = {
   getConnectorTypes: () =>
     api.get('/api/v1/connectors/types'),
 
-  testConnector: (connectorType, config) =>
-    api.post('/api/v1/connectors/test', {
-      connector_type: connectorType,
-      config
-    }),
+  testConnector: (payload) =>
+    api.post('/api/v1/connectors/test', payload),
 
-  createConnector: (connectorType, name, config) =>
-    api.post('/api/v1/connectors', {
-      connector_type: connectorType,
-      name,
-      config
-    }),
+  createConnector: (payload) =>
+    api.post('/api/v1/connectors', payload),
+
+  getConnectors: () =>
+    api.get('/api/v1/connectors'),
 
   listConnectors: () =>
     api.get('/api/v1/connectors'),
@@ -480,6 +487,159 @@ export const apiService = {
 
   testExistingConnector: (connectorId) =>
     api.post(`/api/v1/connectors/${connectorId}/test`),
+
+  // Check connector status
+  checkConnectorStatus: () =>
+    api.get('/api/v1/connectors/status'),
+
+  // Test a specific database connection
+  testConnection: (databaseType) =>
+    api.post(`/api/v1/connectors/${databaseType}/test-connection`),
+
+  // Toggle database for chat
+  toggleChatDatabase: (connectorId, enabled) =>
+    api.patch(`/api/v1/connectors/${connectorId}/toggle-chat`, null, {
+      params: { enabled }
+    }),
+
+  // Get chat-enabled databases
+  getChatEnabledDatabases: () =>
+    api.get('/api/v1/connectors/chat-enabled'),
+
+  // BigQuery OAuth endpoints (for keyless authentication)
+  getBigQueryOAuthStatus: () =>
+    api.get('/api/v1/connectors/bigquery/oauth/status'),
+
+  initiateBigQueryOAuth: (redirectUri = null) =>
+    api.post('/api/v1/connectors/bigquery/oauth/authorize', null, {
+      params: redirectUri ? { redirect_uri: redirectUri } : {}
+    }),
+
+  completeBigQueryOAuth: ({ code, state, project_id, dataset, name, location }) =>
+    api.post('/api/v1/connectors/bigquery/oauth/complete', null, {
+      params: { code, state, project_id, dataset, name, location }
+    }),
+
+  // Control Center endpoints
+  getControlCenterSettings: () =>
+    api.get('/api/v1/control-center/settings'),
+
+  updateControlCenterSettings: (settings) =>
+    api.put('/api/v1/control-center/settings', settings),
+
+  // Dashboard Creation endpoints
+  detectDashboardIntent: (message) =>
+    api.post('/api/v1/dashboards/detect-intent', { message }),
+
+  createDashboardFromConversation: (query, context) =>
+    api.post('/api/v1/dashboards/create-from-conversation', { query, context }),
+
+  confirmDashboardCreation: (previewId, modifications) =>
+    api.post('/api/v1/dashboards/confirm-creation', { preview_id: previewId, modifications }),
+
+  // Notification Preferences endpoints
+  getNotificationPreferences: () =>
+    api.get('/api/v1/notifications/preferences'),
+
+  updateNotificationPreferences: (preferences) =>
+    api.put('/api/v1/notifications/preferences', preferences),
+
+  sendTestEmail: (email) =>
+    api.post('/api/v1/notifications/test-email', { email }),
+
+  // Scheduled Reports endpoints
+  createScheduledReport: (report) =>
+    api.post('/api/v1/reports/schedule', report),
+
+  listScheduledReports: () =>
+    api.get('/api/v1/reports/schedules'),
+
+  deleteScheduledReport: (reportId) =>
+    api.delete(`/api/v1/reports/schedules/${reportId}`),
+
+  toggleScheduledReport: (reportId) =>
+    api.patch(`/api/v1/reports/schedules/${reportId}/toggle`),
+
+  // Dashboard Narrative endpoints
+  generateDashboardNarrative: (dashboardId, options = {}) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/narrative`, options),
+
+  generateExecutiveSummary: (dashboardId, options = {}) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/summary`, options),
+
+  getCachedNarrative: (dashboardId) =>
+    api.get(`/api/v1/dashboards/${dashboardId}/narrative/cached`),
+
+  generateWidgetInsight: (insight) =>
+    api.post('/api/v1/widgets/insight', insight),
+
+  generateTrendAnalysis: (analysis) =>
+    api.post('/api/v1/narrative/trend', analysis),
+
+  generateAnomalyNarrative: (anomaly) =>
+    api.post('/api/v1/narrative/anomaly', anomaly),
+
+  // Dashboard Sharing endpoints
+  shareDashboard: (dashboardId, shareData) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/share`, shareData),
+
+  bulkShareDashboard: (dashboardId, shares) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/share/bulk`, { shares }),
+
+  getDashboardPermissions: (dashboardId) =>
+    api.get(`/api/v1/dashboards/${dashboardId}/permissions`),
+
+  removeDashboardPermission: (dashboardId, permissionId) =>
+    api.delete(`/api/v1/dashboards/${dashboardId}/permissions/${permissionId}`),
+
+  generateShareLink: (dashboardId, permission = 'view', expiresHours = null) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/share-link`, null, {
+      params: { permission, expires_hours: expiresHours }
+    }),
+
+  revokeShareLink: (dashboardId) =>
+    api.delete(`/api/v1/dashboards/${dashboardId}/share-link`),
+
+  accessSharedDashboard: (token) =>
+    api.get(`/api/v1/shared/${token}`),
+
+  togglePublicAccess: (dashboardId, isPublic) =>
+    api.put(`/api/v1/dashboards/${dashboardId}/public`, null, {
+      params: { is_public: isPublic }
+    }),
+
+  // Dashboard Comments endpoints
+  createComment: (dashboardId, comment) =>
+    api.post(`/api/v1/dashboards/${dashboardId}/comments`, comment),
+
+  listComments: (dashboardId, options = {}) =>
+    api.get(`/api/v1/dashboards/${dashboardId}/comments`, { params: options }),
+
+  updateComment: (commentId, content) =>
+    api.put(`/api/v1/comments/${commentId}`, { content }),
+
+  deleteComment: (commentId) =>
+    api.delete(`/api/v1/comments/${commentId}`),
+
+  replyToComment: (commentId, reply) =>
+    api.post(`/api/v1/comments/${commentId}/reply`, reply),
+
+  getCommentReplies: (commentId) =>
+    api.get(`/api/v1/comments/${commentId}/replies`),
+
+  // Widget Annotations endpoints
+  createAnnotation: (widgetId, dashboardId, annotation) =>
+    api.post(`/api/v1/widgets/${widgetId}/annotations`, annotation, {
+      params: { dashboard_id: dashboardId }
+    }),
+
+  getWidgetAnnotations: (widgetId, dashboardId) =>
+    api.get(`/api/v1/widgets/${widgetId}/annotations`, {
+      params: { dashboard_id: dashboardId }
+    }),
+
+  deleteAnnotation: (annotationId) =>
+    api.delete(`/api/v1/annotations/${annotationId}`),
 
   // Generic HTTP methods
   get: (url, config) => api.get(url, config),

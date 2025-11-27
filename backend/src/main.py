@@ -23,6 +23,14 @@ from src.api.connector_routes import router as connector_router
 from src.api.permissions_routes import router as permissions_router
 from src.api.cross_database_routes import router as cross_database_router
 from src.api.statistics_routes import router as statistics_router
+from src.api.cognito_admin_routes import router as cognito_admin_router
+from src.api.chat_routes import router as chat_router
+from src.api.dashboard_routes import router as dashboard_router
+from src.api.alert_notification_routes import router as alert_notification_router
+from src.api.dashboard_creation_routes import router as dashboard_creation_router
+from src.api.narrative_routes import router as narrative_router
+from src.api.sharing_routes import router as sharing_router
+from src.api.comments_routes import router as comments_router
 
 # Configure structured logging
 structlog.configure(
@@ -49,15 +57,30 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting NLP to SQL BigQuery service...")
 
-    # Connect to MongoDB
-    from src.db.mongodb_client import mongodb_client
-    await mongodb_client.connect()
-    logger.info("MongoDB connected")
+    # Connect to MongoDB (optional - don't fail startup if unavailable)
+    mongodb_connected = False
+    try:
+        from src.db.mongodb_client import mongodb_client
+        await mongodb_client.connect()
+        mongodb_connected = True
+        logger.info("MongoDB connected")
+    except Exception as e:
+        logger.warning(f"MongoDB connection failed (conversations will not be persisted): {e}")
+
+    # Initialize SQLGenerator for organizations with enabled databases
+    try:
+        from src.api.routes import initialize_sql_generators_for_organizations
+        await initialize_sql_generators_for_organizations()
+        logger.info("SQLGenerator instances initialized for organizations")
+    except Exception as e:
+        logger.error(f"Error initializing SQLGenerators: {e}")
+        # Continue startup even if initialization fails
 
     # Start Enterprise Pulse scheduler in background
     from src.core.pulse_scheduler import get_scheduler
     from src.core.market_signal_scheduler import get_market_signal_scheduler
     from src.core.pipeline_scheduler import get_pipeline_scheduler
+    from src.core.alert_notification_scheduler import get_alert_notification_scheduler
     from datetime import time
     import asyncio
 
@@ -77,6 +100,11 @@ async def lifespan(app: FastAPI):
     )
     pipeline_task = asyncio.create_task(pipeline_scheduler.start())
     logger.info("Pipeline Scheduler started (daily at 2:00 AM)")
+
+    # Start Alert Notification scheduler (checks every 60 seconds)
+    alert_notification_scheduler = get_alert_notification_scheduler()
+    alert_notification_task = asyncio.create_task(alert_notification_scheduler.start())
+    logger.info("Alert Notification Scheduler started")
 
     yield
 
@@ -109,6 +137,15 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     logger.info("Pipeline Scheduler stopped")
+
+    # Stop alert notification scheduler
+    await alert_notification_scheduler.stop()
+    alert_notification_task.cancel()
+    try:
+        await alert_notification_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("Alert Notification Scheduler stopped")
 
 
 app = FastAPI(
@@ -170,6 +207,14 @@ app.include_router(connector_router)
 app.include_router(permissions_router)
 app.include_router(cross_database_router)
 app.include_router(statistics_router)
+app.include_router(cognito_admin_router)
+app.include_router(chat_router)
+app.include_router(dashboard_router)
+app.include_router(alert_notification_router)
+app.include_router(dashboard_creation_router)
+app.include_router(narrative_router)
+app.include_router(sharing_router)
+app.include_router(comments_router)
 
 
 @app.get("/")

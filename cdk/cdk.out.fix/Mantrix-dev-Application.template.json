@@ -1,0 +1,1715 @@
+{
+ "Description": "Mantrix Axis AI - Application (ECS, ALB)",
+ "Resources": {
+  "ServiceNamespaceB29FC01B": {
+   "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
+   "Properties": {
+    "Description": "Private DNS namespace for Mantrix services",
+    "Name": "mantrix-dev.local",
+    "Vpc": {
+     "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpc8378EB38272D6E3A"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/ServiceNamespace/Resource"
+   }
+  },
+  "backendRepoB0B2C89B": {
+   "Type": "AWS::ECR::Repository",
+   "Properties": {
+    "EmptyOnDelete": true,
+    "ImageScanningConfiguration": {
+     "ScanOnPush": true
+    },
+    "LifecyclePolicy": {
+     "LifecyclePolicyText": "{\"rules\":[{\"rulePriority\":1,\"description\":\"Keep only last 10 images\",\"selection\":{\"tagStatus\":\"any\",\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}}]}"
+    },
+    "RepositoryName": "mantrix-dev/backend"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/backendRepo/Resource"
+   }
+  },
+  "frontendRepo74B66850": {
+   "Type": "AWS::ECR::Repository",
+   "Properties": {
+    "EmptyOnDelete": true,
+    "ImageScanningConfiguration": {
+     "ScanOnPush": true
+    },
+    "LifecyclePolicy": {
+     "LifecyclePolicyText": "{\"rules\":[{\"rulePriority\":1,\"description\":\"Keep only last 10 images\",\"selection\":{\"tagStatus\":\"any\",\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}}]}"
+    },
+    "RepositoryName": "mantrix-dev/frontend"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/frontendRepo/Resource"
+   }
+  },
+  "EcsCluster97242B84": {
+   "Type": "AWS::ECS::Cluster",
+   "Properties": {
+    "ClusterName": "mantrix-dev",
+    "ClusterSettings": [
+     {
+      "Name": "containerInsights",
+      "Value": "enabled"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/EcsCluster/Resource"
+   }
+  },
+  "EcsCluster72B17558": {
+   "Type": "AWS::ECS::ClusterCapacityProviderAssociations",
+   "Properties": {
+    "CapacityProviders": [
+     "FARGATE",
+     "FARGATE_SPOT"
+    ],
+    "Cluster": {
+     "Ref": "EcsCluster97242B84"
+    },
+    "DefaultCapacityProviderStrategy": []
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/EcsCluster/EcsCluster"
+   }
+  },
+  "BackendLogs21FC23BC": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/ecs/mantrix-dev/backend",
+    "RetentionInDays": 14
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendLogs/Resource"
+   }
+  },
+  "FrontendLogs9AD73413": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/ecs/mantrix-dev/frontend",
+    "RetentionInDays": 14
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendLogs/Resource"
+   }
+  },
+  "DataServicesLogsA7FA0032": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/ecs/mantrix-dev/data-services",
+    "RetentionInDays": 14
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesLogs/Resource"
+   }
+  },
+  "Alb16C2F182": {
+   "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+   "Properties": {
+    "LoadBalancerAttributes": [
+     {
+      "Key": "deletion_protection.enabled",
+      "Value": "false"
+     }
+    ],
+    "Name": "mantrix-dev-alb",
+    "Scheme": "internet-facing",
+    "SecurityGroups": [
+     {
+      "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputFnGetAttAlbSecurityGroup86A59E99GroupIdE3A37BC7"
+     }
+    ],
+    "Subnets": [
+     {
+      "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456"
+     },
+     {
+      "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740"
+     }
+    ],
+    "Type": "application"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/Resource"
+   }
+  },
+  "AlbHttpsListener2ADA614F": {
+   "Type": "AWS::ElasticLoadBalancingV2::Listener",
+   "Properties": {
+    "Certificates": [
+     {
+      "CertificateArn": {
+       "Fn::ImportValue": "Mantrix-dev-Certificate:ExportsOutputRefCertificate4E7ABB08F7C8AF50"
+      }
+     }
+    ],
+    "DefaultActions": [
+     {
+      "TargetGroupArn": {
+       "Ref": "AlbHttpsListenerFrontendTargetGroup9D6FB59B"
+      },
+      "Type": "forward"
+     }
+    ],
+    "LoadBalancerArn": {
+     "Ref": "Alb16C2F182"
+    },
+    "Port": 443,
+    "Protocol": "HTTPS",
+    "SslPolicy": "ELBSecurityPolicy-TLS-1-2-2017-01"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/HttpsListener/Resource"
+   }
+  },
+  "AlbHttpsListenerBackendTargetGroupDCE9E56C": {
+   "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+   "Properties": {
+    "HealthCheckIntervalSeconds": 30,
+    "HealthCheckPath": "/api/v1/health",
+    "HealthCheckTimeoutSeconds": 10,
+    "HealthyThresholdCount": 2,
+    "Name": "mantrix-dev-backend",
+    "Port": 8000,
+    "Protocol": "HTTP",
+    "TargetGroupAttributes": [
+     {
+      "Key": "stickiness.enabled",
+      "Value": "false"
+     }
+    ],
+    "TargetType": "ip",
+    "UnhealthyThresholdCount": 3,
+    "VpcId": {
+     "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpc8378EB38272D6E3A"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/HttpsListener/BackendTargetGroup/Resource"
+   }
+  },
+  "AlbHttpsListenerBackendTargetRule0279E476": {
+   "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+   "Properties": {
+    "Actions": [
+     {
+      "TargetGroupArn": {
+       "Ref": "AlbHttpsListenerBackendTargetGroupDCE9E56C"
+      },
+      "Type": "forward"
+     }
+    ],
+    "Conditions": [
+     {
+      "Field": "path-pattern",
+      "PathPatternConfig": {
+       "Values": [
+        "/api/*"
+       ]
+      }
+     }
+    ],
+    "ListenerArn": {
+     "Ref": "AlbHttpsListener2ADA614F"
+    },
+    "Priority": 10
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/HttpsListener/BackendTargetRule/Resource"
+   }
+  },
+  "AlbHttpsListenerFrontendTargetGroup9D6FB59B": {
+   "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+   "Properties": {
+    "HealthCheckIntervalSeconds": 30,
+    "HealthCheckPath": "/health",
+    "HealthCheckTimeoutSeconds": 5,
+    "HealthyThresholdCount": 2,
+    "Name": "mantrix-dev-frontend",
+    "Port": 8080,
+    "Protocol": "HTTP",
+    "TargetGroupAttributes": [
+     {
+      "Key": "stickiness.enabled",
+      "Value": "false"
+     }
+    ],
+    "TargetType": "ip",
+    "UnhealthyThresholdCount": 3,
+    "VpcId": {
+     "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpc8378EB38272D6E3A"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/HttpsListener/FrontendTargetGroup/Resource"
+   }
+  },
+  "AlbHttpListener00C8B33E": {
+   "Type": "AWS::ElasticLoadBalancingV2::Listener",
+   "Properties": {
+    "DefaultActions": [
+     {
+      "RedirectConfig": {
+       "Port": "443",
+       "Protocol": "HTTPS",
+       "StatusCode": "HTTP_301"
+      },
+      "Type": "redirect"
+     }
+    ],
+    "LoadBalancerArn": {
+     "Ref": "Alb16C2F182"
+    },
+    "Port": 80,
+    "Protocol": "HTTP"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/Alb/HttpListener/Resource"
+   }
+  },
+  "BackendTaskDefTaskRoleBA953A3B": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendTaskDef/TaskRole/Resource"
+   }
+  },
+  "BackendTaskDefTaskRoleDefaultPolicy2C657A56": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefAnthropicApiKeyC9C806DA1A52822F"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefOpenAIApiKey00DD37372E8DB38A"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefGcpCredentialsE99E0ABF68029B34"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefMarketApiKeys14C0125B8B8B30FF"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefRdsInstanceSecretAttachment50B5E8069E7253CF"
+       }
+      },
+      {
+       "Action": [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": "logs:DescribeLogGroups",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "BackendTaskDefTaskRoleDefaultPolicy2C657A56",
+    "Roles": [
+     {
+      "Ref": "BackendTaskDefTaskRoleBA953A3B"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendTaskDef/TaskRole/DefaultPolicy/Resource"
+   }
+  },
+  "BackendTaskDef6ECE986E": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Environment": [
+       {
+        "Name": "API_ENV",
+        "Value": "dev"
+       },
+       {
+        "Name": "LOG_LEVEL",
+        "Value": "INFO"
+       },
+       {
+        "Name": "POSTGRES_HOST",
+        "Value": {
+         "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputFnGetAttRdsInstance1D827D17EndpointAddress28B788DB"
+        }
+       },
+       {
+        "Name": "POSTGRES_PORT",
+        "Value": "5432"
+       },
+       {
+        "Name": "POSTGRES_DATABASE",
+        "Value": "mantrix"
+       },
+       {
+        "Name": "REDIS_HOST",
+        "Value": {
+         "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputFnGetAttRedisClusterRedisEndpointAddress2C712DA2"
+        }
+       },
+       {
+        "Name": "REDIS_PORT",
+        "Value": "6379"
+       },
+       {
+        "Name": "MONGODB_URL",
+        "Value": "mongodb://data-services.mantrix-dev.local:27017/nlp_sql_db"
+       },
+       {
+        "Name": "WEAVIATE_URL",
+        "Value": "http://data-services.mantrix-dev.local:8080"
+       },
+       {
+        "Name": "WEAVIATE_HOST",
+        "Value": "data-services.mantrix-dev.local"
+       },
+       {
+        "Name": "WEAVIATE_PORT",
+        "Value": "8080"
+       },
+       {
+        "Name": "AWS_REGION",
+        "Value": "us-east-1"
+       },
+       {
+        "Name": "COGNITO_USER_POOL_ID",
+        "Value": {
+         "Fn::ImportValue": "Mantrix-dev-Cognito:ExportsOutputRefUserPool6BA7E5F296FD7236"
+        }
+       },
+       {
+        "Name": "COGNITO_APP_CLIENT_ID",
+        "Value": {
+         "Fn::ImportValue": "Mantrix-dev-Cognito:ExportsOutputRefUserPoolWebClient4C9370B02E2C9FF9"
+        }
+       },
+       {
+        "Name": "CACHE_ENABLED",
+        "Value": "true"
+       },
+       {
+        "Name": "GOOGLE_CLOUD_PROJECT",
+        "Value": "cloudmantra-genai"
+       },
+       {
+        "Name": "BIGQUERY_DATASET",
+        "Value": "stox_ai"
+       }
+      ],
+      "Essential": true,
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "curl -f http://localhost:8000/api/v1/health || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 60,
+       "Timeout": 10
+      },
+      "Image": {
+       "Fn::Join": [
+        "",
+        [
+         {
+          "Fn::Select": [
+           4,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::GetAtt": [
+               "backendRepoB0B2C89B",
+               "Arn"
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         ".dkr.ecr.",
+         {
+          "Fn::Select": [
+           3,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::GetAtt": [
+               "backendRepoB0B2C89B",
+               "Arn"
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         ".",
+         {
+          "Ref": "AWS::URLSuffix"
+         },
+         "/",
+         {
+          "Ref": "backendRepoB0B2C89B"
+         },
+         ":latest"
+        ]
+       ]
+      },
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "BackendLogs21FC23BC"
+        },
+        "awslogs-stream-prefix": "backend",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "Name": "backend",
+      "PortMappings": [
+       {
+        "ContainerPort": 8000,
+        "Protocol": "tcp"
+       }
+      ],
+      "Secrets": [
+       {
+        "Name": "ANTHROPIC_API_KEY",
+        "ValueFrom": {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefAnthropicApiKeyC9C806DA1A52822F"
+           },
+           ":api_key::"
+          ]
+         ]
+        }
+       },
+       {
+        "Name": "OPENAI_API_KEY",
+        "ValueFrom": {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefOpenAIApiKey00DD37372E8DB38A"
+           },
+           ":api_key::"
+          ]
+         ]
+        }
+       },
+       {
+        "Name": "GCP_CREDENTIALS_JSON",
+        "ValueFrom": {
+         "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefGcpCredentialsE99E0ABF68029B34"
+        }
+       },
+       {
+        "Name": "POSTGRES_USER",
+        "ValueFrom": {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefRdsInstanceSecretAttachment50B5E8069E7253CF"
+           },
+           ":username::"
+          ]
+         ]
+        }
+       },
+       {
+        "Name": "POSTGRES_PASSWORD",
+        "ValueFrom": {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefRdsInstanceSecretAttachment50B5E8069E7253CF"
+           },
+           ":password::"
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    ],
+    "Cpu": "512",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "BackendTaskDefExecutionRoleC5A001DB",
+      "Arn"
+     ]
+    },
+    "Family": "mantrix-dev-backend",
+    "Memory": "1024",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "BackendTaskDefTaskRoleBA953A3B",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendTaskDef/Resource"
+   }
+  },
+  "BackendTaskDefExecutionRoleC5A001DB": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendTaskDef/ExecutionRole/Resource"
+   }
+  },
+  "BackendTaskDefExecutionRoleDefaultPolicyAA625660": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "backendRepoB0B2C89B",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": "ecr:GetAuthorizationToken",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "BackendLogs21FC23BC",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefAnthropicApiKeyC9C806DA1A52822F"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefOpenAIApiKey00DD37372E8DB38A"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Secrets:ExportsOutputRefGcpCredentialsE99E0ABF68029B34"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefRdsInstanceSecretAttachment50B5E8069E7253CF"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "BackendTaskDefExecutionRoleDefaultPolicyAA625660",
+    "Roles": [
+     {
+      "Ref": "BackendTaskDefExecutionRoleC5A001DB"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendTaskDef/ExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "BackendService7A4224EE": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "CapacityProviderStrategy": [
+     {
+      "CapacityProvider": "FARGATE_SPOT",
+      "Weight": 1
+     },
+     {
+      "Base": 1,
+      "CapacityProvider": "FARGATE",
+      "Weight": 0
+     }
+    ],
+    "Cluster": {
+     "Ref": "EcsCluster97242B84"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "EnableExecuteCommand": true,
+    "HealthCheckGracePeriodSeconds": 60,
+    "LoadBalancers": [
+     {
+      "ContainerName": "backend",
+      "ContainerPort": 8000,
+      "TargetGroupArn": {
+       "Ref": "AlbHttpsListenerBackendTargetGroupDCE9E56C"
+      }
+     }
+    ],
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "ENABLED",
+      "SecurityGroups": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputFnGetAttBackendSecurityGroup96CF32F1GroupId811D82AA"
+       }
+      ],
+      "Subnets": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456"
+       },
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740"
+       }
+      ]
+     }
+    },
+    "ServiceName": "mantrix-dev-backend",
+    "TaskDefinition": {
+     "Ref": "BackendTaskDef6ECE986E"
+    }
+   },
+   "DependsOn": [
+    "AlbHttpsListenerBackendTargetRule0279E476",
+    "BackendTaskDefTaskRoleDefaultPolicy2C657A56",
+    "BackendTaskDefTaskRoleBA953A3B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/BackendService/Service"
+   }
+  },
+  "FrontendTaskDefTaskRoleDA0FD037": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendTaskDef/TaskRole/Resource"
+   }
+  },
+  "FrontendTaskDef7D3FD156": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Essential": true,
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "curl -f http://localhost:8080/health || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 30,
+       "Timeout": 5
+      },
+      "Image": {
+       "Fn::Join": [
+        "",
+        [
+         {
+          "Fn::Select": [
+           4,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::GetAtt": [
+               "frontendRepo74B66850",
+               "Arn"
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         ".dkr.ecr.",
+         {
+          "Fn::Select": [
+           3,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::GetAtt": [
+               "frontendRepo74B66850",
+               "Arn"
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         ".",
+         {
+          "Ref": "AWS::URLSuffix"
+         },
+         "/",
+         {
+          "Ref": "frontendRepo74B66850"
+         },
+         ":latest"
+        ]
+       ]
+      },
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "FrontendLogs9AD73413"
+        },
+        "awslogs-stream-prefix": "frontend",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "Name": "frontend",
+      "PortMappings": [
+       {
+        "ContainerPort": 8080,
+        "Protocol": "tcp"
+       }
+      ]
+     }
+    ],
+    "Cpu": "256",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "FrontendTaskDefExecutionRoleE7329A09",
+      "Arn"
+     ]
+    },
+    "Family": "mantrix-dev-frontend",
+    "Memory": "512",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "FrontendTaskDefTaskRoleDA0FD037",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendTaskDef/Resource"
+   }
+  },
+  "FrontendTaskDefExecutionRoleE7329A09": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendTaskDef/ExecutionRole/Resource"
+   }
+  },
+  "FrontendTaskDefExecutionRoleDefaultPolicy48DF7F3B": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "frontendRepo74B66850",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": "ecr:GetAuthorizationToken",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "FrontendLogs9AD73413",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "FrontendTaskDefExecutionRoleDefaultPolicy48DF7F3B",
+    "Roles": [
+     {
+      "Ref": "FrontendTaskDefExecutionRoleE7329A09"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendTaskDef/ExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "FrontendServiceBC94BA93": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "CapacityProviderStrategy": [
+     {
+      "CapacityProvider": "FARGATE_SPOT",
+      "Weight": 1
+     }
+    ],
+    "Cluster": {
+     "Ref": "EcsCluster97242B84"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "HealthCheckGracePeriodSeconds": 60,
+    "LoadBalancers": [
+     {
+      "ContainerName": "frontend",
+      "ContainerPort": 8080,
+      "TargetGroupArn": {
+       "Ref": "AlbHttpsListenerFrontendTargetGroup9D6FB59B"
+      }
+     }
+    ],
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "ENABLED",
+      "SecurityGroups": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputFnGetAttFrontendSecurityGroup69AD9D5BGroupId07DF996C"
+       }
+      ],
+      "Subnets": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456"
+       },
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740"
+       }
+      ]
+     }
+    },
+    "ServiceName": "mantrix-dev-frontend",
+    "TaskDefinition": {
+     "Ref": "FrontendTaskDef7D3FD156"
+    }
+   },
+   "DependsOn": [
+    "AlbHttpsListenerBackendTargetGroupDCE9E56C",
+    "AlbHttpsListenerBackendTargetRule0279E476",
+    "AlbHttpsListenerFrontendTargetGroup9D6FB59B",
+    "AlbHttpsListener2ADA614F",
+    "FrontendTaskDefTaskRoleDA0FD037"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/FrontendService/Service"
+   }
+  },
+  "DataServicesTaskDefTaskRoleDCA734E5": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonElasticFileSystemClientReadWriteAccess"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesTaskDef/TaskRole/Resource"
+   }
+  },
+  "DataServicesTaskDefTaskRoleDefaultPolicy7602E88B": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "elasticfilesystem:ClientMount",
+        "elasticfilesystem:ClientWrite",
+        "elasticfilesystem:ClientRootAccess"
+       ],
+       "Condition": {
+        "Bool": {
+         "elasticfilesystem:AccessedViaMountTarget": "true"
+        }
+       },
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputFnGetAttEfsFileSystem37910666ArnBA4C16CE"
+       }
+      },
+      {
+       "Action": [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": "logs:DescribeLogGroups",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DataServicesTaskDefTaskRoleDefaultPolicy7602E88B",
+    "Roles": [
+     {
+      "Ref": "DataServicesTaskDefTaskRoleDCA734E5"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesTaskDef/TaskRole/DefaultPolicy/Resource"
+   }
+  },
+  "DataServicesTaskDef20207F4F": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Environment": [
+       {
+        "Name": "QUERY_DEFAULTS_LIMIT",
+        "Value": "25"
+       },
+       {
+        "Name": "AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED",
+        "Value": "true"
+       },
+       {
+        "Name": "PERSISTENCE_DATA_PATH",
+        "Value": "/var/lib/weaviate"
+       },
+       {
+        "Name": "DEFAULT_VECTORIZER_MODULE",
+        "Value": "none"
+       },
+       {
+        "Name": "ENABLE_MODULES",
+        "Value": ""
+       },
+       {
+        "Name": "CLUSTER_HOSTNAME",
+        "Value": "node1"
+       }
+      ],
+      "Essential": true,
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "wget -q --spider http://localhost:8080/v1/.well-known/ready || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 60,
+       "Timeout": 10
+      },
+      "Image": "709141244278.dkr.ecr.us-east-1.amazonaws.com/mantrix-dev/weaviate:1.24.1",
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "DataServicesLogsA7FA0032"
+        },
+        "awslogs-stream-prefix": "weaviate",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "MountPoints": [
+       {
+        "ContainerPath": "/var/lib/weaviate",
+        "ReadOnly": false,
+        "SourceVolume": "efs-data"
+       }
+      ],
+      "Name": "weaviate",
+      "PortMappings": [
+       {
+        "ContainerPort": 8080,
+        "Protocol": "tcp"
+       }
+      ]
+     },
+     {
+      "Environment": [
+       {
+        "Name": "MONGO_INITDB_DATABASE",
+        "Value": "nlp_sql_db"
+       }
+      ],
+      "Essential": true,
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "mongosh --eval \"db.adminCommand('ping')\" || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 60,
+       "Timeout": 10
+      },
+      "Image": "709141244278.dkr.ecr.us-east-1.amazonaws.com/mantrix-dev/mongodb:7.0",
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "DataServicesLogsA7FA0032"
+        },
+        "awslogs-stream-prefix": "mongodb",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "MountPoints": [
+       {
+        "ContainerPath": "/data/db",
+        "ReadOnly": false,
+        "SourceVolume": "efs-data"
+       }
+      ],
+      "Name": "mongodb",
+      "PortMappings": [
+       {
+        "ContainerPort": 27017,
+        "Protocol": "tcp"
+       }
+      ],
+      "User": "999:999"
+     }
+    ],
+    "Cpu": "1024",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "DataServicesTaskDefExecutionRole84426621",
+      "Arn"
+     ]
+    },
+    "Family": "mantrix-dev-data-services",
+    "Memory": "2048",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "DataServicesTaskDefTaskRoleDCA734E5",
+      "Arn"
+     ]
+    },
+    "Volumes": [
+     {
+      "EFSVolumeConfiguration": {
+       "AuthorizationConfig": {
+        "AccessPointId": {
+         "Ref": "DataServicesAccessPoint5F0342D3"
+        },
+        "IAM": "ENABLED"
+       },
+       "FilesystemId": {
+        "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefEfsFileSystem37910666260C6CBF"
+       },
+       "TransitEncryption": "ENABLED"
+      },
+      "Name": "efs-data"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesTaskDef/Resource"
+   }
+  },
+  "DataServicesTaskDefExecutionRole84426621": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesTaskDef/ExecutionRole/Resource"
+   }
+  },
+  "DataServicesTaskDefExecutionRoleDefaultPolicy05A40445": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "DataServicesLogsA7FA0032",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DataServicesTaskDefExecutionRoleDefaultPolicy05A40445",
+    "Roles": [
+     {
+      "Ref": "DataServicesTaskDefExecutionRole84426621"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesTaskDef/ExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "DataServicesAccessPoint5F0342D3": {
+   "Type": "AWS::EFS::AccessPoint",
+   "Properties": {
+    "AccessPointTags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Application/DataServicesAccessPoint"
+     }
+    ],
+    "FileSystemId": {
+     "Fn::ImportValue": "Mantrix-dev-Database:ExportsOutputRefEfsFileSystem37910666260C6CBF"
+    },
+    "PosixUser": {
+     "Gid": "999",
+     "Uid": "999"
+    },
+    "RootDirectory": {
+     "CreationInfo": {
+      "OwnerGid": "999",
+      "OwnerUid": "999",
+      "Permissions": "777"
+     },
+     "Path": "/data-services"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesAccessPoint/Resource"
+   }
+  },
+  "DataServicesService892134C3": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "Cluster": {
+     "Ref": "EcsCluster97242B84"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "EnableExecuteCommand": true,
+    "LaunchType": "FARGATE",
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "DISABLED",
+      "SecurityGroups": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputFnGetAttDataServicesSecurityGroup620B1584GroupId4BAF2CD6"
+       }
+      ],
+      "Subnets": [
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcIsolatedSubnet1SubnetE48C57379FE391D3"
+       },
+       {
+        "Fn::ImportValue": "Mantrix-dev-Network:ExportsOutputRefVpcIsolatedSubnet2Subnet16364B914643ED68"
+       }
+      ]
+     }
+    },
+    "ServiceName": "mantrix-dev-data-services",
+    "ServiceRegistries": [
+     {
+      "RegistryArn": {
+       "Fn::GetAtt": [
+        "DataServicesServiceCloudmapService86BC3F5A",
+        "Arn"
+       ]
+      }
+     }
+    ],
+    "TaskDefinition": {
+     "Ref": "DataServicesTaskDef20207F4F"
+    }
+   },
+   "DependsOn": [
+    "DataServicesTaskDefTaskRoleDefaultPolicy7602E88B",
+    "DataServicesTaskDefTaskRoleDCA734E5"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesService/Service"
+   }
+  },
+  "DataServicesServiceCloudmapService86BC3F5A": {
+   "Type": "AWS::ServiceDiscovery::Service",
+   "Properties": {
+    "DnsConfig": {
+     "DnsRecords": [
+      {
+       "TTL": 30,
+       "Type": "A"
+      }
+     ],
+     "NamespaceId": {
+      "Fn::GetAtt": [
+       "ServiceNamespaceB29FC01B",
+       "Id"
+      ]
+     },
+     "RoutingPolicy": "MULTIVALUE"
+    },
+    "HealthCheckCustomConfig": {
+     "FailureThreshold": 1
+    },
+    "Name": "data-services",
+    "NamespaceId": {
+     "Fn::GetAtt": [
+      "ServiceNamespaceB29FC01B",
+      "Id"
+     ]
+    }
+   },
+   "DependsOn": [
+    "DataServicesTaskDefTaskRoleDefaultPolicy7602E88B",
+    "DataServicesTaskDefTaskRoleDCA734E5"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DataServicesService/CloudmapService/Resource"
+   }
+  },
+  "DnsRecord68F7FB14": {
+   "Type": "AWS::Route53::RecordSet",
+   "Properties": {
+    "AliasTarget": {
+     "DNSName": {
+      "Fn::Join": [
+       "",
+       [
+        "dualstack.",
+        {
+         "Fn::GetAtt": [
+          "Alb16C2F182",
+          "DNSName"
+         ]
+        }
+       ]
+      ]
+     },
+     "HostedZoneId": {
+      "Fn::GetAtt": [
+       "Alb16C2F182",
+       "CanonicalHostedZoneID"
+      ]
+     }
+    },
+    "HostedZoneId": "Z0436109NKVO9GB2ZM67",
+    "Name": "axis-dev.cloudmantra.ai.",
+    "Type": "A"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/DnsRecord/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/22RwW7CMAyGn4V7yFCnHXZkoO0ybahwn0xqKo8QV7FbhKK++xQKW7dx8v/7sy0nLmxRPNrZBI4yddV+6mlr01rB7Q0c5SMJxo4cViSOO4wnm1aROlBcBnmDA0oDDs1iF26l10NzxhfZG3TRphIbFlKOp8x+XMZi08K3ohgz+y8X0IAjPa0id1RhnIuwI1DiIOYZYg2KG5D9EncUKKdz898MBwUKGEe5S++tpT3XYtMr1y+R2yajq+4NehAl5xmqLXgIjkLdFTbNm8aTO+/1ylA9ndnwkl9+XEeiGC41Vz3iG4g16vcOY3tjStl6HE/KvjcEB5tKHtA5rtiTOx9iUL3Bndg0dw5FVkxBMxvZ3kRuFR/ubZqX6DhWwxWzWqP2vSlRuI3DJ7632rTam8AV2k+564rCFjM7m3wK0TS2QemAthziF2W3EwuPAgAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Application/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "LoadBalancerDns": {
+   "Description": "ALB DNS name",
+   "Value": {
+    "Fn::GetAtt": [
+     "Alb16C2F182",
+     "DNSName"
+    ]
+   }
+  },
+  "ApplicationUrl": {
+   "Description": "Application URL",
+   "Value": "https://axis-dev.cloudmantra.ai"
+  },
+  "BackendEcrUri": {
+   "Description": "Backend ECR repository URI",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      {
+       "Fn::Select": [
+        4,
+        {
+         "Fn::Split": [
+          ":",
+          {
+           "Fn::GetAtt": [
+            "backendRepoB0B2C89B",
+            "Arn"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      ".dkr.ecr.",
+      {
+       "Fn::Select": [
+        3,
+        {
+         "Fn::Split": [
+          ":",
+          {
+           "Fn::GetAtt": [
+            "backendRepoB0B2C89B",
+            "Arn"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      ".",
+      {
+       "Ref": "AWS::URLSuffix"
+      },
+      "/",
+      {
+       "Ref": "backendRepoB0B2C89B"
+      }
+     ]
+    ]
+   }
+  },
+  "FrontendEcrUri": {
+   "Description": "Frontend ECR repository URI",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      {
+       "Fn::Select": [
+        4,
+        {
+         "Fn::Split": [
+          ":",
+          {
+           "Fn::GetAtt": [
+            "frontendRepo74B66850",
+            "Arn"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      ".dkr.ecr.",
+      {
+       "Fn::Select": [
+        3,
+        {
+         "Fn::Split": [
+          ":",
+          {
+           "Fn::GetAtt": [
+            "frontendRepo74B66850",
+            "Arn"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      ".",
+      {
+       "Ref": "AWS::URLSuffix"
+      },
+      "/",
+      {
+       "Ref": "frontendRepo74B66850"
+      }
+     ]
+    ]
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

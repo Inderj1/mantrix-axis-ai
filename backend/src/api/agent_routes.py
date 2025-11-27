@@ -14,12 +14,32 @@ import asyncio
 from datetime import date, datetime
 from decimal import Decimal
 
-from src.agents.financial_crew import get_agent_hierarchy
+# Lazy import for CrewAI to avoid startup failures when ChromaDB can't initialize
+# from src.agents.financial_crew import get_agent_hierarchy
 from src.core.sql_generator import SQLGenerator
 from src.db.bigquery import BigQueryClient
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["agents"], prefix="/api/v1/agents")
+
+# Lazy initialization for agent hierarchy (CrewAI)
+_agent_hierarchy = None
+
+
+def get_agent_hierarchy_lazy():
+    """Lazy initialization of agent hierarchy to avoid CrewAI import at startup."""
+    global _agent_hierarchy
+    if _agent_hierarchy is None:
+        try:
+            from src.agents.financial_crew import get_agent_hierarchy
+            _agent_hierarchy = get_agent_hierarchy()
+        except Exception as e:
+            logger.error("Failed to initialize agent hierarchy", error=str(e))
+            raise HTTPException(
+                status_code=503,
+                detail=f"Agent service unavailable - CrewAI initialization failed: {str(e)}"
+            )
+    return _agent_hierarchy
 
 # Custom JSON encoder for BigQuery date/datetime/decimal types
 def json_serializer(obj):
@@ -34,10 +54,15 @@ def json_serializer(obj):
 sql_generator = None
 bq_client = None
 
-def get_sql_generator() -> SQLGenerator:
+def get_sql_generator(organization_id: str = None) -> SQLGenerator:
+    """Get SQL generator instance with optional organization context."""
     global sql_generator
     if sql_generator is None:
-        sql_generator = SQLGenerator()
+        # Create with default organization_id if not provided
+        sql_generator = SQLGenerator(organization_id=organization_id)
+    elif organization_id and sql_generator.organization_id != organization_id:
+        # Create new instance if organization_id differs
+        sql_generator = SQLGenerator(organization_id=organization_id)
     return sql_generator
 
 def get_bq_client() -> BigQueryClient:
@@ -81,7 +106,7 @@ async def analyze_financial_query(request: AgentAnalysisRequest) -> AgentAnalysi
         logger.info("Starting agent analysis", query=request.query)
 
         # Get components
-        agent_hierarchy = get_agent_hierarchy()
+        agent_hierarchy = get_agent_hierarchy_lazy()
         sql_gen = get_sql_generator()
         bq = get_bq_client()
 
@@ -160,7 +185,7 @@ async def analyze_financial_query(request: AgentAnalysisRequest) -> AgentAnalysi
 @router.get("/hierarchy")
 async def get_agent_hierarchy_info() -> Dict[str, Any]:
     """Get information about the agent hierarchy."""
-    agent_hierarchy = get_agent_hierarchy()
+    agent_hierarchy = get_agent_hierarchy_lazy()
     return agent_hierarchy.get_agent_summary()
 
 
@@ -170,7 +195,7 @@ async def route_query(query: str) -> Dict[str, Any]:
     Preview which agents would be selected for a query.
     Useful for debugging and understanding agent routing.
     """
-    agent_hierarchy = get_agent_hierarchy()
+    agent_hierarchy = get_agent_hierarchy_lazy()
     routing = agent_hierarchy.route_query(query)
 
     return {
@@ -222,7 +247,7 @@ async def analyze_financial_query_stream(request: AgentAnalysisRequest):
             yield f"data: {json.dumps({'type': 'status', 'message': 'Understanding your financial question...'}, default=json_serializer)}\n\n"
 
             # Get components
-            agent_hierarchy = get_agent_hierarchy()
+            agent_hierarchy = get_agent_hierarchy_lazy()
             sql_gen = get_sql_generator()
             bq = get_bq_client()
 

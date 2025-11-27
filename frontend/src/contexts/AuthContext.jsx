@@ -49,12 +49,34 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await getCurrentUser();
       const session = await fetchAuthSession();
 
-      setUser(currentUser);
-      const idToken = session.tokens?.idToken?.toString();
-      setToken(idToken);
+      // Extract user attributes from the ID token payload
+      const idToken = session.tokens?.idToken;
+      const idTokenString = idToken?.toString();
 
-      if (idToken) {
-        localStorage.setItem('authToken', idToken);
+      // Decode the JWT token to get user attributes
+      let userAttributes = {};
+      if (idToken?.payload) {
+        userAttributes = {
+          email: idToken.payload.email,
+          name: idToken.payload.name,
+          given_name: idToken.payload.given_name,
+          family_name: idToken.payload.family_name,
+          preferred_username: idToken.payload.preferred_username,
+          // Add any other attributes you need
+        };
+      }
+
+      // Merge current user with attributes from token
+      const enrichedUser = {
+        ...currentUser,
+        attributes: userAttributes,
+      };
+
+      setUser(enrichedUser);
+      setToken(idTokenString);
+
+      if (idTokenString) {
+        localStorage.setItem('authToken', idTokenString);
       }
     } catch (error) {
       console.log('No authenticated user:', error);
@@ -68,7 +90,10 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      const { isSignedIn, nextStep } = await signIn({ username, password });
+      const { isSignedIn, nextStep } = await signIn({
+        username: username.trim(),
+        password
+      });
 
       if (isSignedIn) {
         await checkUser();

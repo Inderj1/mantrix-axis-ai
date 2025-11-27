@@ -1,0 +1,1300 @@
+{
+ "Description": "Mantrix Axis AI - Network infrastructure (VPC, subnets, security groups)",
+ "Resources": {
+  "Vpc8378EB38": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {
+    "CidrBlock": "10.0.0.0/16",
+    "EnableDnsHostnames": true,
+    "EnableDnsSupport": true,
+    "InstanceTenancy": "default",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/Resource"
+   }
+  },
+  "VpcPublicSubnet1Subnet5C2D37C4": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.0.0/24",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet1/Subnet"
+   }
+  },
+  "VpcPublicSubnet1RouteTable6C95E38E": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet1/RouteTable"
+   }
+  },
+  "VpcPublicSubnet1RouteTableAssociation97140677": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcPublicSubnet1RouteTable6C95E38E"
+    },
+    "SubnetId": {
+     "Ref": "VpcPublicSubnet1Subnet5C2D37C4"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet1/RouteTableAssociation"
+   }
+  },
+  "VpcPublicSubnet1DefaultRoute3DA9E72A": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "VpcIGWD7BA715C"
+    },
+    "RouteTableId": {
+     "Ref": "VpcPublicSubnet1RouteTable6C95E38E"
+    }
+   },
+   "DependsOn": [
+    "VpcVPCGWBF912B6E"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet1/DefaultRoute"
+   }
+  },
+  "VpcPublicSubnet2Subnet691E08A3": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.1.0/24",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet2/Subnet"
+   }
+  },
+  "VpcPublicSubnet2RouteTable94F7E489": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet2/RouteTable"
+   }
+  },
+  "VpcPublicSubnet2RouteTableAssociationDD5762D8": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcPublicSubnet2RouteTable94F7E489"
+    },
+    "SubnetId": {
+     "Ref": "VpcPublicSubnet2Subnet691E08A3"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet2/RouteTableAssociation"
+   }
+  },
+  "VpcPublicSubnet2DefaultRoute97F91067": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "VpcIGWD7BA715C"
+    },
+    "RouteTableId": {
+     "Ref": "VpcPublicSubnet2RouteTable94F7E489"
+    }
+   },
+   "DependsOn": [
+    "VpcVPCGWBF912B6E"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PublicSubnet2/DefaultRoute"
+   }
+  },
+  "VpcPrivateSubnet1Subnet536B997A": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.2.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet1/Subnet"
+   }
+  },
+  "VpcPrivateSubnet1RouteTableB2C5B500": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet1/RouteTable"
+   }
+  },
+  "VpcPrivateSubnet1RouteTableAssociation70C59FA6": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcPrivateSubnet1RouteTableB2C5B500"
+    },
+    "SubnetId": {
+     "Ref": "VpcPrivateSubnet1Subnet536B997A"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet1/RouteTableAssociation"
+   }
+  },
+  "VpcPrivateSubnet2Subnet3788AAA1": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.3.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet2/Subnet"
+   }
+  },
+  "VpcPrivateSubnet2RouteTableA678073B": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet2/RouteTable"
+   }
+  },
+  "VpcPrivateSubnet2RouteTableAssociationA89CAD56": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcPrivateSubnet2RouteTableA678073B"
+    },
+    "SubnetId": {
+     "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/PrivateSubnet2/RouteTableAssociation"
+   }
+  },
+  "VpcIsolatedSubnet1SubnetE48C5737": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.4.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/IsolatedSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet1/Subnet"
+   }
+  },
+  "VpcIsolatedSubnet1RouteTable4771E3E5": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/IsolatedSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet1/RouteTable"
+   }
+  },
+  "VpcIsolatedSubnet1RouteTableAssociationD300FCBB": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcIsolatedSubnet1RouteTable4771E3E5"
+    },
+    "SubnetId": {
+     "Ref": "VpcIsolatedSubnet1SubnetE48C5737"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet1/RouteTableAssociation"
+   }
+  },
+  "VpcIsolatedSubnet2Subnet16364B91": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.5.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/IsolatedSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet2/Subnet"
+   }
+  },
+  "VpcIsolatedSubnet2RouteTable1D30AF7D": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "Mantrix-dev-Network/Vpc/IsolatedSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet2/RouteTable"
+   }
+  },
+  "VpcIsolatedSubnet2RouteTableAssociationF7B18CCA": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcIsolatedSubnet2RouteTable1D30AF7D"
+    },
+    "SubnetId": {
+     "Ref": "VpcIsolatedSubnet2Subnet16364B91"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IsolatedSubnet2/RouteTableAssociation"
+   }
+  },
+  "VpcIGWD7BA715C": {
+   "Type": "AWS::EC2::InternetGateway",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/IGW"
+   }
+  },
+  "VpcVPCGWBF912B6E": {
+   "Type": "AWS::EC2::VPCGatewayAttachment",
+   "Properties": {
+    "InternetGatewayId": {
+     "Ref": "VpcIGWD7BA715C"
+    },
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/VPCGW"
+   }
+  },
+  "VpcEcrApiEndpoint25D60339": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointSecurityGroup02EA44AC",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.ecr.api",
+    "SubnetIds": [
+     {
+      "Ref": "VpcPrivateSubnet1Subnet536B997A"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/EcrApiEndpoint/Resource"
+   }
+  },
+  "VpcEcrDkrEndpoint764F3A9A": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointSecurityGroup02EA44AC",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.ecr.dkr",
+    "SubnetIds": [
+     {
+      "Ref": "VpcPrivateSubnet1Subnet536B997A"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/EcrDkrEndpoint/Resource"
+   }
+  },
+  "VpcS3Endpoint4A3DE4B5": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "RouteTableIds": [
+     {
+      "Ref": "VpcPrivateSubnet1RouteTableB2C5B500"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2RouteTableA678073B"
+     },
+     {
+      "Ref": "VpcIsolatedSubnet1RouteTable4771E3E5"
+     },
+     {
+      "Ref": "VpcIsolatedSubnet2RouteTable1D30AF7D"
+     }
+    ],
+    "ServiceName": {
+     "Fn::Join": [
+      "",
+      [
+       "com.amazonaws.",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".s3"
+      ]
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Gateway",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/S3Endpoint/Resource"
+   }
+  },
+  "VpcSecretsManagerEndpoint93E49F69": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointSecurityGroup02EA44AC",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.secretsmanager",
+    "SubnetIds": [
+     {
+      "Ref": "VpcPrivateSubnet1Subnet536B997A"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/SecretsManagerEndpoint/Resource"
+   }
+  },
+  "VpcCloudWatchLogsEndpointA6195533": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointSecurityGroup02EA44AC",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.logs",
+    "SubnetIds": [
+     {
+      "Ref": "VpcPrivateSubnet1Subnet536B997A"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/CloudWatchLogsEndpoint/Resource"
+   }
+  },
+  "VpcSsmEndpointC46DB833": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointSecurityGroup02EA44AC",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.ssm",
+    "SubnetIds": [
+     {
+      "Ref": "VpcPrivateSubnet1Subnet536B997A"
+     },
+     {
+      "Ref": "VpcPrivateSubnet2Subnet3788AAA1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-vpc"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/Vpc/SsmEndpoint/Resource"
+   }
+  },
+  "NatSecurityGroupEE8043DB": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for NAT Instance",
+    "GroupName": "mantrix-dev-nat-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": {
+       "Fn::GetAtt": [
+        "Vpc8378EB38",
+        "CidrBlock"
+       ]
+      },
+      "Description": "Allow all traffic from VPC",
+      "IpProtocol": "-1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatSecurityGroup/Resource"
+   }
+  },
+  "NatInstanceInstanceRole9756B942": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ec2.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-nat"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatInstance/InstanceRole/Resource"
+   }
+  },
+  "NatInstanceInstanceProfileA810947A": {
+   "Type": "AWS::IAM::InstanceProfile",
+   "Properties": {
+    "Roles": [
+     {
+      "Ref": "NatInstanceInstanceRole9756B942"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatInstance/InstanceProfile"
+   }
+  },
+  "NatInstance99F86B42": {
+   "Type": "AWS::EC2::Instance",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "IamInstanceProfile": {
+     "Ref": "NatInstanceInstanceProfileA810947A"
+    },
+    "ImageId": {
+     "Ref": "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61arm64C96584B6F00A464EAD1953AFF4B05118Parameter"
+    },
+    "InstanceType": "t4g.nano",
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "NatSecurityGroupEE8043DB",
+       "GroupId"
+      ]
+     }
+    ],
+    "SourceDestCheck": false,
+    "SubnetId": {
+     "Ref": "VpcPublicSubnet1Subnet5C2D37C4"
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "mantrix-dev-nat"
+     }
+    ],
+    "UserData": {
+     "Fn::Base64": "#!/bin/bash\n#!/bin/bash\nyum install -y iptables-services\nsystemctl enable iptables\nsystemctl start iptables\necho 1 > /proc/sys/net/ipv4/ip_forward\necho \"net.ipv4.ip_forward = 1\" >> /etc/sysctl.conf\niptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE\nservice iptables save"
+    }
+   },
+   "DependsOn": [
+    "NatInstanceInstanceRole9756B942"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatInstance/Resource"
+   }
+  },
+  "NatRoute0": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "InstanceId": {
+     "Ref": "NatInstance99F86B42"
+    },
+    "RouteTableId": {
+     "Ref": "VpcPrivateSubnet1RouteTableB2C5B500"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatRoute0"
+   }
+  },
+  "NatRoute1": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "InstanceId": {
+     "Ref": "NatInstance99F86B42"
+    },
+    "RouteTableId": {
+     "Ref": "VpcPrivateSubnet2RouteTableA678073B"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/NatRoute1"
+   }
+  },
+  "AlbSecurityGroup86A59E99": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Application Load Balancer",
+    "GroupName": "mantrix-alb-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTP from anywhere",
+      "FromPort": 80,
+      "IpProtocol": "tcp",
+      "ToPort": 80
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTPS from anywhere",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/AlbSecurityGroup/Resource"
+   }
+  },
+  "BackendSecurityGroup96CF32F1": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Backend ECS tasks",
+    "GroupName": "mantrix-backend-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/BackendSecurityGroup/Resource"
+   }
+  },
+  "BackendSecurityGroupfromMantrixdevNetworkAlbSecurityGroupFDB4ED3C800038C23317": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow ALB to Backend",
+    "FromPort": 8000,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "BackendSecurityGroup96CF32F1",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "AlbSecurityGroup86A59E99",
+      "GroupId"
+     ]
+    },
+    "ToPort": 8000
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/BackendSecurityGroup/from MantrixdevNetworkAlbSecurityGroupFDB4ED3C:8000"
+   }
+  },
+  "FrontendSecurityGroup69AD9D5B": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Frontend ECS tasks",
+    "GroupName": "mantrix-frontend-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/FrontendSecurityGroup/Resource"
+   }
+  },
+  "FrontendSecurityGroupfromMantrixdevNetworkAlbSecurityGroupFDB4ED3C80DF514D09": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow ALB to Frontend",
+    "FromPort": 80,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "FrontendSecurityGroup69AD9D5B",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "AlbSecurityGroup86A59E99",
+      "GroupId"
+     ]
+    },
+    "ToPort": 80
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/FrontendSecurityGroup/from MantrixdevNetworkAlbSecurityGroupFDB4ED3C:80"
+   }
+  },
+  "FrontendSecurityGroupfromMantrixdevNetworkAlbSecurityGroupFDB4ED3C80803181A8C2": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Load balancer to target",
+    "FromPort": 8080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "FrontendSecurityGroup69AD9D5B",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "AlbSecurityGroup86A59E99",
+      "GroupId"
+     ]
+    },
+    "ToPort": 8080
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/FrontendSecurityGroup/from MantrixdevNetworkAlbSecurityGroupFDB4ED3C:8080"
+   }
+  },
+  "DataServicesSecurityGroup620B1584": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for MongoDB + Weaviate ECS tasks",
+    "GroupName": "mantrix-data-services-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DataServicesSecurityGroup/Resource"
+   }
+  },
+  "DataServicesSecurityGroupfromMantrixdevNetworkBackendSecurityGroup1A7D8240270172B9E8C0E": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow Backend to MongoDB",
+    "FromPort": 27017,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "DataServicesSecurityGroup620B1584",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "BackendSecurityGroup96CF32F1",
+      "GroupId"
+     ]
+    },
+    "ToPort": 27017
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DataServicesSecurityGroup/from MantrixdevNetworkBackendSecurityGroup1A7D8240:27017"
+   }
+  },
+  "DataServicesSecurityGroupfromMantrixdevNetworkBackendSecurityGroup1A7D824080802D781333": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow Backend to Weaviate",
+    "FromPort": 8080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "DataServicesSecurityGroup620B1584",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "BackendSecurityGroup96CF32F1",
+      "GroupId"
+     ]
+    },
+    "ToPort": 8080
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DataServicesSecurityGroup/from MantrixdevNetworkBackendSecurityGroup1A7D8240:8080"
+   }
+  },
+  "DatabaseSecurityGroup7319C0F6": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for RDS and ElastiCache",
+    "GroupName": "mantrix-database-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "255.255.255.255/32",
+      "Description": "Disallow all traffic",
+      "FromPort": 252,
+      "IpProtocol": "icmp",
+      "ToPort": 86
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DatabaseSecurityGroup/Resource"
+   }
+  },
+  "DatabaseSecurityGroupfromMantrixdevNetworkBackendSecurityGroup1A7D82405432A6B19456": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow Backend to PostgreSQL",
+    "FromPort": 5432,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "DatabaseSecurityGroup7319C0F6",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "BackendSecurityGroup96CF32F1",
+      "GroupId"
+     ]
+    },
+    "ToPort": 5432
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DatabaseSecurityGroup/from MantrixdevNetworkBackendSecurityGroup1A7D8240:5432"
+   }
+  },
+  "DatabaseSecurityGroupfromMantrixdevNetworkBackendSecurityGroup1A7D8240637924262AD1": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow Backend to Redis",
+    "FromPort": 6379,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "DatabaseSecurityGroup7319C0F6",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "BackendSecurityGroup96CF32F1",
+      "GroupId"
+     ]
+    },
+    "ToPort": 6379
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DatabaseSecurityGroup/from MantrixdevNetworkBackendSecurityGroup1A7D8240:6379"
+   }
+  },
+  "DatabaseSecurityGroupfromMantrixdevNetworkDataServicesSecurityGroupA4C5914C2049DFE6C2A2": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow Data Services to EFS (NFS)",
+    "FromPort": 2049,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "DatabaseSecurityGroup7319C0F6",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "DataServicesSecurityGroup620B1584",
+      "GroupId"
+     ]
+    },
+    "ToPort": 2049
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/DatabaseSecurityGroup/from MantrixdevNetworkDataServicesSecurityGroupA4C5914C:2049"
+   }
+  },
+  "VpcEndpointSecurityGroup02EA44AC": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for VPC Endpoints",
+    "GroupName": "mantrix-dev-vpce-sg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": {
+       "Fn::GetAtt": [
+        "Vpc8378EB38",
+        "CidrBlock"
+       ]
+      },
+      "Description": "Allow HTTPS from VPC",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/VpcEndpointSecurityGroup/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WPzW6DMBCEnyV34yLfeoyiKuJUBBXXajFLuwmskb0OihDvXiWQ0JxmZ/Ttn9HGvOt0B2NIbHNOOqr1VArYs4IxfE9ojZ6qwapDy1V+UHmsO7JlrBnllm1V4aLgF9QdbvmW7UNwlkDI8RNWuacLCG4zMhb0jHIEwRGu69LV7UXA/vbIou5cCxarwX5wMzhiWeGnXbv+EyXa6EmuR+/icL/yJcg4CLDF5ZKtfqEy/vEYwqwIej0Vbnn3oY+23LuWOpxnVWBw0S+DcvDQo6C/mc8oQ5RZsWtQn8LbxRhtUp3uToEo8ZGFetTFon9cNH0VpwEAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "Mantrix-dev-Network/CDKMetadata/Default"
+   }
+  }
+ },
+ "Parameters": {
+  "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61arm64C96584B6F00A464EAD1953AFF4B05118Parameter": {
+   "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+   "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-arm64"
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Outputs": {
+  "VpcId": {
+   "Description": "VPC ID",
+   "Value": {
+    "Ref": "Vpc8378EB38"
+   }
+  },
+  "ExportsOutputRefVpcIsolatedSubnet1SubnetE48C57379FE391D3": {
+   "Value": {
+    "Ref": "VpcIsolatedSubnet1SubnetE48C5737"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputRefVpcIsolatedSubnet1SubnetE48C57379FE391D3"
+   }
+  },
+  "ExportsOutputRefVpcIsolatedSubnet2Subnet16364B914643ED68": {
+   "Value": {
+    "Ref": "VpcIsolatedSubnet2Subnet16364B91"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputRefVpcIsolatedSubnet2Subnet16364B914643ED68"
+   }
+  },
+  "ExportsOutputFnGetAttDatabaseSecurityGroup7319C0F6GroupId72A1B827": {
+   "Value": {
+    "Fn::GetAtt": [
+     "DatabaseSecurityGroup7319C0F6",
+     "GroupId"
+    ]
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputFnGetAttDatabaseSecurityGroup7319C0F6GroupId72A1B827"
+   }
+  },
+  "ExportsOutputRefVpc8378EB38272D6E3A": {
+   "Value": {
+    "Ref": "Vpc8378EB38"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputRefVpc8378EB38272D6E3A"
+   }
+  },
+  "ExportsOutputFnGetAttAlbSecurityGroup86A59E99GroupIdE3A37BC7": {
+   "Value": {
+    "Fn::GetAtt": [
+     "AlbSecurityGroup86A59E99",
+     "GroupId"
+    ]
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputFnGetAttAlbSecurityGroup86A59E99GroupIdE3A37BC7"
+   }
+  },
+  "ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456": {
+   "Value": {
+    "Ref": "VpcPublicSubnet1Subnet5C2D37C4"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456"
+   }
+  },
+  "ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740": {
+   "Value": {
+    "Ref": "VpcPublicSubnet2Subnet691E08A3"
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740"
+   }
+  },
+  "ExportsOutputFnGetAttBackendSecurityGroup96CF32F1GroupId811D82AA": {
+   "Value": {
+    "Fn::GetAtt": [
+     "BackendSecurityGroup96CF32F1",
+     "GroupId"
+    ]
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputFnGetAttBackendSecurityGroup96CF32F1GroupId811D82AA"
+   }
+  },
+  "ExportsOutputFnGetAttFrontendSecurityGroup69AD9D5BGroupId07DF996C": {
+   "Value": {
+    "Fn::GetAtt": [
+     "FrontendSecurityGroup69AD9D5B",
+     "GroupId"
+    ]
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputFnGetAttFrontendSecurityGroup69AD9D5BGroupId07DF996C"
+   }
+  },
+  "ExportsOutputFnGetAttDataServicesSecurityGroup620B1584GroupId4BAF2CD6": {
+   "Value": {
+    "Fn::GetAtt": [
+     "DataServicesSecurityGroup620B1584",
+     "GroupId"
+    ]
+   },
+   "Export": {
+    "Name": "Mantrix-dev-Network:ExportsOutputFnGetAttDataServicesSecurityGroup620B1584GroupId4BAF2CD6"
+   }
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

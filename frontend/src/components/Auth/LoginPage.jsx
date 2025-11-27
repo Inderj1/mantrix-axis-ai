@@ -57,6 +57,10 @@ function LoginPage() {
 
         <Authenticator
           initialState="signIn"
+          signUpAttributes={[
+            'given_name',
+            'family_name',
+          ]}
           components={{
             SignIn: {
               Header() {

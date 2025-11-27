@@ -33,10 +33,17 @@ class MarketSignalScheduler:
         self.is_running = False
         self.task: Optional[asyncio.Task] = None
         self.logger = logger.bind(component="MarketSignalScheduler")
+        self._db_available = True
 
         # Initialize services
         self.signal_service = get_market_signal_service()
+
+        # Try to initialize MongoDB - if it fails, scheduler will run in degraded mode
         self.db = get_market_signals_db()
+        if self.db is None:
+            self._db_available = False
+            self.logger.warning("scheduler_degraded_mode",
+                message="MongoDB not available, market signal scheduler will not persist signals")
 
         # Track last fetch times
         self.last_fetch_times = {}
@@ -117,6 +124,11 @@ class MarketSignalScheduler:
 
     async def _fetch_and_store_signals(self):
         """Fetch signals from all sources and store in database"""
+        # Skip if database is not available
+        if not self._db_available or self.db is None:
+            self.logger.debug("skipping_signal_fetch", reason="MongoDB not available")
+            return
+
         start_time = datetime.utcnow()
         self.logger.info("starting_signal_fetch", timestamp=start_time.isoformat())
 
@@ -204,6 +216,10 @@ class MarketSignalScheduler:
         Force an immediate refresh of signals
         If category is specified, only refresh that category
         """
+        if not self._db_available or self.db is None:
+            self.logger.warning("force_refresh_skipped", reason="MongoDB not available")
+            return
+
         self.logger.info("force_refresh_triggered", category=category.value if category else "all")
 
         if category:

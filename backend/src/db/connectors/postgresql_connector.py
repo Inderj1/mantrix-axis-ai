@@ -3,18 +3,23 @@ PostgreSQL Database Connector
 
 Implements the BaseDatabaseConnector interface for external PostgreSQL databases.
 This is separate from the internal postgresql_client.py used for app features.
+
+Features connection pooling for efficient connection reuse.
 """
 from typing import List, Dict, Any, Optional
+from contextlib import contextmanager
 import structlog
 
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
     from psycopg2 import sql
+    from psycopg2 import pool
     POSTGRESQL_AVAILABLE = True
 except ImportError:
     POSTGRESQL_AVAILABLE = False
     psycopg2 = None
+    pool = None
 
 from ..base_connector import (
     BaseDatabaseConnector,
@@ -28,6 +33,10 @@ from src.config import settings
 
 logger = structlog.get_logger()
 
+# Default pool settings
+DEFAULT_MIN_CONNECTIONS = 2
+DEFAULT_MAX_CONNECTIONS = 10
+
 
 class PostgreSQLConnector(BaseDatabaseConnector):
     """
@@ -35,6 +44,8 @@ class PostgreSQLConnector(BaseDatabaseConnector):
 
     Implements the BaseDatabaseConnector interface for PostgreSQL,
     providing query execution, schema introspection, and metadata operations.
+
+    Features connection pooling for efficient connection reuse across requests.
     """
 
     def __init__(
@@ -45,10 +56,13 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         user: Optional[str] = None,
         password: Optional[str] = None,
         schema: Optional[str] = "public",
-        ssl_mode: Optional[str] = None
+        ssl_mode: Optional[str] = None,
+        min_connections: int = DEFAULT_MIN_CONNECTIONS,
+        max_connections: int = DEFAULT_MAX_CONNECTIONS,
+        use_pool: bool = True
     ):
         """
-        Initialize PostgreSQL connector.
+        Initialize PostgreSQL connector with connection pooling.
 
         Args:
             host: PostgreSQL server hostname
@@ -58,6 +72,9 @@ class PostgreSQLConnector(BaseDatabaseConnector):
             password: PostgreSQL password
             schema: Schema name (default: public)
             ssl_mode: SSL mode (disable, allow, prefer, require, verify-ca, verify-full)
+            min_connections: Minimum connections to keep in pool (default: 2)
+            max_connections: Maximum connections allowed in pool (default: 10)
+            use_pool: Whether to use connection pooling (default: True)
         """
         if not POSTGRESQL_AVAILABLE:
             raise ImportError(
@@ -77,7 +94,15 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         self.schema = schema or "public"
         self.ssl_mode = ssl_mode
 
-        self.connection: Optional[Any] = None
+        # Pool configuration
+        self.min_connections = min_connections
+        self.max_connections = max_connections
+        self.use_pool = use_pool
+
+        # Connection pool (initialized in connect())
+        self._pool: Optional[pool.ThreadedConnectionPool] = None
+        # Single connection fallback (when pooling disabled)
+        self._connection: Optional[Any] = None
         self._capabilities = POSTGRESQL_CAPABILITIES
 
         # Validate required parameters
@@ -92,7 +117,7 @@ class PostgreSQLConnector(BaseDatabaseConnector):
 
     def connect(self) -> None:
         """
-        Establish connection to PostgreSQL.
+        Initialize connection pool or single connection to PostgreSQL.
 
         Raises:
             ConnectionError: If connection initialization fails
@@ -111,14 +136,30 @@ class PostgreSQLConnector(BaseDatabaseConnector):
             if self.ssl_mode:
                 connection_params['sslmode'] = self.ssl_mode
 
-            self.connection = psycopg2.connect(**connection_params)
-
-            logger.info(
-                "PostgreSQL connector initialized",
-                host=self.host,
-                database=self.database,
-                schema=self.schema
-            )
+            if self.use_pool:
+                # Create ThreadedConnectionPool for thread-safe connection reuse
+                self._pool = pool.ThreadedConnectionPool(
+                    minconn=self.min_connections,
+                    maxconn=self.max_connections,
+                    **connection_params
+                )
+                logger.info(
+                    "PostgreSQL connection pool initialized",
+                    host=self.host,
+                    database=self.database,
+                    schema=self.schema,
+                    min_connections=self.min_connections,
+                    max_connections=self.max_connections
+                )
+            else:
+                # Fallback to single connection
+                self._connection = psycopg2.connect(**connection_params)
+                logger.info(
+                    "PostgreSQL single connection initialized",
+                    host=self.host,
+                    database=self.database,
+                    schema=self.schema
+                )
 
         except Exception as e:
             logger.error(f"Failed to connect to PostgreSQL: {e}")
@@ -126,15 +167,57 @@ class PostgreSQLConnector(BaseDatabaseConnector):
 
     def disconnect(self) -> None:
         """
-        Close PostgreSQL connection.
+        Close PostgreSQL connection pool or single connection.
         """
-        if self.connection:
+        if self._pool:
             try:
-                self.connection.close()
-                self.connection = None
-                logger.info("PostgreSQL connector disconnected")
+                self._pool.closeall()
+                self._pool = None
+                logger.info("PostgreSQL connection pool closed")
+            except Exception as e:
+                logger.warning(f"Error closing PostgreSQL connection pool: {e}")
+
+        if self._connection:
+            try:
+                self._connection.close()
+                self._connection = None
+                logger.info("PostgreSQL connection closed")
             except Exception as e:
                 logger.warning(f"Error closing PostgreSQL connection: {e}")
+
+    @contextmanager
+    def _get_connection(self):
+        """
+        Context manager to get a connection from the pool.
+
+        Automatically returns the connection to the pool when done.
+        """
+        conn = None
+        try:
+            if self._pool:
+                conn = self._pool.getconn()
+                yield conn
+            elif self._connection:
+                yield self._connection
+            else:
+                raise ConnectorConnectionError("PostgreSQL connection not established")
+        finally:
+            if conn and self._pool:
+                self._pool.putconn(conn)
+
+    # Legacy property for backward compatibility
+    @property
+    def connection(self):
+        """Backward compatibility: returns a connection (not recommended for pooled use)."""
+        if self._pool:
+            # Warning: caller is responsible for returning connection
+            return self._pool.getconn()
+        return self._connection
+
+    @connection.setter
+    def connection(self, value):
+        """Backward compatibility setter."""
+        self._connection = value
 
     def execute_query(
         self,
@@ -144,6 +227,8 @@ class PostgreSQLConnector(BaseDatabaseConnector):
     ) -> Dict[str, Any]:
         """
         Execute a SQL query and return results.
+
+        Uses connection pooling for efficient connection reuse.
 
         Args:
             query: SQL query to execute
@@ -164,7 +249,7 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         Raises:
             QueryExecutionError: If query execution fails
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("PostgreSQL connection not established")
 
         try:
@@ -186,35 +271,39 @@ class PostgreSQLConnector(BaseDatabaseConnector):
                 has_parameters=parameters is not None
             )
 
-            # Create cursor with RealDictCursor for dictionary results
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            # Use connection from pool via context manager
+            with self._get_connection() as conn:
+                # Create cursor with RealDictCursor for dictionary results
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-            # Set timeout if specified
-            if timeout:
-                cursor.execute(f"SET statement_timeout = {timeout * 1000}")  # PostgreSQL uses milliseconds
+                try:
+                    # Set timeout if specified
+                    if timeout:
+                        cursor.execute(f"SET statement_timeout = {timeout * 1000}")  # PostgreSQL uses milliseconds
 
-            # Execute query
-            if parameters:
-                cursor.execute(modified_query, parameters)
-            else:
-                cursor.execute(modified_query)
+                    # Execute query
+                    if parameters:
+                        cursor.execute(modified_query, parameters)
+                    else:
+                        cursor.execute(modified_query)
 
-            # Check if query returns results
-            if cursor.description:
-                # Fetch all results
-                rows = cursor.fetchall()
+                    # Check if query returns results
+                    if cursor.description:
+                        # Fetch all results
+                        rows = cursor.fetchall()
 
-                # Convert RealDictRow to regular dict
-                rows = [dict(row) for row in rows]
+                        # Convert RealDictRow to regular dict
+                        rows = [dict(row) for row in rows]
 
-                row_count = len(rows)
-            else:
-                # Query doesn't return results (INSERT, UPDATE, DELETE)
-                self.connection.commit()
-                rows = []
-                row_count = cursor.rowcount
+                        row_count = len(rows)
+                    else:
+                        # Query doesn't return results (INSERT, UPDATE, DELETE)
+                        conn.commit()
+                        rows = []
+                        row_count = cursor.rowcount
 
-            cursor.close()
+                finally:
+                    cursor.close()
 
             logger.info(
                 f"PostgreSQL query returned {row_count} rows"
@@ -241,8 +330,6 @@ class PostgreSQLConnector(BaseDatabaseConnector):
 
         except Exception as e:
             logger.error(f"PostgreSQL query execution failed: {e}")
-            if self.connection:
-                self.connection.rollback()
             raise QueryExecutionError(f"PostgreSQL query execution failed: {e}")
 
     def get_table_schema(self, table_name: str, schema: Optional[str] = None) -> Dict[str, Any]:
@@ -259,7 +346,7 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         Raises:
             TableNotFoundError: If table doesn't exist
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("PostgreSQL connection not established")
 
         try:
@@ -285,24 +372,27 @@ class PostgreSQLConnector(BaseDatabaseConnector):
             ORDER BY c.ordinal_position
             """
 
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            cursor.execute(query, {'schema': target_schema, 'table': table_name})
-            columns = cursor.fetchall()
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                try:
+                    cursor.execute(query, {'schema': target_schema, 'table': table_name})
+                    columns = cursor.fetchall()
 
-            if not columns:
-                raise TableNotFoundError(f"Table {target_schema}.{table_name} not found")
+                    if not columns:
+                        raise TableNotFoundError(f"Table {target_schema}.{table_name} not found")
 
-            # Get table-level information
-            table_query = """
-            SELECT
-                obj_description((quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as table_comment,
-                (SELECT reltuples::bigint FROM pg_class WHERE oid = (quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as row_count,
-                pg_total_relation_size((quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as total_bytes
-            """
+                    # Get table-level information
+                    table_query = """
+                    SELECT
+                        obj_description((quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as table_comment,
+                        (SELECT reltuples::bigint FROM pg_class WHERE oid = (quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as row_count,
+                        pg_total_relation_size((quote_ident(%(schema)s) || '.' || quote_ident(%(table)s))::regclass) as total_bytes
+                    """
 
-            cursor.execute(table_query, {'schema': target_schema, 'table': table_name})
-            table_info = cursor.fetchone()
-            cursor.close()
+                    cursor.execute(table_query, {'schema': target_schema, 'table': table_name})
+                    table_info = cursor.fetchone()
+                finally:
+                    cursor.close()
 
             schema_info = {
                 "table_name": table_name,
@@ -349,7 +439,7 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         Raises:
             SchemaNotFoundError: If schema doesn't exist
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("PostgreSQL connection not established")
 
         try:
@@ -363,10 +453,13 @@ class PostgreSQLConnector(BaseDatabaseConnector):
             ORDER BY table_name
             """
 
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            cursor.execute(query, {'schema': target_schema})
-            tables = cursor.fetchall()
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                try:
+                    cursor.execute(query, {'schema': target_schema})
+                    tables = cursor.fetchall()
+                finally:
+                    cursor.close()
 
             return [table['table_name'] for table in tables]
 
@@ -412,17 +505,20 @@ class PostgreSQLConnector(BaseDatabaseConnector):
         Returns:
             Dictionary with validation results
         """
-        if not self.connection:
+        if not self._pool and not self._connection:
             raise QueryExecutionError("PostgreSQL connection not established")
 
         try:
             # Use EXPLAIN to validate query syntax
             explain_query = f"EXPLAIN {query}"
 
-            cursor = self.connection.cursor()
-            cursor.execute(explain_query)
-            explain_result = cursor.fetchall()
-            cursor.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(explain_query)
+                    explain_result = cursor.fetchall()
+                finally:
+                    cursor.close()
 
             return {
                 "valid": True,

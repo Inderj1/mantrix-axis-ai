@@ -58,6 +58,15 @@ class QueryResponse(BaseModel):
     suggestions: Optional[List[Dict[str, Any]]] = None
     follow_up_suggestions: Optional[List[str]] = None  # Copilot follow-up suggestions
     from_cache: bool = False
+    # Chart intelligence fields (backend-driven visualization recommendations)
+    chart_recommendations: Optional[List[str]] = None  # ["bar", "line", "pie"]
+    dimensions: Optional[List[str]] = None  # Categorical columns
+    measures: Optional[List[str]] = None  # Numeric columns
+    time_columns: Optional[List[str]] = None  # Date/time columns
+    drill_paths: Optional[List[List[str]]] = None  # Hierarchical drill-down paths
+    semantic_types: Optional[Dict[str, str]] = None  # {"revenue": "currency"}
+    default_aggregations: Optional[Dict[str, str]] = None  # {"revenue": "SUM"}
+    visualization_config: Optional[Dict[str, Any]] = None  # Suggested chart config
 
 
 # Document Intelligence Models

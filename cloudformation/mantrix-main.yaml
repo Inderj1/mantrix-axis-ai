@@ -1,0 +1,518 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Mantrix Axis AI - AWS Marketplace Deployment
+  AI-powered supply chain intelligence platform with NLP-to-SQL capabilities.
+  Deploys: ECS Fargate, RDS PostgreSQL, ElastiCache Redis, ALB
+
+# =============================================================================
+# Metadata for AWS Marketplace
+# =============================================================================
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Required API Keys"
+        Parameters:
+          - AnthropicApiKey
+          - OpenAIApiKey
+          - GCPCredentialsJson
+      - Label:
+          default: "Deployment Configuration"
+        Parameters:
+          - DeploymentSize
+          - EnvironmentName
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetIds
+          - CreateNewVpc
+      - Label:
+          default: "Optional: Domain & SSL"
+        Parameters:
+          - DomainName
+          - HostedZoneId
+
+# =============================================================================
+# Parameters
+# =============================================================================
+Parameters:
+  # Required API Keys
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: "Anthropic Claude API key for NLP-to-SQL (required)"
+    MinLength: 10
+    ConstraintDescription: "Must provide a valid Anthropic API key"
+
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: "OpenAI API key for embeddings (required)"
+    MinLength: 10
+    ConstraintDescription: "Must provide a valid OpenAI API key"
+
+  GCPCredentialsJson:
+    Type: String
+    NoEcho: true
+    Description: "GCP service account JSON for BigQuery access (required)"
+    MinLength: 50
+    ConstraintDescription: "Must provide valid GCP service account JSON"
+
+  # Deployment Configuration
+  DeploymentSize:
+    Type: String
+    Default: "Small"
+    AllowedValues:
+      - "Small"
+      - "Medium"
+      - "Large"
+    Description: |
+      Small: 0.5 vCPU, 1GB RAM (~$150/month)
+      Medium: 1 vCPU, 2GB RAM (~$300/month)
+      Large: 2 vCPU, 4GB RAM (~$500/month)
+
+  EnvironmentName:
+    Type: String
+    Default: "prod"
+    AllowedPattern: "[a-z0-9-]+"
+    Description: "Environment name (e.g., prod, staging)"
+
+  # Network Configuration
+  CreateNewVpc:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: "Create a new VPC or use existing"
+
+  VpcId:
+    Type: String
+    Default: ""
+    Description: "Existing VPC ID (required if CreateNewVpc is false)"
+
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: "Existing subnet IDs (required if CreateNewVpc is false)"
+
+  # Optional Domain Configuration
+  DomainName:
+    Type: String
+    Default: ""
+    Description: "Domain name for HTTPS (optional, e.g., app.yourdomain.com)"
+
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: "Route 53 Hosted Zone ID (required if DomainName is provided)"
+
+# =============================================================================
+# Mappings - Deployment Size Configurations
+# =============================================================================
+Mappings:
+  DeploymentSizeConfig:
+    Small:
+      BackendCpu: "512"
+      BackendMemory: "1024"
+      FrontendCpu: "256"
+      FrontendMemory: "512"
+      DataServicesCpu: "1024"
+      DataServicesMemory: "2048"
+      RdsInstanceClass: "db.t4g.micro"
+      RdsStorageGb: "20"
+      RedisNodeType: "cache.t4g.micro"
+    Medium:
+      BackendCpu: "1024"
+      BackendMemory: "2048"
+      FrontendCpu: "512"
+      FrontendMemory: "1024"
+      DataServicesCpu: "2048"
+      DataServicesMemory: "4096"
+      RdsInstanceClass: "db.t4g.small"
+      RdsStorageGb: "50"
+      RedisNodeType: "cache.t4g.small"
+    Large:
+      BackendCpu: "2048"
+      BackendMemory: "4096"
+      FrontendCpu: "1024"
+      FrontendMemory: "2048"
+      DataServicesCpu: "4096"
+      DataServicesMemory: "8192"
+      RdsInstanceClass: "db.t4g.medium"
+      RdsStorageGb: "100"
+      RedisNodeType: "cache.t4g.medium"
+
+# =============================================================================
+# Conditions
+# =============================================================================
+Conditions:
+  CreateVpc: !Equals [!Ref CreateNewVpc, "true"]
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
+
+# =============================================================================
+# Resources
+# =============================================================================
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # VPC (Conditional)
+  # ---------------------------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVpc
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-vpc"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateVpc
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-igw"
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-public-1"
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-public-2"
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.10.0/24"
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-private-1"
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: "10.0.11.0/24"
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-private-2"
+
+  # NAT Gateway for private subnets
+  NatEip:
+    Type: AWS::EC2::EIP
+    Condition: CreateVpc
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateVpc
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-nat"
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-public-rt"
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateVpc
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVpc
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVpc
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "mantrix-${EnvironmentName}-private-rt"
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateVpc
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVpc
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVpc
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ---------------------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------------------
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "mantrix-${EnvironmentName}-alb-sg"
+      GroupDescription: "Security group for ALB"
+      VpcId: !If [CreateVpc, !Ref VPC, !Ref VpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "mantrix-${EnvironmentName}-backend-sg"
+      GroupDescription: "Security group for Backend ECS tasks"
+      VpcId: !If [CreateVpc, !Ref VPC, !Ref VpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "mantrix-${EnvironmentName}-db-sg"
+      GroupDescription: "Security group for databases"
+      VpcId: !If [CreateVpc, !Ref VPC, !Ref VpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+
+  # ---------------------------------------------------------------------------
+  # Secrets Manager
+  # ---------------------------------------------------------------------------
+  AnthropicSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/mantrix/${EnvironmentName}/anthropic-api-key"
+      Description: "Anthropic API Key"
+      SecretString: !Sub '{"api_key":"${AnthropicApiKey}"}'
+
+  OpenAISecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/mantrix/${EnvironmentName}/openai-api-key"
+      Description: "OpenAI API Key"
+      SecretString: !Sub '{"api_key":"${OpenAIApiKey}"}'
+
+  GCPCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/mantrix/${EnvironmentName}/gcp-credentials"
+      Description: "GCP Service Account JSON"
+      SecretString: !Ref GCPCredentialsJson
+
+  # ---------------------------------------------------------------------------
+  # RDS PostgreSQL
+  # ---------------------------------------------------------------------------
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS"
+      SubnetIds:
+        - !If [CreateVpc, !Ref PrivateSubnet1, !Select [0, !Ref SubnetIds]]
+        - !If [CreateVpc, !Ref PrivateSubnet2, !Select [1, !Ref SubnetIds]]
+
+  RdsInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "mantrix-${EnvironmentName}-postgres"
+      DBInstanceClass: !FindInMap [DeploymentSizeConfig, !Ref DeploymentSize, RdsInstanceClass]
+      Engine: postgres
+      EngineVersion: "15"
+      AllocatedStorage: !FindInMap [DeploymentSizeConfig, !Ref DeploymentSize, RdsStorageGb]
+      StorageType: gp3
+      DBName: mantrix
+      MasterUsername: mantrix_admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+
+  # ---------------------------------------------------------------------------
+  # ElastiCache Redis
+  # ---------------------------------------------------------------------------
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: "Subnet group for Redis"
+      SubnetIds:
+        - !If [CreateVpc, !Ref PrivateSubnet1, !Select [0, !Ref SubnetIds]]
+        - !If [CreateVpc, !Ref PrivateSubnet2, !Select [1, !Ref SubnetIds]]
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Sub "mantrix-${EnvironmentName}-redis"
+      Engine: redis
+      EngineVersion: "7.0"
+      CacheNodeType: !FindInMap [DeploymentSizeConfig, !Ref DeploymentSize, RedisNodeType]
+      NumCacheNodes: 1
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DatabaseSecurityGroup
+
+  # ---------------------------------------------------------------------------
+  # ECS Cluster
+  # ---------------------------------------------------------------------------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "mantrix-${EnvironmentName}"
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ---------------------------------------------------------------------------
+  # Application Load Balancer
+  # ---------------------------------------------------------------------------
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "mantrix-${EnvironmentName}-alb"
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !If [CreateVpc, !Ref PublicSubnet1, !Select [0, !Ref SubnetIds]]
+        - !If [CreateVpc, !Ref PublicSubnet2, !Select [1, !Ref SubnetIds]]
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "200"
+            ContentType: "text/plain"
+            MessageBody: "Mantrix Axis AI - Healthy"
+
+# =============================================================================
+# Outputs
+# =============================================================================
+Outputs:
+  LoadBalancerDNS:
+    Description: "Application Load Balancer DNS Name"
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDns"
+
+  LoadBalancerUrl:
+    Description: "Application URL"
+    Value: !Sub "http://${ApplicationLoadBalancer.DNSName}"
+
+  RdsEndpoint:
+    Description: "RDS PostgreSQL Endpoint"
+    Value: !GetAtt RdsInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-RdsEndpoint"
+
+  RedisEndpoint:
+    Description: "ElastiCache Redis Endpoint"
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-RedisEndpoint"
+
+  EcsClusterName:
+    Description: "ECS Cluster Name"
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub "${AWS::StackName}-EcsCluster"
+
+  DeploymentInstructions:
+    Description: "Next steps after deployment"
+    Value: |
+      1. Push container images to ECR
+      2. Create ECS Task Definitions
+      3. Create ECS Services
+      4. Configure domain and SSL (optional)

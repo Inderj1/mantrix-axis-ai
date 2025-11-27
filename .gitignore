@@ -186,3 +186,39 @@ TODO_PRIVATE.md
 **/.ipynb_checkpoints/
 *.ipynb
 mantrix.tar.gz
+
+# AWS CDK
+cdk.out/
+cdk/cdk.out/
+cdk/dist/
+cdk/node_modules/
+*.d.ts
+!cdk/lib/*.d.ts
+
+# CloudFormation
+cloudformation/*.yaml.bak
+cloudformation/output/
+
+# Terraform (if used)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+
+# Deployment artifacts
+deployment/**/node_modules/
+deployment/**/.env
+deployment/**/dist/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# Local scripts with potential credentials
+*_local.sh
+*_dev.sh

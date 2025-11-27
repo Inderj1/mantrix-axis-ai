@@ -49,10 +49,10 @@ function ProtectedRoute({ children, routePath, requireAuth = true }) {
           </Typography>
           <Button
             variant="contained"
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/')}
             sx={{ mt: 2 }}
           >
-            Sign In
+            Go to Home
           </Button>
         </Paper>
       </Box>

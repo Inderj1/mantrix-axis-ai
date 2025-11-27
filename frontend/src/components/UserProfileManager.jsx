@@ -66,13 +66,13 @@ const UserProfileManager = () => {
     { value: 'heatmap', label: 'Heatmap' }
   ];
 
-  // Auto-populate from Clerk user data
+  // Auto-populate from Cognito user data
   useEffect(() => {
     if (user && !profile) {
       // Only auto-populate if no existing profile and fields are empty
       if (!formData.name && !formData.email) {
         const userName = user?.username || '';
-        const userEmail = '';
+        const userEmail = user?.email || '';
 
         setFormData(prev => ({
           ...prev,

@@ -1,18 +1,20 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Box, Paper, Typography } from '@mui/material';
+import { Box, Paper, Typography, CssBaseline } from '@mui/material';
+import { ThemeProvider } from '@mui/material/styles';
+import { sapFioriTheme } from './themes/sapFioriTheme';
 import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import QueryPage from './pages/QueryPage-simple';
 import SimpleChatInterface from './components/SimpleChatInterface';
-import ProcessMiningPage from './pages/ProcessMiningPage';
-import WhatIfAnalysisPage from './pages/WhatIfAnalysis';
 import AdminSettings from './pages/AdminSettings';
 import HomePage from './pages/HomePage';
 import UserProfileManager from './components/UserProfileManager';
 import CommsConfig from './components/CommsConfig';
+import ControlCenter from './components/ControlCenter';
+import DatabaseConfigPage from './pages/DatabaseConfigPage';
+import DashboardPage from './pages/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
-import LoginPage from './components/Auth/LoginPage';
 
 // Temporary simple pages
 const HistoryPage = () => (
@@ -42,10 +44,11 @@ function App() {
 
   return (
     <AuthProvider>
-      <Routes>
+      <ThemeProvider theme={sapFioriTheme}>
+        <CssBaseline />
+        <Routes>
         {/* Public routes */}
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
 
         {/* Default protected route */}
         <Route
@@ -67,30 +70,6 @@ function App() {
               <Box sx={{ display: 'flex', minHeight: '100vh' }}>
                 <Layout>
                   <SimpleChatInterface />
-                </Layout>
-              </Box>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/process-mining"
-          element={
-            <ProtectedRoute routePath="/process-mining">
-              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-                <Layout>
-                  <ProcessMiningPage />
-                </Layout>
-              </Box>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/whatif-analysis"
-          element={
-            <ProtectedRoute routePath="/whatif-analysis">
-              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-                <Layout>
-                  <WhatIfAnalysisPage />
                 </Layout>
               </Box>
             </ProtectedRoute>
@@ -133,12 +112,12 @@ function App() {
           }
         />
         <Route
-          path="/health"
+          path="/control-center"
           element={
-            <ProtectedRoute routePath="/health">
+            <ProtectedRoute routePath="/control-center">
               <Box sx={{ display: 'flex', minHeight: '100vh' }}>
                 <Layout>
-                  <HealthPage />
+                  <ControlCenter />
                 </Layout>
               </Box>
             </ProtectedRoute>
@@ -169,6 +148,18 @@ function App() {
           }
         />
         <Route
+          path="/database-config"
+          element={
+            <ProtectedRoute routePath="/database-config">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
+                  <DatabaseConfigPage />
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/comms/config"
           element={
             <ProtectedRoute routePath="/comms/config">
@@ -180,7 +171,42 @@ function App() {
             </ProtectedRoute>
           }
         />
+        {/* Dashboard Routes */}
+        <Route
+          path="/dashboards"
+          element={
+            <ProtectedRoute routePath="/dashboards">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
+                  <DashboardPage />
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboards/:id"
+          element={
+            <ProtectedRoute routePath="/dashboards">
+              <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+                <Layout>
+                  <DashboardPage />
+                </Layout>
+              </Box>
+            </ProtectedRoute>
+          }
+        />
+        {/* Shared Dashboard (public, no auth required) */}
+        <Route
+          path="/dashboards/shared/:token"
+          element={
+            <Box sx={{ minHeight: '100vh' }}>
+              <DashboardPage />
+            </Box>
+          }
+        />
       </Routes>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
