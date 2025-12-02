@@ -7,11 +7,16 @@ Handles OAuth 2.0 flow for BigQuery connections:
 - Token encryption/decryption
 - Token refresh
 """
+import os
 import secrets
 import json
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import structlog
+
+# Relax OAuth scope matching - Google may return scopes in different format
+# (e.g., "email" vs "userinfo.email", or add "openid" automatically)
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
 from cryptography.fernet import Fernet, InvalidToken
 from google_auth_oauthlib.flow import Flow
@@ -189,7 +194,9 @@ class GoogleOAuthService:
         }
 
         try:
-            # Create OAuth flow
+            # Create OAuth flow with the scopes we requested
+            # OAUTHLIB_RELAX_TOKEN_SCOPE env var (set at module level) handles
+            # Google returning slightly different scope formats
             flow = Flow.from_client_config(
                 client_config,
                 scopes=BIGQUERY_OAUTH_SCOPES,
@@ -367,6 +374,50 @@ class GoogleOAuthService:
             logger.info("Access token expired, refreshing...")
             return self.refresh_access_token(token_info)
         return token_info
+
+    def get_valid_decrypted_credentials(
+        self,
+        stored_creds: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], bool]:
+        """
+        Get valid, decrypted OAuth credentials, refreshing if needed.
+
+        This is a convenience method that combines validation, refresh, and decryption.
+
+        Args:
+            stored_creds: Encrypted credentials from database
+
+        Returns:
+            Tuple of (decrypted_credentials, was_refreshed)
+            - decrypted_credentials: Ready-to-use credentials for BigQuery
+            - was_refreshed: True if tokens were refreshed (caller should save to DB)
+        """
+        # Get valid credentials (will refresh if expired)
+        valid_creds = self.get_valid_credentials(stored_creds)
+
+        # Decrypt both for comparison
+        decrypted_stored = self.decrypt_tokens(stored_creds)
+        decrypted_valid = self.decrypt_tokens(valid_creds) if valid_creds.get("_encrypted") else valid_creds
+
+        # Check if refresh happened
+        was_refreshed = decrypted_valid.get("access_token") != decrypted_stored.get("access_token")
+
+        if was_refreshed:
+            logger.info("OAuth tokens were refreshed")
+
+        return decrypted_valid, was_refreshed
+
+    def encrypt_for_storage(self, decrypted_creds: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Encrypt credentials for database storage.
+
+        Args:
+            decrypted_creds: Decrypted credentials
+
+        Returns:
+            Encrypted credentials ready for MongoDB storage
+        """
+        return self.encrypt_tokens(decrypted_creds)
 
 
 # Singleton instance

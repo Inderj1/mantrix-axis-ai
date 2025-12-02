@@ -43,7 +43,7 @@ logger = structlog.get_logger()
 class SQLGenerator:
     def __init__(
         self,
-        database_type: str = 'bigquery',
+        database_type: str = None,
         database_config: Optional[Dict[str, Any]] = None,
         organization_id: str = None
     ):
@@ -51,10 +51,18 @@ class SQLGenerator:
 
         Args:
             database_type: Type of database ('bigquery', 'snowflake', 'postgresql', 'redshift', 'databricks')
-            database_config: Database-specific configuration (optional, uses settings for BigQuery)
+                          If None, auto-detects from organization's enabled connectors
+            database_config: Database-specific configuration (optional)
             organization_id: Organization ID for multi-tenancy
         """
         self.organization_id = organization_id or getattr(settings, 'default_org_id', 'default')
+        # Store connector IDs for Weaviate filtering
+        self.connector_ids = []
+
+        # Auto-detect database type if not specified
+        if database_type is None:
+            database_type = self._detect_database_type()
+
         # Store database type and config
         self.database_type = database_type
         self.database_config = database_config or {}
@@ -77,15 +85,26 @@ class SQLGenerator:
         self.suggestion_service = QuerySuggestionService()
 
         # Create database client using connector factory
-        if database_type == 'bigquery':
-            # Use existing BigQuery config for backward compatibility
-            db_config = {
-                'project_id': settings.google_cloud_project,
-                'dataset_id': settings.bigquery_dataset
-            }
+        if database_config:
+            # Use provided configuration
+            db_config = database_config
         else:
-            # Use provided configuration for other databases
-            db_config = self.database_config
+            # Try to load organization's enabled connector from MongoDB
+            logger.info(f"Looking up {database_type} connector for organization: {self.organization_id}")
+            db_config = self._load_org_connector_config(self.organization_id, database_type)
+            if not db_config:
+                # No fallback - raise error if no connector configured
+                error_msg = (
+                    f"No enabled {database_type} connector found for organization '{self.organization_id}'. "
+                    f"Please configure a {database_type} connector in the Database Configuration page."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+        # IMPORTANT: Update self.database_config with the loaded config
+        # This ensures LLM gets the correct project/dataset
+        self.database_config = db_config
+        logger.info(f"Database config set: project={db_config.get('project_id')}, dataset={db_config.get('dataset_id')}")
 
         # Create connector via factory
         self.db_client = ConnectorFactory.create_connector(
@@ -93,12 +112,28 @@ class SQLGenerator:
             config=db_config
         )
 
+        # Connect to the database
+        self.db_client.connect()
+
         # Get database capabilities for dialect-specific handling
         self.db_capabilities = self.db_client.get_capabilities()
         logger.info(f"Database client initialized: {self.db_capabilities.database_name}")
 
         # Keep bq_client reference for backward compatibility (will be removed in later tasks)
         self.bq_client = self.db_client
+
+        # Load ALL enabled connector IDs for Weaviate filtering
+        # This ensures schemas from all enabled connectors are searchable
+        self._refresh_connector_ids()
+
+        # Log initialization summary (helpful for debugging multi-connector scenarios)
+        logger.info(
+            "SQLGenerator initialized",
+            organization_id=self.organization_id,
+            primary_database_type=self.database_type,
+            connector_ids_count=len(self.connector_ids),
+            is_bigquery=(self.database_type == 'bigquery')
+        )
 
         # Initialize cross-database validator
         self.cross_db_validator = CrossDatabaseValidator(organization_id=self.organization_id)
@@ -244,6 +279,544 @@ class SQLGenerator:
 
         # Skip automatic indexing on startup - will be done lazily on first use
         # self._index_schemas()
+
+    def _detect_database_type(self) -> str:
+        """
+        Auto-detect database type from organization's enabled connectors.
+
+        Looks up MongoDB to find what connector types are enabled for this org.
+
+        Returns:
+            Database type string (e.g., 'bigquery', 'snowflake')
+
+        Raises:
+            ValueError: If no enabled connectors found for the organization
+        """
+        try:
+            from pymongo import MongoClient
+
+            mongo_client = MongoClient(settings.mongodb_url)
+            db = mongo_client[settings.mongodb_database]
+            collection = db["database_connectors"]
+
+            # Find first enabled connector for this organization
+            connector = collection.find_one({
+                "organization_id": self.organization_id,
+                "enabled_for_chat": True,
+                "status": {"$in": ["connected", "active"]}
+            })
+
+            if connector:
+                db_type = connector.get("connector_type")
+                logger.info(
+                    f"Auto-detected database type '{db_type}' for organization '{self.organization_id}' "
+                    f"(connector: {connector.get('name')})"
+                )
+                return db_type
+
+            # No connector found - raise clear error
+            error_msg = (
+                f"No enabled database connector found for organization '{self.organization_id}'. "
+                f"Please configure and enable a database connector in the Database Configuration page."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        except ValueError:
+            raise  # Re-raise ValueError as-is
+        except Exception as e:
+            logger.error(f"Error detecting database type: {e}")
+            raise ValueError(f"Failed to detect database type for organization '{self.organization_id}': {e}")
+
+    def _load_org_connector_config(self, organization_id: str, database_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Load connector config for an organization from MongoDB.
+
+        Args:
+            organization_id: Organization ID to look up
+            database_type: Type of database connector
+
+        Returns:
+            Config dict with OAuth credentials if applicable, or None if not found
+        """
+        try:
+            from pymongo import MongoClient
+            from src.config import settings
+
+            # Connect to MongoDB synchronously (we're in __init__)
+            mongo_client = MongoClient(settings.mongodb_url)
+            db = mongo_client[settings.mongodb_database]
+            collection = db["database_connectors"]
+
+            logger.info(f"Looking up {database_type} connector for organization: {organization_id}")
+
+            # Find enabled connector for this org and database type
+            connector = collection.find_one({
+                "organization_id": organization_id,
+                "connector_type": database_type,
+                "enabled_for_chat": True,
+                "status": {"$in": ["connected", "active"]}
+            })
+
+            if not connector:
+                logger.warning(f"No enabled {database_type} connector found for org {organization_id}")
+                return None
+
+            # Store connector_id for Weaviate filtering
+            connector_id = str(connector.get("_id"))
+            if connector_id and connector_id not in self.connector_ids:
+                self.connector_ids.append(connector_id)
+                logger.info(f"Added connector_id {connector_id} to filter list")
+
+            # Build config from connector
+            logger.info(f"Found connector: id={connector_id}, name={connector.get('name')}, org={connector.get('organization_id')}, "
+                       f"auth_method={connector.get('config', {}).get('auth_method')}, "
+                       f"has_oauth_credentials={bool(connector.get('oauth_credentials'))}")
+            config = connector.get("config", {}).copy()
+
+            # For OAuth connectors, decrypt credentials
+            # Note: Token refresh happens automatically in BigQuery client via google-auth
+            if config.get("auth_method") == "oauth" and connector.get("oauth_credentials"):
+                try:
+                    from src.core.google_oauth_service import get_google_oauth_service
+                    oauth_service = get_google_oauth_service()
+                    decrypted_creds = oauth_service.decrypt_tokens(connector["oauth_credentials"])
+                    config["oauth_credentials"] = decrypted_creds
+                    logger.info(f"Loaded OAuth config for {database_type} connector in org {organization_id}")
+                except Exception as e:
+                    logger.error(f"Failed to decrypt OAuth credentials: {e}")
+                    return None
+            else:
+                logger.info(f"Loaded {config.get('auth_method', 'default')} config for {database_type} connector in org {organization_id}")
+
+            logger.info(f"Returning config with keys: {list(config.keys())}")
+            return config
+
+        except Exception as e:
+            logger.error(f"Error loading connector config for org {organization_id}: {e}")
+            return None
+
+    def _refresh_connector_ids(self) -> List[str]:
+        """
+        Refresh the list of enabled connector IDs for this organization.
+
+        This loads ALL enabled connectors across ALL database types to enable
+        multi-connector semantic search. The connector_ids filter in Weaviate
+        maintains security by only returning tables from enabled connectors.
+
+        Returns:
+            List of enabled connector IDs
+        """
+        try:
+            from pymongo import MongoClient
+
+            mongo_client = MongoClient(settings.mongodb_url)
+            db = mongo_client[settings.mongodb_database]
+            collection = db["database_connectors"]
+
+            # Find ALL enabled connectors for this organization (across ALL database types)
+            # This enables multi-connector semantic search while connector_ids filter
+            # maintains security isolation
+            connectors = collection.find({
+                "organization_id": self.organization_id,
+                # REMOVED: "connector_type": self.database_type - load ALL types
+                "enabled_for_chat": True,
+                "status": {"$in": ["connected", "active"]}
+            })
+
+            # Update connector_ids list and build connector_id → database_type mapping
+            self.connector_ids = []
+            self.connector_db_types: Dict[str, str] = {}
+            connector_details = []
+            for connector in connectors:
+                connector_id = str(connector.get("_id"))
+                connector_name = connector.get("connector_name", "unnamed")
+                connector_type = connector.get("connector_type", "unknown")
+                if connector_id:
+                    self.connector_ids.append(connector_id)
+                    self.connector_db_types[connector_id] = connector_type
+                    connector_details.append(f"{connector_name}({connector_type})")
+
+            # Comprehensive logging for multi-connector debugging
+            unique_db_types = list(set(self.connector_db_types.values()))
+            logger.info(
+                "Connector refresh completed",
+                organization_id=self.organization_id,
+                connector_count=len(self.connector_ids),
+                connector_ids=self.connector_ids,
+                database_types=unique_db_types,
+                connector_details=connector_details,
+                is_multi_database=(len(unique_db_types) > 1),
+                includes_bigquery=('bigquery' in unique_db_types),
+                includes_snowflake=('snowflake' in unique_db_types)
+            )
+
+            return self.connector_ids
+
+        except Exception as e:
+            logger.warning(f"Failed to refresh connector_ids: {e}")
+            return self.connector_ids  # Return existing list on error
+
+    def _determine_target_database(
+        self,
+        tables_used: List[str],
+        schemas: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Determine which database the query targets based on tables used.
+
+        When multi-connector search is enabled, the LLM may generate SQL using
+        tables from different databases. This method detects which database
+        the query actually targets for proper execution routing.
+
+        Args:
+            tables_used: List of table names from the generated SQL
+            schemas: List of schema dictionaries from vector search (each has database_type)
+
+        Returns:
+            Database type string ('bigquery', 'snowflake', 'federated', etc.)
+
+        Raises:
+            ValueError: If query uses tables from multiple databases without federation
+        """
+        db_types_used = set()
+
+        for table in tables_used:
+            for schema in schemas:
+                if schema.get('table_name') == table:
+                    db_types_used.add(schema.get('database_type', self.database_type))
+                    break
+
+        if len(db_types_used) == 0:
+            # No tables matched - use default database type
+            return self.database_type
+
+        if len(db_types_used) == 1:
+            # All tables from same database - use that database
+            return list(db_types_used)[0]
+
+        # Cross-database query detected
+        logger.warning(f"Cross-database query detected: {db_types_used}")
+
+        # Use existing CrossDatabaseValidator for detailed analysis
+        if hasattr(self, 'cross_db_validator') and self.cross_db_validator:
+            table_db_map = {s['table_name']: s.get('database_type') for s in schemas}
+            validation = self.cross_db_validator.validate_query(
+                query="",  # We don't have SQL here yet, just table info
+                selected_databases=list(db_types_used),
+                table_database_map=table_db_map
+            )
+            if validation.can_execute_federated:
+                logger.info("Cross-database query can be executed federally")
+                return 'federated'
+
+        # Can't execute cross-database query
+        raise ValueError(
+            f"Query uses tables from multiple databases ({', '.join(sorted(db_types_used))}). "
+            "Please ask about tables from a single database, or explicitly request cross-database federation."
+        )
+
+    def _get_connector_for_database(self, db_type: str):
+        """
+        Get or create a database connector for a specific database type.
+
+        This enables dynamic connector selection when the target database
+        differs from the initially configured database (multi-connector scenarios).
+
+        Args:
+            db_type: Database type ('bigquery', 'snowflake', 'postgresql', etc.)
+
+        Returns:
+            Database connector instance
+
+        Raises:
+            ValueError: If no enabled connector found for the database type
+        """
+        # If target matches current connector, use it
+        if db_type == self.database_type and self.db_client:
+            return self.db_client
+
+        # Check connector pool
+        if not hasattr(self, '_connector_pool'):
+            self._connector_pool = {}
+
+        if db_type in self._connector_pool:
+            return self._connector_pool[db_type]
+
+        # Load connector config for this database type
+        db_config = self._load_org_connector_config(self.organization_id, db_type)
+        if not db_config:
+            raise ValueError(
+                f"No enabled {db_type} connector for organization '{self.organization_id}'. "
+                f"Please configure a {db_type} connector in the Database Configuration page."
+            )
+
+        # Create and connect
+        connector = ConnectorFactory.create_connector(db_type, config=db_config)
+        connector.connect()
+        self._connector_pool[db_type] = connector
+
+        logger.info(f"Created dynamic connector for {db_type}")
+        return connector
+
+    def _detect_multi_connector_scenario(self, schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Detect if query requires cross-connector execution.
+
+        Uses connector_id (not database_type) because user might have:
+        - Two BigQuery projects (same type, different connectors)
+        - Two Snowflake accounts (same type, different connectors)
+
+        Args:
+            schemas: List of table schemas from vector search
+
+        Returns:
+            Dictionary with multi-connector detection results:
+            - is_multi_connector: bool
+            - connector_ids: list of connector IDs involved
+            - schemas_by_connector: dict mapping connector_id to schemas
+            - connector_metadata: dict mapping connector_id to metadata
+            - has_different_db_types: bool (True if different SQL dialects needed)
+        """
+        connector_ids = set(s.get('connector_id') for s in schemas if s.get('connector_id'))
+
+        if len(connector_ids) <= 1:
+            return {
+                "is_multi_connector": False,
+                "connector_ids": list(connector_ids),
+                "database_types": list(set(s.get('database_type') for s in schemas if s.get('database_type')))
+            }
+
+        # Group schemas by connector_id
+        schemas_by_connector = {}
+        connector_metadata = {}  # connector_id -> {database_type, project, dataset, ...}
+
+        for schema in schemas:
+            conn_id = schema.get('connector_id', 'unknown')
+            if conn_id not in schemas_by_connector:
+                schemas_by_connector[conn_id] = []
+                connector_metadata[conn_id] = {
+                    "database_type": schema.get('database_type'),
+                    "project": schema.get('project'),
+                    "dataset": schema.get('dataset')
+                }
+            schemas_by_connector[conn_id].append(schema)
+
+        # Check if different database types are involved (affects SQL dialect)
+        db_types = set(m['database_type'] for m in connector_metadata.values() if m.get('database_type'))
+        has_different_db_types = len(db_types) > 1
+
+        logger.info(
+            "Multi-connector scenario detected",
+            connector_count=len(connector_ids),
+            connector_ids=list(connector_ids),
+            database_types=list(db_types),
+            has_different_db_types=has_different_db_types
+        )
+
+        return {
+            "is_multi_connector": True,
+            "connector_ids": list(connector_ids),
+            "schemas_by_connector": schemas_by_connector,
+            "connector_metadata": connector_metadata,
+            "has_different_db_types": has_different_db_types
+        }
+
+    def _load_connector_config_by_id(self, connector_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load connector config by connector_id from MongoDB.
+
+        Args:
+            connector_id: MongoDB _id of the connector
+
+        Returns:
+            Config dict with database_type and connection settings, or None if not found
+        """
+        try:
+            from pymongo import MongoClient
+            from bson import ObjectId
+
+            mongo_client = MongoClient(settings.mongodb_url)
+            db = mongo_client[settings.mongodb_database]
+            collection = db["database_connectors"]
+
+            # Find connector by ID
+            connector = collection.find_one({
+                "_id": ObjectId(connector_id),
+                "organization_id": self.organization_id,
+                "enabled_for_chat": True,
+                "status": {"$in": ["connected", "active"]}
+            })
+
+            if not connector:
+                logger.warning(f"Connector {connector_id} not found or not enabled")
+                return None
+
+            # Build config including database_type
+            config = connector.get("config", {}).copy()
+            config["database_type"] = connector.get("connector_type")
+            config["connector_id"] = connector_id
+            config["connector_name"] = connector.get("name", "")
+
+            # Handle OAuth credentials if applicable
+            if config.get("auth_method") == "oauth" and connector.get("oauth_credentials"):
+                try:
+                    from src.core.google_oauth_service import get_google_oauth_service
+                    oauth_service = get_google_oauth_service()
+                    decrypted_creds = oauth_service.decrypt_tokens(connector["oauth_credentials"])
+                    config["oauth_credentials"] = decrypted_creds
+                except Exception as e:
+                    logger.error(f"Failed to decrypt OAuth credentials for connector {connector_id}: {e}")
+                    return None
+
+            logger.info(f"Loaded config for connector {connector_id} (type: {config['database_type']})")
+            return config
+
+        except Exception as e:
+            logger.error(f"Error loading connector config by ID {connector_id}: {e}")
+            return None
+
+    async def _execute_cross_connector_query(
+        self,
+        llm_result: Dict[str, Any],
+        connector_metadata: Dict[str, Dict[str, Any]],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """
+        Execute cross-connector query using CrossDatabaseExecutor.
+
+        Takes the LLM-generated connector_queries and join_specification,
+        builds an ExecutionPlan, and executes via CrossDatabaseExecutor.
+
+        Args:
+            llm_result: Result from LLMClient.generate_cross_connector_sql()
+            connector_metadata: Dict mapping connector_id -> {database_type, project, dataset}
+            user_id: User ID for permissions
+
+        Returns:
+            Dict with results, row_count, connectors_used, etc.
+        """
+        from src.core.cross_database_executor import get_cross_database_executor
+        from src.core.federated_query_planner import (
+            ExecutionPlan, ExecutionStrategy, QueryStep, TableReference
+        )
+
+        logger.info(
+            "Executing cross-connector query",
+            connector_count=len(llm_result.get("connector_queries", {})),
+            join_type=llm_result.get("join_specification", {}).get("type")
+        )
+
+        connector_queries = llm_result.get("connector_queries", {})
+        join_spec = llm_result.get("join_specification", {})
+
+        if not connector_queries:
+            return {
+                "error": "No connector queries provided",
+                "is_cross_connector": True,
+                "success": False
+            }
+
+        # Load configs for each connector
+        database_configs = {}
+        steps = []
+        tables_by_database = {}
+        step_num = 1
+
+        for connector_id, query_info in connector_queries.items():
+            # Load connector config
+            config = self._load_connector_config_by_id(connector_id)
+            if not config:
+                return {
+                    "error": f"Could not load config for connector {connector_id}",
+                    "is_cross_connector": True,
+                    "success": False
+                }
+
+            db_type = config["database_type"]
+            database_configs[db_type] = config
+
+            # Build query step
+            steps.append(QueryStep(
+                step_number=step_num,
+                database_type=db_type,
+                sql=query_info["sql"],
+                description=f"Execute query on {db_type} connector {connector_id}",
+                estimated_cost=1.0
+            ))
+
+            # Track tables
+            if db_type not in tables_by_database:
+                tables_by_database[db_type] = []
+            for table in query_info.get("tables_used", []):
+                tables_by_database[db_type].append(TableReference(
+                    database_type=db_type,
+                    full_name=table,
+                    table=table
+                ))
+
+            step_num += 1
+
+        # Determine execution strategy
+        if join_spec and join_spec.get("type") in ["INNER", "LEFT", "RIGHT", "FULL"]:
+            strategy = ExecutionStrategy.DISTRIBUTED
+        elif join_spec and join_spec.get("type") in ["UNION", "UNION_ALL"]:
+            strategy = ExecutionStrategy.DISTRIBUTED
+        else:
+            strategy = ExecutionStrategy.DISTRIBUTED
+
+        # Determine primary database (first one in the list)
+        primary_db = list(database_configs.keys())[0]
+
+        # Build execution plan
+        plan = ExecutionPlan(
+            strategy=strategy,
+            primary_database=primary_db,
+            databases_involved=list(database_configs.keys()),
+            tables_by_database=tables_by_database,
+            steps=steps,
+            metadata={
+                "join_specification": join_spec,
+                "connector_queries": connector_queries
+            }
+        )
+
+        # Execute via CrossDatabaseExecutor
+        try:
+            executor = get_cross_database_executor()
+            # skip_permission_check=True because connector access was already verified
+            # (only enabled connectors for this user/org reach this point)
+            result = await executor.execute_plan(
+                plan=plan,
+                user_id=user_id,
+                organization_id=self.organization_id,
+                database_configs=database_configs,
+                skip_permission_check=True
+            )
+
+            # Convert DataFrame to dict records
+            rows = result.data.to_dict('records') if result.data is not None else []
+
+            return {
+                "rows": rows,
+                "row_count": result.rows_returned,
+                "is_cross_connector": True,
+                "success": True,
+                "connectors_used": list(connector_queries.keys()),
+                "database_types_used": result.databases_accessed,
+                "execution_time_seconds": result.execution_time_seconds,
+                "warnings": result.warnings,
+                "explanation": llm_result.get("explanation", "")
+            }
+
+        except Exception as e:
+            logger.error(f"Cross-connector execution failed: {e}")
+            return {
+                "error": str(e),
+                "is_cross_connector": True,
+                "success": False,
+                "connectors_used": list(connector_queries.keys())
+            }
 
     def _get_database_qualifier(self) -> Optional[str]:
         """Get database-level qualifier (project for BigQuery, database for others).
@@ -416,7 +989,8 @@ class SQLGenerator:
         max_tables: int = 5,
         auto_optimize: bool = True,
         force_refresh: bool = False,
-        conversation_context: Optional[Dict[str, Any]] = None
+        conversation_context: Optional[Dict[str, Any]] = None,
+        persona_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Generate SQL from natural language query.
 
@@ -427,7 +1001,18 @@ class SQLGenerator:
             auto_optimize: Whether to apply query optimization
             force_refresh: Force cache refresh
             conversation_context: Context from previous conversation messages
+            persona_context: User persona context from user profile (role, prompt additions)
+
+        Raises:
+            ValueError: If no connector is configured for the organization
         """
+        # CRITICAL: Require connector configuration - no hardcoded fallback
+        if not self.connector_ids:
+            raise ValueError(
+                "No database connector configured. Please configure a connector in Database Settings "
+                "and enable it for chat queries."
+            )
+
         logger.info(f">>> SQL Generator: Starting generation for query: {query}")
         if conversation_context:
             logger.info(f"Using conversation context with {len(conversation_context.get('previous_sql', ''))} chars of previous SQL")
@@ -656,10 +1241,14 @@ class SQLGenerator:
                 if financial_context and financial_context.get("hierarchy_level"):
                     relevant_schemas = self._get_financial_schemas(financial_context, max_tables)
                 
-                # Final fallback: get all schemas
+                # Final fallback: get all schemas from current connector
                 if not relevant_schemas:
-                    all_schemas = self.bq_client.get_dataset_schema()
-                    relevant_schemas = all_schemas[:max_tables]
+                    try:
+                        all_schemas = self.db_client.get_dataset_schema()
+                        relevant_schemas = all_schemas[:max_tables]
+                    except Exception as e:
+                        logger.warning(f"Fallback schema fetch failed: {e}")
+                        relevant_schemas = []
             
             if not relevant_schemas:
                 # Get suggestions for the failed query
@@ -681,6 +1270,74 @@ class SQLGenerator:
             if settings.enable_industry_features and self.industry_manager.active_config:
                 relevant_schemas = self._enhance_schemas_with_industry_info(relevant_schemas)
 
+            # ============================================================
+            # MULTI-CONNECTOR DETECTION
+            # Check if query involves multiple connectors BEFORE LLM call
+            # ============================================================
+            multi_conn_info = self._detect_multi_connector_scenario(relevant_schemas)
+
+            if multi_conn_info["is_multi_connector"]:
+                logger.info(
+                    "Multi-connector query detected - using cross-connector LLM flow",
+                    connector_ids=multi_conn_info["connector_ids"],
+                    has_different_db_types=multi_conn_info["has_different_db_types"]
+                )
+
+                # Use cross-connector LLM method instead of standard generate_sql
+                cross_conn_result = self.llm_client.generate_cross_connector_sql(
+                    user_query=processed_query,
+                    schemas_by_connector=multi_conn_info["schemas_by_connector"],
+                    connector_metadata=multi_conn_info["connector_metadata"],
+                    financial_context=financial_context,
+                    business_context=enhanced_context,
+                    conversation_context=conversation_context
+                )
+
+                # Mark result for downstream cross-connector handling
+                cross_conn_result["_multi_connector_info"] = multi_conn_info
+                cross_conn_result["from_cache"] = False
+
+                # If LLM decided single connector is sufficient, continue with normal flow
+                if not cross_conn_result.get("requires_cross_connector"):
+                    single_connector_id = cross_conn_result.get("single_connector_id")
+                    logger.info(
+                        f"LLM determined single connector sufficient: {single_connector_id}"
+                    )
+                    # Filter schemas to just the single connector and continue normal flow
+                    if single_connector_id:
+                        relevant_schemas = [
+                            s for s in relevant_schemas
+                            if s.get("connector_id") == single_connector_id
+                        ]
+                        # Update database config for the selected connector
+                        selected_meta = multi_conn_info["connector_metadata"].get(single_connector_id, {})
+                        if selected_meta.get("database_type"):
+                            self.database_type = selected_meta["database_type"]
+                            # FIX: Also update database_config with connector's location info
+                            # This ensures the LLM prompt uses correct table qualification
+                            self.database_config = {
+                                "database_type": selected_meta["database_type"],
+                                "project_id": selected_meta.get("project", selected_meta.get("database", "")),
+                                "dataset_id": selected_meta.get("dataset", selected_meta.get("schema", "")),
+                            }
+                            logger.info(
+                                f"Updated database_config for {single_connector_id}",
+                                database_type=self.database_type,
+                                project_id=self.database_config.get("project_id"),
+                                dataset_id=self.database_config.get("dataset_id")
+                            )
+                else:
+                    # Multi-connector query - return result for cross-connector execution
+                    logger.info(
+                        "Returning cross-connector result for execution",
+                        connector_queries=list(cross_conn_result.get("connector_queries", {}).keys())
+                    )
+                    return cross_conn_result
+
+            # ============================================================
+            # SINGLE-CONNECTOR FLOW (standard path)
+            # ============================================================
+
             # Prepare kwargs for LLM client
             llm_kwargs = {}
 
@@ -688,6 +1345,9 @@ class SQLGenerator:
             llm_kwargs["database_type"] = self.database_type
             llm_kwargs["database_name"] = self.db_capabilities.database_name
             llm_kwargs["dialect_guide"] = self._get_dialect_guide()
+            # Pass connector's database config so LLM uses correct project/dataset
+            llm_kwargs["database_config"] = self.database_config
+            logger.info(f"Using database_config for LLM: project={self.database_config.get('project_id')}, dataset={self.database_config.get('dataset_id')}")
 
             if financial_context:
                 llm_kwargs["financial_context"] = financial_context
@@ -697,6 +1357,8 @@ class SQLGenerator:
                 llm_kwargs["join_hints"] = join_hints
             if conversation_context:
                 llm_kwargs["conversation_context"] = conversation_context
+            if persona_context:
+                llm_kwargs["persona_context"] = persona_context
 
             logger.info(f"Generating SQL for {self.db_capabilities.database_name} (dialect: {self.database_type})")
             
@@ -714,7 +1376,8 @@ class SQLGenerator:
                     query,
                     relevant_schemas,
                     lambda q, s: self.llm_client.generate_sql(processed_query, s, **llm_kwargs),
-                    force_refresh=force_refresh
+                    force_refresh=force_refresh,
+                    connector_ids=self.connector_ids if self.connector_ids else None
                 )
                 
                 if from_cache:
@@ -728,7 +1391,27 @@ class SQLGenerator:
                 # Generate SQL using LLM
                 result = self.llm_client.generate_sql(processed_query, relevant_schemas, **llm_kwargs)
                 result["from_cache"] = False
-            
+
+            # Detect target database from tables used in generated SQL (multi-connector support)
+            tables_used = result.get("tables_used", [])
+            if tables_used and relevant_schemas:
+                try:
+                    target_db_type = self._determine_target_database(tables_used, relevant_schemas)
+                    result["target_database_type"] = target_db_type
+                    logger.info(f"Target database determined: {target_db_type}")
+
+                    # If target DB differs from current connector, update LLM kwargs for dialect
+                    if target_db_type != self.database_type and target_db_type != 'federated':
+                        logger.info(f"Target database ({target_db_type}) differs from primary ({self.database_type})")
+                        result["requires_alternate_connector"] = True
+                except ValueError as e:
+                    # Cross-database query that can't be executed
+                    logger.warning(f"Cross-database detection: {e}")
+                    result["cross_database_error"] = str(e)
+            else:
+                # Default to current database type
+                result["target_database_type"] = self.database_type
+
             # Post-process SQL to fix revenue column usage
             logger.info(f"Post-processing check: query contains 'revenue'? {('revenue' in query.lower())}")
             if result.get("sql"):
@@ -778,16 +1461,27 @@ class SQLGenerator:
                             result["auto_corrected"] = True
             
             # Validate the generated SQL (with caching)
+            # Use target database connector for validation (multi-connector support)
+            # IMPORTANT: Always use the correct connector for the target database type
+            # No fallback to avoid validating BigQuery SQL against Snowflake (or vice versa)
+            target_db_type = result.get("target_database_type", self.database_type)
+            if target_db_type and target_db_type != 'federated':
+                validation_connector = self._get_connector_for_database(target_db_type)
+                logger.info(f"Using {target_db_type} connector for validation")
+            else:
+                validation_connector = self.db_client
+                logger.info(f"Using default connector for validation (federated or no target type)")
+
             validation = None
             if self.cache_manager and settings.cache_validation_enabled:
                 validation = self.cache_manager.get_validation(result["sql"])
-            
+
             if validation is None:
-                validation = self.bq_client.validate_query(result["sql"])
+                validation = validation_connector.validate_query(result["sql"])
                 # Cache validation result
                 if self.cache_manager and settings.cache_validation_enabled and not result.get("error"):
                     self.cache_manager.cache_validation(result["sql"], validation)
-            
+
             result["validation"] = validation
             
             # Apply query optimization if enabled and query is valid
@@ -804,8 +1498,8 @@ class SQLGenerator:
                     result["optimization_suggestions"] = optimization_result.get("suggestions", [])
                     result["optimization_improvement"] = optimization_result.get("improvement", {})
                     
-                    # Re-validate optimized query
-                    result["validation"] = self.bq_client.validate_query(result["sql"])
+                    # Re-validate optimized query (using target database connector)
+                    result["validation"] = validation_connector.validate_query(result["sql"])
 
             # Apply format normalization for JOIN accuracy (fixes COPA/Cockpit mismatch)
             if self.format_normalizer and validation.get("valid", False):
@@ -819,8 +1513,8 @@ class SQLGenerator:
                         result["sql"] = normalized_sql
                         result["format_normalized"] = True
 
-                        # Re-validate normalized query
-                        result["validation"] = self.bq_client.validate_query(result["sql"])
+                        # Re-validate normalized query (using target database connector)
+                        result["validation"] = validation_connector.validate_query(result["sql"])
                     else:
                         result["format_normalized"] = False
                 except Exception as e:
@@ -832,16 +1526,16 @@ class SQLGenerator:
                 result["industry"] = settings.industry
                 result["industry_terms_translated"] = processed_query != query
             
-            # Add query suggestions if available
-            if not result.get("error"):
-                # Get improvement suggestions
-                improvements = self.suggestion_service.suggest_query_improvements(
-                    query,
-                    result.get("sql", ""),
-                    result.get("execution", {}).get("performance_stats")
-                )
-                if improvements:
-                    result["suggestions"] = improvements
+            # Add query suggestions (context-aware, including error-specific suggestions)
+            execution_error = result.get("execution", {}).get("error") or result.get("error")
+            improvements = self.suggestion_service.suggest_query_improvements(
+                query,
+                result.get("sql", ""),
+                result.get("execution", {}).get("performance_stats"),
+                execution_error=execution_error  # Pass error for context-aware suggestions
+            )
+            if improvements:
+                result["suggestions"] = improvements
 
             # SMART CACHING: Cache after validation and test execution (if not from cache)
             if (
@@ -870,7 +1564,8 @@ class SQLGenerator:
                                 test_sql += " LIMIT 1"
 
                             start_time = time.time()
-                            test_results = self.bq_client.execute_query(test_sql)
+                            # Use target database connector for test execution (multi-connector support)
+                            test_results = validation_connector.execute_query(test_sql)
                             execution_time_ms = (time.time() - start_time) * 1000
                             row_count = len(test_results) if test_results else 0
 
@@ -944,66 +1639,20 @@ class SQLGenerator:
             return error_response
     
     def _check_and_reindex_if_needed(self):
-        """Check if vector DB needs reindexing based on cache expiration."""
-        try:
-            # Check if we have a timestamp for when schemas were last indexed
-            index_timestamp_key = f"schema_index_timestamp:{self._get_full_qualifier()}"
-            
-            if self.cache_manager:
-                # Get the last index timestamp from cache
-                last_indexed = self.cache_manager.redis_client.get(index_timestamp_key)
-                
-                if last_indexed is None:
-                    # Never indexed or cache expired - need to reindex
-                    logger.info("No schema index timestamp found, triggering reindex")
-                    self._index_schemas()
-                    # Store the timestamp
-                    self.cache_manager.redis_client.setex(
-                        index_timestamp_key,
-                        settings.cache_ttl_schema,  # Use same TTL as schema cache
-                        str(time.time())
-                    )
-                else:
-                    # Check if any schemas have been modified since last index
-                    last_indexed_time = float(last_indexed)
-                    schemas = self.bq_client.get_dataset_schema()
-                    
-                    # Check if any table was modified after our last index
-                    needs_reindex = False
-                    for schema in schemas:
-                        if 'modified' in schema:
-                            # Convert modified timestamp to epoch
-                            modified_time = schema['modified'].timestamp() if hasattr(schema['modified'], 'timestamp') else 0
-                            if modified_time > last_indexed_time:
-                                needs_reindex = True
-                                break
-                    
-                    if needs_reindex:
-                        logger.info("Schema changes detected, triggering reindex")
-                        self._index_schemas()
-                        # Update the timestamp
-                        self.cache_manager.redis_client.setex(
-                            index_timestamp_key,
-                            settings.cache_ttl_schema,
-                            str(time.time())
-                        )
-            else:
-                # No cache manager, check if vector DB is empty
-                try:
-                    # Try a simple search to see if we have any indexed schemas
-                    test_embedding = [0.0] * 1536  # Dummy embedding
-                    results = self.vector_client.search_similar_tables(test_embedding, limit=1)
-                    if not results:
-                        logger.info("Vector DB appears empty, triggering reindex")
-                        self._index_schemas()
-                except:
-                    # If search fails, assume we need to index
-                    logger.info("Vector DB check failed, triggering reindex")
-                    self._index_schemas()
-                    
-        except Exception as e:
-            logger.warning(f"Failed to check/reindex schemas: {e}")
-            # Continue without reindexing on error
+        """
+        Check if vector DB needs reindexing based on cache expiration.
+
+        DISABLED: This was causing 30+ second delays on every query by fetching
+        all schemas from the database. Schema indexing should only happen:
+        1. When user clicks "Sync" in the Database Connectors UI
+        2. During the scheduled pipeline (daily at 2am)
+
+        The vector DB (Weaviate) persists schemas, so they don't need to be
+        re-indexed on every query.
+        """
+        # Skip reindex check during query time - rely on manual sync or scheduled pipeline
+        logger.debug("Skipping reindex check during query (use manual sync or pipeline)")
+        return
 
     def _get_relevant_schemas(self, query: str, limit: int) -> List[Dict[str, Any]]:
         """Get relevant table schemas using vector search.
@@ -1028,15 +1677,82 @@ class SQLGenerator:
             
             # Adjust limit based on query complexity indicators
             adjusted_limit = self._determine_search_limit(query, limit)
-            
-            # Search for similar tables with adjusted limit, filtered by organization and database
-            similar_tables = self.vector_client.search_similar_tables(
-                query_embedding,
-                limit=adjusted_limit,
-                database_type=self.database_type,
-                organization_id=self.organization_id
+
+            # Note: connector_ids refresh is now handled by sql_generator_singleton module
+            # which invalidates this instance when connectors change
+
+            # Check Weaviate search cache first
+            if self.cache_manager and settings.cache_weaviate_enabled:
+                cached_results = self.cache_manager.get_weaviate_search(
+                    query_embedding,
+                    self.organization_id,
+                    self.connector_ids,
+                    adjusted_limit
+                )
+                if cached_results:
+                    logger.info(
+                        "Weaviate cache HIT",
+                        tables_found=len(cached_results),
+                        organization_id=self.organization_id
+                    )
+                    # Apply table selection logic to cached results
+                    return self._select_tables_by_relevance(cached_results, query, limit)
+
+            # Search for similar tables with adjusted limit, filtered by organization and connector
+            # NOTE: database_type filter REMOVED to enable multi-connector semantic search
+            # The connector_ids filter maintains security by only returning tables from enabled connectors
+            # Each returned table has its database_type property for target DB detection
+            logger.info(
+                "Starting multi-connector vector search",
+                organization_id=self.organization_id,
+                primary_database_type=self.database_type,
+                connector_ids=self.connector_ids,
+                connector_db_types=getattr(self, 'connector_db_types', {}),
+                adjusted_limit=adjusted_limit,
+                is_bigquery=(self.database_type == 'bigquery')
             )
-            
+
+            # Use per-connector search when multiple connectors are enabled
+            # This ensures results from ALL databases are represented, not just the one
+            # with the highest semantic similarity
+            if len(self.connector_ids) > 1:
+                similar_tables = self._per_connector_vector_search(
+                    query_embedding=query_embedding,
+                    total_limit=adjusted_limit,
+                    organization_id=self.organization_id
+                )
+            else:
+                # Single connector - use original search
+                similar_tables = self.vector_client.search_similar_tables(
+                    query_embedding,
+                    limit=adjusted_limit,
+                    organization_id=self.organization_id,
+                    connector_ids=self.connector_ids if self.connector_ids else None
+                )
+
+            # Cache the Weaviate search results
+            if self.cache_manager and settings.cache_weaviate_enabled and similar_tables:
+                self.cache_manager.cache_weaviate_search(
+                    query_embedding,
+                    self.organization_id,
+                    self.connector_ids,
+                    adjusted_limit,
+                    similar_tables
+                )
+
+            # Log which databases the results came from
+            if similar_tables:
+                db_types_found = set(t.get('database_type', 'unknown') for t in similar_tables)
+                table_names = [t.get('table_name', 'unknown') for t in similar_tables[:5]]
+                logger.info(
+                    "Vector search completed",
+                    organization_id=self.organization_id,
+                    tables_found=len(similar_tables),
+                    database_types_found=list(db_types_found),
+                    sample_tables=table_names,
+                    is_bigquery=(self.database_type == 'bigquery')
+                )
+
             # Analyze if multiple tables are needed based on similarity scores
             tables_to_return = self._select_tables_by_relevance(similar_tables, query, limit)
             
@@ -1045,7 +1761,99 @@ class SQLGenerator:
             logger.warning(f"Vector search failed, falling back to all tables: {e}")
             # Fallback to getting all schemas
             return self.bq_client.get_dataset_schema()[:limit]
-    
+
+    def _per_connector_vector_search(
+        self,
+        query_embedding: List[float],
+        total_limit: int,
+        organization_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform vector search separately for each connector, then merge results.
+
+        This ensures that results from ALL enabled databases are represented,
+        even if one database has higher semantic similarity scores overall.
+
+        Args:
+            query_embedding: The query vector embedding
+            total_limit: Total number of results to return
+            organization_id: Organization ID for filtering
+
+        Returns:
+            Merged and deduplicated list of table schemas from all connectors
+        """
+        all_tables = []
+        connector_count = len(self.connector_ids)
+
+        # Calculate per-connector limit - ensure at least 3 results per connector
+        # to have meaningful representation from each database
+        per_connector_limit = max(3, total_limit // connector_count)
+
+        logger.info(
+            "Starting per-connector vector search",
+            connector_count=connector_count,
+            per_connector_limit=per_connector_limit,
+            total_limit=total_limit,
+            organization_id=organization_id
+        )
+
+        # Search each connector separately
+        for connector_id in self.connector_ids:
+            db_type = self.connector_db_types.get(connector_id, 'unknown')
+            try:
+                connector_results = self.vector_client.search_similar_tables(
+                    query_embedding,
+                    limit=per_connector_limit,
+                    connector_id=connector_id,  # Single connector search
+                    organization_id=organization_id
+                )
+
+                tables_found = len(connector_results) if connector_results else 0
+                logger.info(
+                    f"Per-connector search completed for {db_type}",
+                    connector_id=connector_id,
+                    database_type=db_type,
+                    tables_found=tables_found,
+                    sample_tables=[t.get('table_name') for t in (connector_results or [])[:3]]
+                )
+
+                if connector_results:
+                    all_tables.extend(connector_results)
+
+            except Exception as e:
+                logger.warning(
+                    f"Vector search failed for connector {connector_id}: {e}",
+                    connector_id=connector_id,
+                    database_type=db_type
+                )
+
+        # Deduplicate by (table_name, connector_id) - same table from same connector
+        seen = set()
+        deduplicated = []
+        for table in all_tables:
+            key = (table.get('table_name'), table.get('connector_id'))
+            if key not in seen:
+                seen.add(key)
+                deduplicated.append(table)
+
+        # Sort by distance (similarity) - lower distance = more similar
+        deduplicated.sort(key=lambda t: t.get('distance', float('inf')))
+
+        # Cap to total_limit
+        final_results = deduplicated[:total_limit]
+
+        # Log summary
+        db_types_found = list(set(t.get('database_type', 'unknown') for t in final_results))
+        logger.info(
+            "Per-connector search completed",
+            total_tables_found=len(final_results),
+            database_types_found=db_types_found,
+            all_connectors_represented=(len(db_types_found) >= connector_count),
+            sample_tables=[t.get('table_name') for t in final_results[:5]]
+        )
+
+        return final_results
+
     def _determine_search_limit(self, query: str, base_limit: int) -> int:
         """Determine search limit based on query complexity.
         
@@ -1209,26 +2017,62 @@ class SQLGenerator:
                 "domains": domains
             }
     
-    def execute_query(self, sql: str) -> Dict[str, Any]:
-        """Execute SQL query and return results."""
+    def execute_query(self, sql: str, target_database_type: str = None) -> Dict[str, Any]:
+        """Execute SQL query and return results.
+
+        Args:
+            sql: The SQL query to execute
+            target_database_type: Optional database type to execute on. If not provided,
+                                  uses the primary connector (self.db_client)
+        """
         try:
+            # Log query execution context (helpful for debugging non-BigQuery scenarios)
+            logger.info(
+                "Executing query",
+                organization_id=self.organization_id,
+                primary_database_type=self.database_type,
+                target_database_type=target_database_type or self.database_type,
+                is_bigquery=(self.database_type == 'bigquery'),
+                sql_preview=sql[:100] if sql else None
+            )
+
+            # Get the appropriate connector for execution (multi-connector support)
+            if target_database_type and target_database_type != self.database_type and target_database_type != 'federated':
+                try:
+                    db_connector = self._get_connector_for_database(target_database_type)
+                    logger.info(
+                        "Using dynamic connector for query execution",
+                        target_database_type=target_database_type,
+                        organization_id=self.organization_id
+                    )
+                except ValueError as e:
+                    logger.warning(f"Could not get connector for {target_database_type}, using default: {e}")
+                    db_connector = self.db_client
+            else:
+                db_connector = self.db_client
+                logger.debug(
+                    "Using primary connector for query execution",
+                    database_type=self.database_type,
+                    organization_id=self.organization_id
+                )
+
             # Validate first
-            validation = self.bq_client.validate_query(sql)
+            validation = db_connector.validate_query(sql)
             if not validation["valid"]:
                 # Try to correct the SQL if validation failed
                 if self.llm_client:
                     correction_result = self.llm_client.correct_sql_error(
                         sql,
                         validation['error'],
-                        self.bq_client.get_dataset_schema()[:5]  # Provide some schema context
+                        db_connector.get_dataset_schema()[:5]  # Provide some schema context
                     )
-                    
+
                     if correction_result.get("correction_applied") and correction_result.get("sql"):
                         # Try the corrected SQL
                         logger.info("Attempting to execute corrected SQL")
                         sql = correction_result["sql"]
-                        validation = self.bq_client.validate_query(sql)
-                        
+                        validation = db_connector.validate_query(sql)
+
                         if not validation["valid"]:
                             # Still invalid after correction
                             return {
@@ -1255,10 +2099,10 @@ class SQLGenerator:
                         "error": f"Invalid query: {validation['error']}",
                         "results": None
                     }
-            
+
             # Execute query with performance tracking
             start_time = time.time()
-            execution_result = self.bq_client.execute_query(sql)
+            execution_result = db_connector.execute_query(sql)
             execution_time = (time.time() - start_time) * 1000  # ms
 
             # Extract results from the new Dict format

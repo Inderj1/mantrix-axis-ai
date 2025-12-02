@@ -17,6 +17,7 @@ import {
   useMediaQuery,
   Button,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -30,9 +31,16 @@ import {
   ControlCamera as ControlCenterIcon,
   Storage as DatabaseIcon,
   Dashboard as DashboardIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import AuthButton from './AuthButton';
 import { useAuth } from '../contexts/AuthContext';
+import { useConversationStore } from '../stores/conversationStore';
+
+// Import images as modules for proper caching
+import mantraLogo from '../assets/mantra9.png';
 
 const drawerWidth = 240;
 const drawerWidthCollapsed = 65;
@@ -54,7 +62,22 @@ function Layout({ children }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [hoveredConvId, setHoveredConvId] = useState(null);
   const { token } = useAuth();
+
+  // Get conversation store
+  const {
+    conversations,
+    conversationId: currentConversationId,
+    loadingConversations,
+    loadConversation,
+    createNewConversation,
+    toggleStar,
+    deleteConversation,
+  } = useConversationStore();
+
+  // Derive starred conversations
+  const starredConversations = conversations.filter(c => c.metadata?.starred);
 
   // Check if user is admin using Cognito groups from JWT token
   const isAdmin = React.useMemo(() => {
@@ -75,11 +98,54 @@ function Layout({ children }) {
     setCollapsed(!collapsed);
   };
 
-  const handleNewChat = () => {
-    // Clear current chat and start new
-    navigate('/chat');
-    window.location.reload();
+  const handleNewChat = async () => {
+    console.log('handleNewChat called');
+    try {
+      await createNewConversation();
+      navigate('/chat');
+    } catch (error) {
+      console.error('handleNewChat error:', error);
+    }
   };
+
+  const handleLoadConversation = async (convId) => {
+    await loadConversation(convId);
+    navigate('/chat');
+  };
+
+  const handleToggleStar = async (e, conversationId) => {
+    e.stopPropagation();
+    await toggleStar(conversationId);
+  };
+
+  const handleDeleteConversation = async (e, conversationId) => {
+    e.stopPropagation();
+    await deleteConversation(conversationId);
+  };
+
+  // Group conversations by date
+  const getDateGroup = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return 'This Week';
+    if (diffDays < 30) return 'This Month';
+    return 'Older';
+  };
+
+  // Filter out starred and group remaining by date
+  const nonStarredConversations = conversations.filter(c => !c.metadata?.starred);
+
+  const groupedConversations = nonStarredConversations.reduce((groups, conv) => {
+    const group = getDateGroup(conv.updated_at || conv.updatedAt);
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(conv);
+    return groups;
+  }, {});
+
+  const dateOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older'];
 
   const drawer = (
     <Box sx={{
@@ -112,7 +178,7 @@ function Layout({ children }) {
         {!collapsed && (
           <Box
             component="img"
-            src="/mantra9.png"
+            src={mantraLogo}
             alt="CloudMantra"
             sx={{
               height: 32,
@@ -219,29 +285,175 @@ function Layout({ children }) {
         ))}
       </List>
 
-      {/* Recent Chats Section */}
-      {!collapsed && (
+      {/* Starred Chats Section */}
+      {!collapsed && starredConversations.length > 0 && (
         <>
-          <Box sx={{ px: 2.5, pt: 2, pb: 1 }}>
+          <Box sx={{ px: 2.5, pt: 2, pb: 0.5 }}>
             <Typography sx={{
               textTransform: 'uppercase',
-              color: '#7A8699',
+              color: '#df6e0c',
               fontWeight: 600,
               fontSize: '0.7rem',
               letterSpacing: '0.5px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
             }}>
-              Recent Chats
+              <StarIcon sx={{ fontSize: 14 }} /> Starred
             </Typography>
           </Box>
-          <Box sx={{ px: 2.5, pb: 2 }}>
-            <Typography sx={{
-              fontSize: '0.85rem',
-              color: '#5A6677',
-            }}>
-              No conversations yet
-            </Typography>
-          </Box>
+          <List sx={{ px: 1.5, py: 0, maxHeight: 150, overflowY: 'auto' }}>
+            {starredConversations.map((conv) => {
+              const convId = conv.conversation_id || conv.conversationId;
+              const isActive = currentConversationId === convId;
+              const isHovered = hoveredConvId === convId;
+              return (
+                <ListItem
+                  key={convId}
+                  disablePadding
+                  sx={{ mb: 0.25 }}
+                  onMouseEnter={() => setHoveredConvId(convId)}
+                  onMouseLeave={() => setHoveredConvId(null)}
+                >
+                  <ListItemButton
+                    selected={isActive}
+                    onClick={() => handleLoadConversation(convId)}
+                    sx={{
+                      borderRadius: 1,
+                      py: 0.5,
+                      px: 1,
+                      minHeight: 32,
+                      '&.Mui-selected': {
+                        bgcolor: 'rgba(223, 110, 12, 0.08)',
+                      },
+                    }}
+                  >
+                    <ListItemText
+                      primary={conv.title || 'Untitled'}
+                      primaryTypographyProps={{
+                        fontSize: '0.8rem',
+                        noWrap: true,
+                        color: isActive ? '#df6e0c' : '#1A2332',
+                      }}
+                    />
+                    {isHovered && (
+                      <Box sx={{ display: 'flex', ml: 0.5 }}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleToggleStar(e, convId)}
+                          sx={{ p: 0.25, color: '#df6e0c' }}
+                        >
+                          <StarIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleDeleteConversation(e, convId)}
+                          sx={{ p: 0.25, color: '#999' }}
+                        >
+                          <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+                    )}
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
         </>
+      )}
+
+      {/* Recent Chats Section */}
+      {!collapsed && (
+        <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          {loadingConversations ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <CircularProgress size={20} />
+            </Box>
+          ) : nonStarredConversations.length === 0 ? (
+            <Box sx={{ px: 2.5, py: 2 }}>
+              <Typography sx={{ fontSize: '0.85rem', color: '#5A6677' }}>
+                No conversations yet
+              </Typography>
+            </Box>
+          ) : (
+            dateOrder.map((group) => {
+              const convs = groupedConversations[group];
+              if (!convs || convs.length === 0) return null;
+              return (
+                <Box key={group}>
+                  <Box sx={{ px: 2.5, pt: 1.5, pb: 0.5 }}>
+                    <Typography sx={{
+                      textTransform: 'uppercase',
+                      color: '#7A8699',
+                      fontWeight: 600,
+                      fontSize: '0.65rem',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {group}
+                    </Typography>
+                  </Box>
+                  <List sx={{ px: 1.5, py: 0 }}>
+                    {convs.map((conv) => {
+                      const convId = conv.conversation_id || conv.conversationId;
+                      const isActive = currentConversationId === convId;
+                      const isHovered = hoveredConvId === convId;
+                      return (
+                        <ListItem
+                          key={convId}
+                          disablePadding
+                          sx={{ mb: 0.25 }}
+                          onMouseEnter={() => setHoveredConvId(convId)}
+                          onMouseLeave={() => setHoveredConvId(null)}
+                        >
+                          <ListItemButton
+                            selected={isActive}
+                            onClick={() => handleLoadConversation(convId)}
+                            sx={{
+                              borderRadius: 1,
+                              py: 0.5,
+                              px: 1,
+                              minHeight: 32,
+                              '&.Mui-selected': {
+                                bgcolor: 'rgba(10, 110, 209, 0.08)',
+                              },
+                            }}
+                          >
+                            <ListItemText
+                              primary={conv.title || 'Untitled'}
+                              primaryTypographyProps={{
+                                fontSize: '0.8rem',
+                                noWrap: true,
+                                color: isActive ? '#0a6ed1' : '#1A2332',
+                              }}
+                            />
+                            {isHovered && (
+                              <Box sx={{ display: 'flex', ml: 0.5 }}>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => handleToggleStar(e, convId)}
+                                  sx={{ p: 0.25, color: '#999' }}
+                                >
+                                  <StarBorderIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => handleDeleteConversation(e, convId)}
+                                  sx={{ p: 0.25, color: '#999' }}
+                                >
+                                  <DeleteIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </Box>
+                            )}
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    })}
+                  </List>
+                </Box>
+              );
+            })
+          )}
+        </Box>
       )}
 
       {/* Spacer to push bottom items down */}

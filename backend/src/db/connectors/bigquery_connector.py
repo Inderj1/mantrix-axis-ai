@@ -65,6 +65,8 @@ class BigQueryConnector(BaseDatabaseConnector):
         wif_service_account_email: Optional[str] = None,
         # OAuth options
         oauth_credentials: Optional[Dict[str, Any]] = None,
+        # BigQuery location for job execution
+        location: Optional[str] = None,
     ):
         """
         Initialize BigQuery connector.
@@ -78,10 +80,12 @@ class BigQueryConnector(BaseDatabaseConnector):
             wif_provider_resource_name: WIF provider resource name (for workload_identity)
             wif_service_account_email: Service account to impersonate (for workload_identity)
             oauth_credentials: OAuth credentials dict with access_token, refresh_token, etc.
+            location: BigQuery location for job execution (e.g., 'US', 'EU', 'us-central1')
         """
         super().__init__()
         self.project_id = project_id or settings.google_cloud_project
         self.dataset_id = dataset_id or settings.bigquery_dataset
+        self.location = location
         self.client: Optional[bigquery.Client] = None
         self._capabilities = BIGQUERY_CAPABILITIES
 
@@ -127,7 +131,8 @@ class BigQueryConnector(BaseDatabaseConnector):
 
             self.client = bigquery.Client(
                 project=self.project_id,
-                credentials=credentials
+                credentials=credentials,
+                location=self.location  # May be None, which is fine
             )
 
         except Exception as e:

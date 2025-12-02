@@ -5,6 +5,7 @@ import os
 import json
 import uuid
 from datetime import datetime, date, time, timezone
+from src.config import settings
 
 # Import authentication and permission modules
 from src.api.middleware.cognito_auth import get_current_user, require_auth, require_admin
@@ -12,7 +13,8 @@ from src.db.connector_factory import ConnectorFactory
 from src.core.database_permissions import AccessLevel
 from src.api.models import (
     QueryRequest, QueryResponse,
-    SQLGenerateRequest, SQLExecuteRequest,
+    SQLGenerateRequest, SQLExecuteRequest, SingleConnectorExecuteRequest,
+    CrossConnectorRejoinRequest, CrossConnectorRejoinResponse,
     OptimizeRequest, OptimizationResponse,
     ExecutionResponse, SchemaResponse,
     HealthResponse,
@@ -29,6 +31,7 @@ from src.api.models import (
     ResearchReportResponse, ResearchInsightResponse, ResearchRecommendationResponse
 )
 from src.core.sql_generator import SQLGenerator
+from src.core.sql_generator_singleton import get_sql_generator
 from src.db.bigquery import BigQueryClient
 from src.db.weaviate_client import WeaviateClient
 from src.core.optimization import (
@@ -55,6 +58,9 @@ from src.core.research_executor import ResearchExecutor, ExecutionStatus
 from src.core.research_synthesizer import ResearchSynthesizer
 from src.core.gl_accounting_advisor import GLAccountingAdvisor
 from src.core.copilot_suggestions import get_suggestion_engine
+from src.core.ai_suggestion_service import get_ai_suggestion_service
+from src.core.user_profile_manager import user_profile_manager
+from src.models.user_profile import UserRole
 import asyncio
 
 logger = structlog.get_logger()
@@ -78,7 +84,7 @@ def convert_dates_to_datetime(obj):
     return obj
 
 # Initialize once and reuse
-sql_generator = None
+# Note: sql_generator is now managed by sql_generator_singleton module
 bq_client = None
 weaviate_client = None
 mv_manager = None
@@ -94,17 +100,20 @@ research_synthesizer = None
 active_research_plans = {}  # Store active research plans
 active_research_executions = {}  # Store active executions
 
+# Note: get_sql_generator is now imported from sql_generator_singleton module
 
-def get_sql_generator(organization_id: str = None) -> SQLGenerator:
-    """Get SQL generator instance with optional organization context."""
-    global sql_generator
-    if sql_generator is None:
-        # Create with default organization_id if not provided
-        sql_generator = SQLGenerator(organization_id=organization_id)
-    elif organization_id and sql_generator.organization_id != organization_id:
-        # Create new instance if organization_id differs
-        sql_generator = SQLGenerator(organization_id=organization_id)
-    return sql_generator
+
+async def get_org_sql_generator(
+    user: Optional[Dict] = Depends(get_current_user)
+) -> SQLGenerator:
+    """
+    Dependency that returns the SQLGenerator for the current user's organization.
+
+    This ensures each organization gets their own SQLGenerator instance with
+    the correct connector configuration.
+    """
+    org_id = user.get('organization_id') if user else None
+    return get_sql_generator(organization_id=org_id)
 
 
 async def initialize_sql_generators_for_organizations():
@@ -118,15 +127,15 @@ async def initialize_sql_generators_for_organizations():
         logger.info("Initializing SQLGenerator for organizations with enabled databases...")
 
         # Get MongoDB client
-        mongo_client = get_mongodb_client()
-        db = mongo_client.get_database()
+        mongo_client = await get_mongodb_client()
+        db = mongo_client.db
         connectors_collection = db["database_connectors"]
 
         # Find all organizations with at least one enabled database
-        enabled_connectors = list(connectors_collection.find({
+        enabled_connectors = await connectors_collection.find({
             "enabled_for_chat": True,
             "status": {"$in": ["connected", "active"]}
-        }))
+        }).to_list(length=None)
 
         # Get unique organization IDs
         org_ids = set()
@@ -269,6 +278,48 @@ def get_research_synthesizer() -> ResearchSynthesizer:
     return research_synthesizer
 
 
+async def analyze_empty_results(
+    question: str,
+    sql: str,
+    tables_used: list,
+    explanation: str,
+    generator
+) -> str:
+    """
+    Use AI to analyze why a query returned no results and provide actionable feedback.
+
+    Returns a user-friendly explanation of possible reasons and suggestions.
+    """
+    prompt = f"""A user asked: "{question}"
+
+The following SQL was generated and executed successfully, but returned 0 rows:
+
+```sql
+{sql}
+```
+
+Tables queried: {', '.join(tables_used) if tables_used else 'unknown'}
+
+Analyze this situation and provide a brief, helpful explanation (2-3 sentences max) for why there might be no results. Focus on:
+1. Specific filters in the SQL that might be too restrictive (mention actual column names and conditions)
+2. Data that might not exist (e.g., date ranges, specific values)
+3. One concrete suggestion to get results
+
+Be specific to THIS query - don't give generic advice. Respond in plain text, no markdown."""
+
+    try:
+        # Use Haiku 4.5 for fast, cheap diagnostic analysis
+        response = generator.llm_client.client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        logger.warning(f"AI empty result analysis failed: {e}")
+        raise
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Check the health of all services."""
@@ -318,7 +369,7 @@ async def health_check():
 @router.post("/query", response_model=QueryResponse)
 async def process_query(
     request: QueryRequest,
-    generator: SQLGenerator = Depends(get_sql_generator),
+    generator: SQLGenerator = Depends(get_org_sql_generator),
     mongodb: MongoDBClient = Depends(get_mongodb_client),
     user: Optional[Dict] = Depends(get_current_user)  # Add authentication
 ):
@@ -327,8 +378,64 @@ async def process_query(
     execution_id = str(uuid.uuid4())
 
     try:
-        # Determine database type (default to bigquery for backward compatibility)
-        database_type = request.database_type or 'bigquery'
+        # CONNECTOR REQUIREMENT CHECK: Ensure at least one connector is configured for chat
+        org_id = user.get('organization_id') if user else None
+        connectors_collection = mongodb.db["database_connectors"]
+        chat_enabled_connector = await connectors_collection.find_one({
+            "enabled_for_chat": True,
+            "status": {"$in": ["connected", "active", "success"]},
+            "$or": [
+                {"organization_id": org_id},
+                {"organization_id": {"$exists": False}},  # Legacy connectors
+            ]
+        })
+
+        if not chat_enabled_connector:
+            logger.warning(
+                "No chat-enabled connector found",
+                organization_id=org_id,
+                user_id=user.get('id') if user else 'anonymous'
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="No database connector is configured for chat queries. "
+                       "Please go to Database Settings, add a connector, sync its schema, "
+                       "and enable it for chat."
+            )
+
+        # Determine database type: use enabled connector's type, not the requested type
+        # The frontend may send a stale/cached database_type that doesn't have an enabled connector
+        # Always prefer the connector that is actually enabled for chat
+        enabled_connector_type = chat_enabled_connector.get('connector_type')
+
+        if request.database_type and request.database_type != enabled_connector_type:
+            # Check if requested type has an enabled connector
+            requested_type_connector = await connectors_collection.find_one({
+                "connector_type": request.database_type,
+                "enabled_for_chat": True,
+                "status": {"$in": ["connected", "active", "success"]},
+                "$or": [
+                    {"organization_id": org_id},
+                    {"organization_id": {"$exists": False}},
+                ]
+            })
+            if requested_type_connector:
+                database_type = request.database_type
+            else:
+                # Requested type has no enabled connector, use the one that IS enabled
+                database_type = enabled_connector_type
+                logger.warning(
+                    f"Requested database type '{request.database_type}' has no enabled connector, "
+                    f"using '{database_type}' instead"
+                )
+        else:
+            database_type = enabled_connector_type or 'bigquery'
+
+        logger.info(
+            f"Using database type: {database_type}",
+            requested_type=request.database_type,
+            connector_type=enabled_connector_type
+        )
 
         # SECURITY FIX 1: Check user permissions for database access
         if user and user.get('id') != 'anonymous':
@@ -339,6 +446,31 @@ async def process_query(
                 required_level=AccessLevel.READ.value,
                 organization_id=user.get('organization_id')
             )
+
+            # If standard permission check fails, check if user has an enabled connector
+            # (e.g., OAuth connector provides access through user's own credentials)
+            if not has_access:
+                org_id = user.get('organization_id')
+                # Check MongoDB for enabled connectors for this organization/database type
+                connectors_collection = mongodb.db["database_connectors"]
+                enabled_connector = await connectors_collection.find_one({
+                    "connector_type": database_type,
+                    "enabled_for_chat": True,
+                    "status": {"$in": ["connected", "active"]},
+                    "$or": [
+                        {"organization_id": org_id},
+                        {"organization_id": {"$exists": False}},  # Legacy connectors without org
+                    ]
+                })
+                if enabled_connector:
+                    logger.info(
+                        "Access granted via enabled connector",
+                        user_id=user['id'],
+                        organization_id=org_id,
+                        database_type=database_type,
+                        connector_id=str(enabled_connector.get('_id'))
+                    )
+                    has_access = True
 
             if not has_access:
                 # AUDIT LOG: Access denied
@@ -415,7 +547,7 @@ async def process_query(
             # Get organization_id from user token
             organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
-                database_type=request.database_type or 'bigquery',
+                database_type=database_type,  # Use already-determined database_type (not hardcoded)
                 database_config=request.database_config,
                 organization_id=organization_id
             )
@@ -487,29 +619,251 @@ async def process_query(
             )
             await mongodb.add_message(request.conversationId, user_message.model_dump())
 
+        # Get user persona context for personalized SQL generation
+        persona_context = None
+        if user:
+            user_id = user.get('sub') or user.get('cognito:username') or user.get('id')
+            if user_id:
+                persona_context = user_profile_manager.get_personalization_context(user_id)
+                if persona_context:
+                    logger.info(
+                        "Using persona context for SQL generation",
+                        user_id=user_id,
+                        role=persona_context.get('user_role')
+                    )
+
         if execute:
-            # Generate and execute with context
-            if conversation_context:
-                # For generate_and_execute, we need to pass context through generate_sql
-                # First generate SQL with context
-                sql_result = generator.generate_sql(
-                    request.question,
-                    use_vector_search=use_vector_search,
-                    max_tables=max_tables,
-                    conversation_context=conversation_context
+            # Generate SQL (with optional conversation context and persona)
+            sql_result = generator.generate_sql(
+                request.question,
+                use_vector_search=use_vector_search,
+                max_tables=max_tables,
+                conversation_context=conversation_context,  # Can be None
+                persona_context=persona_context  # User's role-specific context
+            )
+
+            # ============================================================
+            # CROSS-CONNECTOR EXECUTION
+            # If generate_sql returned a cross-connector query, execute it
+            # using the CrossDatabaseExecutor instead of single-connector
+            # ============================================================
+            if sql_result.get("requires_cross_connector"):
+                logger.info(
+                    "Cross-connector query detected - routing to CrossDatabaseExecutor",
+                    connector_queries=list(sql_result.get("connector_queries", {}).keys())
                 )
 
-                if sql_result.get("error") or not sql_result.get("sql"):
-                    result = sql_result
-                else:
-                    # Execute the generated SQL
-                    execution_result = generator.execute_query(sql_result["sql"])
+                multi_conn_info = sql_result.get("_multi_connector_info", {})
+                connector_metadata = multi_conn_info.get("connector_metadata", {})
+
+                try:
+                    # Execute cross-connector query
+                    cross_result = await generator._execute_cross_connector_query(
+                        llm_result=sql_result,
+                        connector_metadata=connector_metadata,
+                        user_id=user.get('id', 'unknown') if user else 'unknown'
+                    )
+
+                    if cross_result.get("success"):
+                        result = {
+                            "sql": None,  # No single SQL for cross-connector
+                            "is_cross_connector": True,
+                            "connector_queries": sql_result.get("connector_queries", {}),
+                            "join_specification": sql_result.get("join_specification"),
+                            "explanation": sql_result.get("explanation", ""),
+                            "execution": {
+                                "results": cross_result.get("rows", []),
+                                "row_count": cross_result.get("row_count", 0),
+                                "execution_time_seconds": cross_result.get("execution_time_seconds"),
+                                "connectors_used": cross_result.get("connectors_used", []),
+                                "database_types_used": cross_result.get("database_types_used", []),
+                                "warnings": cross_result.get("warnings", [])
+                            },
+                            "from_cache": False
+                        }
+                        logger.info(
+                            "Cross-connector query executed successfully",
+                            row_count=cross_result.get("row_count"),
+                            connectors_used=cross_result.get("connectors_used")
+                        )
+                    else:
+                        # Cross-connector execution failed
+                        result = {
+                            "error": cross_result.get("error", "Cross-connector execution failed"),
+                            "is_cross_connector": True,
+                            "connector_queries": sql_result.get("connector_queries", {}),
+                            "connectors_used": cross_result.get("connectors_used", []),
+                            "from_cache": False
+                        }
+                        logger.error(
+                            "Cross-connector query failed",
+                            error=cross_result.get("error")
+                        )
+
+                except Exception as e:
+                    logger.error(f"Cross-connector execution error: {e}", exc_info=True)
                     result = {
-                        **sql_result,
-                        "execution": execution_result
+                        "error": f"Cross-connector execution error: {str(e)}",
+                        "is_cross_connector": True,
+                        "from_cache": False
                     }
+
+            elif sql_result.get("error") or not sql_result.get("sql"):
+                result = sql_result
             else:
-                result = generator.generate_and_execute(request.question)
+                correction_info = None
+                error_analysis = None
+                connector_id = str(chat_enabled_connector.get('_id')) if chat_enabled_connector else None
+
+                # Helper function to get table schemas for error correction
+                def get_table_schemas_for_correction():
+                    table_schemas = []
+                    for table_name in sql_result.get("tables_used", []):
+                        try:
+                            weaviate = WeaviateClient()
+                            schemas = weaviate.search_tables(
+                                table_name,
+                                limit=1,
+                                connector_id=connector_id
+                            )
+                            if schemas:
+                                table_schemas.append({
+                                    "table_name": schemas[0].get("table_name"),
+                                    "columns": schemas[0].get("columns", [])
+                                })
+                        except Exception:
+                            pass
+                    return table_schemas
+
+                # Helper function to attempt error correction
+                def attempt_error_correction(error_msg, current_sql, error_source="validation"):
+                    nonlocal correction_info, error_analysis
+                    logger.info(f"Error correction agent: Analyzing SQL error (source: {error_source}): {error_msg[:100]}")
+
+                    try:
+                        from src.core.error_correction_agent import ErrorCorrectionAgent
+
+                        agent = ErrorCorrectionAgent(llm_client=generator.llm_client)
+                        table_schemas = get_table_schemas_for_correction()
+
+                        correction = agent.analyze_and_correct(
+                            original_question=request.question,
+                            failed_sql=current_sql,
+                            error_message=error_msg,
+                            table_schemas=table_schemas,
+                            database_type=database_type,
+                            connector_id=connector_id
+                        )
+
+                        if correction.get("should_retry") and correction.get("confidence", 0) >= 0.5:
+                            corrected_sql = correction.get("corrected_sql")
+                            if corrected_sql and corrected_sql != current_sql:
+                                logger.info(
+                                    f"Error correction agent: Corrected SQL "
+                                    f"(confidence: {correction.get('confidence', 0):.2f})"
+                                )
+                                return corrected_sql, correction
+                        elif correction.get("requires_user_action"):
+                            error_analysis = {
+                                "category": correction.get("error_category"),
+                                "analysis": correction.get("analysis"),
+                                "user_message": correction.get("user_message")
+                            }
+                            logger.info(f"Error correction agent: User action required - {correction.get('error_category')}")
+                        else:
+                            error_analysis = {
+                                "category": correction.get("error_category"),
+                                "analysis": correction.get("analysis"),
+                                "confidence": correction.get("confidence"),
+                                "reason": "Low confidence or error type not auto-fixable"
+                            }
+
+                    except Exception as correction_error:
+                        logger.error(f"Error correction agent failed: {correction_error}", exc_info=True)
+
+                    return None, None
+
+                # PHASE 1: Check validation BEFORE execution - correct if needed
+                validation = sql_result.get("validation", {})
+                current_sql = sql_result["sql"]
+                original_sql = current_sql
+
+                if not validation.get("valid", True) and not sql_result.get("from_cache"):
+                    validation_error = validation.get("error", "")
+                    logger.info(f"Pre-execution: Validation failed, attempting correction before execution")
+
+                    corrected_sql, correction = attempt_error_correction(
+                        validation_error, current_sql, error_source="validation"
+                    )
+
+                    if corrected_sql:
+                        current_sql = corrected_sql
+                        sql_result["sql"] = corrected_sql
+                        correction_info = {
+                            "auto_corrected": True,
+                            "correction_phase": "pre-execution",
+                            "original_sql": original_sql,
+                            "original_error": validation_error,
+                            "error_category": correction.get("error_category"),
+                            "analysis": correction.get("analysis"),
+                            "changes_made": correction.get("changes_made", []),
+                            "confidence": correction.get("confidence")
+                        }
+
+                # PHASE 2: Execute the (possibly corrected) SQL
+                execution_result = generator.execute_query(current_sql)
+
+                # PHASE 3: If execution STILL fails (and we haven't already corrected), try again
+                if execution_result.get("error") and not correction_info and not sql_result.get("from_cache"):
+                    execution_error = execution_result.get("error", "")
+                    logger.info(f"Post-execution: Execution failed, attempting correction")
+
+                    corrected_sql, correction = attempt_error_correction(
+                        execution_error, current_sql, error_source="execution"
+                    )
+
+                    if corrected_sql:
+                        logger.info("Error correction agent: Retrying with corrected SQL")
+                        retry_result = generator.execute_query(corrected_sql)
+
+                        if not retry_result.get("error"):
+                            correction_info = {
+                                "auto_corrected": True,
+                                "correction_phase": "post-execution",
+                                "original_sql": current_sql,
+                                "original_error": execution_error,
+                                "error_category": correction.get("error_category"),
+                                "analysis": correction.get("analysis"),
+                                "changes_made": correction.get("changes_made", []),
+                                "confidence": correction.get("confidence")
+                            }
+                            sql_result["sql"] = corrected_sql
+                            execution_result = retry_result
+                            logger.info("Error correction agent: Correction successful!")
+                        else:
+                            correction_info = {
+                                "auto_corrected": False,
+                                "attempted": True,
+                                "correction_phase": "post-execution",
+                                "original_error": execution_error,
+                                "error_category": correction.get("error_category"),
+                                "analysis": correction.get("analysis"),
+                                "retry_error": retry_result.get("error")
+                            }
+                            logger.warning(f"Error correction agent: Retry failed: {retry_result.get('error')[:100]}")
+
+                result = {
+                    **sql_result,
+                    "execution": execution_result
+                }
+
+                # Add correction info if auto-retry was attempted
+                if correction_info:
+                    result["correction_info"] = correction_info
+
+                # Add error analysis if available (for non-auto-fixable errors)
+                if error_analysis:
+                    result["error_analysis"] = error_analysis
         else:
             # Just generate SQL
             result = generator.generate_sql(
@@ -523,27 +877,87 @@ async def process_query(
         suggestions = []
 
         # Debug logging
-        logger.info(f"Checking suggestion eligibility: execute={execute}, has_results={bool(result.get('execution', {}).get('results'))}")
-        logger.info(f"Result keys: {result.keys()}")
+        has_execution = "execution" in result
+        has_results = bool(result.get("execution", {}).get("results"))
+        row_count = result.get("execution", {}).get("row_count", 0)
+        logger.info(f"Checking suggestion eligibility: execute={execute}, has_execution={has_execution}, has_results={has_results}, row_count={row_count}")
 
-        if execute and result.get("execution", {}).get("results"):
-            logger.info(f"Generating suggestions for query: {request.question[:50]}...")
+        # Generate suggestions for any executed query (even with 0 results)
+        if execute and has_execution:
+            logger.info(f"Generating AI suggestions for query: {request.question[:50]}... (rows: {row_count})")
 
             async def generate_suggestions_async():
                 try:
-                    logger.info("Starting suggestion generation")
-                    suggestion_engine = get_suggestion_engine()
-                    suggestions = suggestion_engine.generate_suggestions(
+                    # Get user's role/persona for personalized suggestions
+                    user_role = None
+                    if user and user.get('id'):
+                        user_profile = user_profile_manager.get_profile(user['id'])
+                        if user_profile:
+                            user_role = user_profile.role
+                            logger.info(f"Using persona for suggestions: {user_role.value}")
+                        else:
+                            # Try to infer role from user groups or default
+                            user_groups = user.get('groups', [])
+                            if 'Admins' in user_groups or 'Finance' in user_groups:
+                                user_role = UserRole.FINANCE_ANALYST
+                            elif 'Operations' in user_groups:
+                                user_role = UserRole.COO
+                            elif 'Sales' in user_groups:
+                                user_role = UserRole.SALES_DIRECTOR
+
+                    # Build sql_context for empty results to enable diagnostic suggestions
+                    sql_context = None
+                    execution_results = result.get("execution", {}).get("results", [])
+                    if not execution_results:
+                        # Get available tables for the connector to help diagnose empty results
+                        available_tables = []
+                        try:
+                            weaviate = WeaviateClient()
+                            # Search with a generic term to get tables for this connector
+                            schemas = weaviate.search_similar_tables(
+                                query_embedding=[0] * 1536,  # Placeholder embedding
+                                limit=20,
+                                database_type=database_type if database_type else None,
+                                organization_id=user.get('organization_id') if user else None
+                            )
+                            available_tables = [s.get("table_name") for s in schemas if s.get("table_name")]
+                        except Exception as e:
+                            logger.debug(f"Could not fetch available tables for diagnostic suggestions: {e}")
+
+                        sql_context = {
+                            "sql": result.get("sql", ""),
+                            "tables_used": result.get("tables_used", []),
+                            "explanation": result.get("explanation", ""),
+                            "available_tables": available_tables
+                        }
+                        logger.info(f"Built SQL context for diagnostic suggestions (tables_used: {len(result.get('tables_used', []))}, available: {len(available_tables)})")
+
+                    # Use AI-powered suggestion service
+                    ai_service = get_ai_suggestion_service()
+                    suggestions = await ai_service.generate_suggestions(
                         query=request.question,
-                        sql=result.get("sql", ""),
-                        results=result.get("execution", {}).get("results", []),
-                        max_suggestions=5
+                        results=execution_results,
+                        role=user_role,
+                        num_suggestions=5,
+                        timeout_seconds=settings.ai_suggestion_timeout_seconds,
+                        sql_context=sql_context
                     )
-                    logger.info(f"Generated {len(suggestions)} suggestions")
+                    logger.info(f"Generated {len(suggestions)} AI suggestions (role: {user_role.value if user_role else 'default'})")
                     return suggestions
                 except Exception as e:
-                    logger.error(f"Failed to generate suggestions: {e}", exc_info=True)
-                    return []
+                    logger.error(f"AI suggestions failed, falling back to pattern-based: {e}", exc_info=True)
+                    # Fallback to pattern-based suggestions
+                    try:
+                        suggestion_engine = get_suggestion_engine()
+                        return suggestion_engine.generate_suggestions(
+                            query=request.question,
+                            sql=result.get("sql", ""),
+                            results=result.get("execution", {}).get("results", []),
+                            max_suggestions=5
+                        )
+                    except Exception as fallback_e:
+                        logger.error(f"Pattern-based fallback also failed: {fallback_e}")
+                        return []
 
             # Start suggestion generation in background (non-blocking)
             suggestion_task = asyncio.create_task(generate_suggestions_async())
@@ -585,10 +999,10 @@ async def process_query(
             message_data = convert_dates_to_datetime(assistant_message.model_dump())
             await mongodb.add_message(request.conversationId, message_data)
 
-        # Wait for suggestions to complete (should be fast due to caching)
-        if execute and result.get("execution", {}).get("results"):
+        # Wait for suggestions to complete (with 0.5s buffer over inner timeout)
+        if execute and has_execution:
             try:
-                suggestions = await asyncio.wait_for(suggestion_task, timeout=0.5)
+                suggestions = await asyncio.wait_for(suggestion_task, timeout=settings.ai_suggestion_timeout_seconds + 0.5)
             except asyncio.TimeoutError:
                 logger.warning("Suggestion generation timed out, returning without suggestions")
                 suggestions = []
@@ -609,10 +1023,9 @@ async def process_query(
             result_summary=f"{result.get('execution', {}).get('row_count', 0)} rows returned" if execute else "SQL generated"
         )
 
-        # Add suggestions to response
+        # Add suggestions to response (always include, even if empty)
         response_data = result.copy()
-        if suggestions:
-            response_data["follow_up_suggestions"] = suggestions
+        response_data["follow_up_suggestions"] = suggestions if suggestions else []
 
         # Add chart intelligence (backend-driven visualization recommendations)
         if execute and result.get("execution", {}).get("results"):
@@ -658,6 +1071,38 @@ async def process_query(
                 logger.warning(f"Failed to add chart intelligence: {e}")
                 # Continue without chart intelligence on error
 
+        # Handle empty results - provide AI-powered diagnostic context
+        if execute and response_data.get("execution"):
+            execution = response_data["execution"]
+            row_count = execution.get("row_count", 0)
+            results = execution.get("results", [])
+
+            if row_count == 0 or not results:
+                tables_used = response_data.get("tables_used", [])
+                sql = response_data.get("sql", "")
+                explanation = response_data.get("explanation", "")
+
+                logger.info(f"Query returned empty results for tables: {tables_used}")
+
+                # Use AI to analyze why the query returned no results
+                try:
+                    empty_result_analysis = await analyze_empty_results(
+                        question=request.question,
+                        sql=sql,
+                        tables_used=tables_used,
+                        explanation=explanation,
+                        generator=generator
+                    )
+                    response_data["empty_result_note"] = empty_result_analysis
+                except Exception as e:
+                    logger.warning(f"Failed to generate AI empty result analysis: {e}")
+                    # Fallback to basic message
+                    response_data["empty_result_note"] = (
+                        f"The query executed successfully but returned no data. "
+                        f"Tables queried: {', '.join(tables_used) if tables_used else 'unknown'}. "
+                        f"Consider checking if the data exists or adjusting your filters."
+                    )
+
         return QueryResponse(**response_data)
         
     except Exception as e:
@@ -692,13 +1137,28 @@ async def process_query(
 @router.post("/generate", response_model=QueryResponse)
 async def generate_sql(
     request: SQLGenerateRequest,
-    generator: SQLGenerator = Depends(get_sql_generator),
+    generator: SQLGenerator = Depends(get_org_sql_generator),
+    mongodb: MongoDBClient = Depends(get_mongodb_client),
     user: Optional[Dict] = Depends(get_current_user)  # Add authentication
 ):
     """Generate SQL from natural language without executing (with permission checks)."""
     try:
-        # Determine database type (default to bigquery for backward compatibility)
-        database_type = request.database_type or 'bigquery'
+        # Find an enabled connector to determine default database type
+        org_id = user.get('organization_id') if user else None
+        connectors_collection = mongodb.db["database_connectors"]
+        chat_enabled_connector = await connectors_collection.find_one({
+            "enabled_for_chat": True,
+            "status": {"$in": ["connected", "active", "success"]},
+            "$or": [
+                {"organization_id": org_id},
+                {"organization_id": {"$exists": False}},
+            ]
+        })
+
+        # Determine database type from request or from the enabled connector
+        database_type = request.database_type or (
+            chat_enabled_connector.get('connector_type', 'bigquery') if chat_enabled_connector else 'bigquery'
+        )
 
         # SECURITY FIX 1: Check user permissions for database access
         if user and user.get('id') != 'anonymous':
@@ -709,6 +1169,29 @@ async def generate_sql(
                 required_level=AccessLevel.READ.value,
                 organization_id=user.get('organization_id')
             )
+
+            # If standard permission check fails, check if user has an enabled connector
+            if not has_access:
+                org_id = user.get('organization_id')
+                connectors_collection = mongodb.db["database_connectors"]
+                enabled_connector = await connectors_collection.find_one({
+                    "connector_type": database_type,
+                    "enabled_for_chat": True,
+                    "status": {"$in": ["connected", "active"]},
+                    "$or": [
+                        {"organization_id": org_id},
+                        {"organization_id": {"$exists": False}},
+                    ]
+                })
+                if enabled_connector:
+                    logger.info(
+                        "Access granted via enabled connector (generate_sql)",
+                        user_id=user['id'],
+                        organization_id=org_id,
+                        database_type=database_type,
+                        connector_id=str(enabled_connector.get('_id'))
+                    )
+                    has_access = True
 
             if not has_access:
                 # AUDIT LOG: Access denied
@@ -783,7 +1266,7 @@ async def generate_sql(
             # Get organization_id from user token
             organization_id = user.get('organization_id') if user else None
             generator = SQLGenerator(
-                database_type=request.database_type or 'bigquery',
+                database_type=database_type,  # Use already-determined database_type (not hardcoded)
                 database_config=request.database_config,
                 organization_id=organization_id
             )
@@ -803,22 +1286,250 @@ async def generate_sql(
 @router.post("/execute", response_model=ExecutionResponse)
 async def execute_sql(
     request: SQLExecuteRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Execute a SQL query."""
     try:
         result = generator.execute_query(request.sql)
         return ExecutionResponse(**result)
-        
+
     except Exception as e:
         logger.error(f"SQL execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/execute-single-connector")
+async def execute_single_connector_query(
+    request: SingleConnectorExecuteRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Execute a single connector query (for cross-connector edit & re-run).
+
+    This endpoint allows re-executing an individual database query against a specific
+    connector, useful when editing cross-connector queries where only one part needs
+    to be re-run.
+
+    Request body:
+    {
+        "connector_id": "bq_connector_123",
+        "sql": "SELECT ... modified query ...",
+        "database_type": "bigquery"
+    }
+
+    Returns just the results for this connector (no join).
+    """
+    from bson import ObjectId
+
+    try:
+        # Get organization_id from user context
+        organization_id = user.get('organization_id') if user else 'default'
+
+        # Get connector from MongoDB
+        mongodb_client = await get_mongodb_client()
+        collection = mongodb_client.db["database_connectors"]
+
+        # Find connector with organization filter
+        connector_doc = await collection.find_one({
+            '_id': ObjectId(request.connector_id),
+            'organization_id': organization_id
+        })
+
+        if not connector_doc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Connector {request.connector_id} not found"
+            )
+
+        # Verify database type matches
+        if connector_doc.get('connector_type') != request.database_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Database type mismatch: expected {connector_doc.get('connector_type')}, got {request.database_type}"
+            )
+
+        # Create connector instance
+        connector = ConnectorFactory.create_connector(
+            connector_type=request.database_type,
+            config=connector_doc.get('config', {})
+        )
+
+        # Execute the query
+        logger.info(
+            "Executing single connector query",
+            connector_id=request.connector_id,
+            database_type=request.database_type,
+            sql_preview=request.sql[:100] + "..." if len(request.sql) > 100 else request.sql
+        )
+
+        result = connector.execute_query(request.sql)
+
+        # Extract results in a consistent format
+        results = result.get('results', [])
+        row_count = result.get('row_count', len(results))
+
+        return {
+            "connector_id": request.connector_id,
+            "database_type": request.database_type,
+            "results": results,
+            "row_count": row_count,
+            "success": True
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Single connector query execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rejoin-cross-connector", response_model=CrossConnectorRejoinResponse)
+async def rejoin_cross_connector_results(
+    request: CrossConnectorRejoinRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Re-join cross-connector results after editing individual queries.
+
+    This endpoint handles secure backend re-joining of cross-connector query results.
+    When a user edits one of the queries in a cross-connector query, only that query
+    is re-executed and the results are re-joined server-side.
+
+    Security Benefits:
+    - Data never exposed in browser memory
+    - Existing DB permissions enforced
+    - Audit trail maintained
+    - Supports large datasets via strategy selection (pandas/staging/federation)
+
+    Request body:
+    {
+        "session_id": "xc_abc123",           # References cached per-connector results
+        "edited_connector_id": "bq_123",     # Which connector was edited (optional)
+        "edited_sql": "SELECT ...",          # New SQL for that connector (optional)
+        "join_specification": {              # Potentially edited join spec (optional)
+            "type": "INNER",
+            "condition": "a.id = b.customer_id"
+        }
+    }
+
+    Returns merged results after re-executing edited query and re-joining.
+    """
+    from bson import ObjectId
+    from src.core.cross_connector_session import get_cross_connector_session_manager
+
+    try:
+        # Get organization_id from user context
+        organization_id = user.get('organization_id') if user else 'default'
+
+        # Get session manager
+        session_manager = get_cross_connector_session_manager()
+
+        # Get existing session
+        session = await session_manager.get_session(request.session_id)
+        if session is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session {request.session_id} not found or expired"
+            )
+
+        # Verify organization matches
+        if session.get('organization_id') != organization_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Session belongs to different organization"
+            )
+
+        # If a query was edited, re-execute it
+        if request.edited_connector_id and request.edited_sql:
+            logger.info(
+                "Re-executing edited connector query",
+                session_id=request.session_id,
+                connector_id=request.edited_connector_id
+            )
+
+            # Get connector config from session
+            connector_info = session.get('connector_results', {}).get(request.edited_connector_id)
+            if not connector_info:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Connector {request.edited_connector_id} not found in session"
+                )
+
+            # Get connector from MongoDB
+            mongodb_client = await get_mongodb_client()
+            collection = mongodb_client.db["database_connectors"]
+
+            connector_doc = await collection.find_one({
+                '_id': ObjectId(request.edited_connector_id),
+                'organization_id': organization_id
+            })
+
+            if not connector_doc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Connector {request.edited_connector_id} not found"
+                )
+
+            # Create connector instance and execute
+            connector = ConnectorFactory.create_connector(
+                connector_type=connector_info.get('database_type'),
+                config=connector_doc.get('config', {})
+            )
+
+            result = connector.execute_query(request.edited_sql)
+            new_results = result.get('results', [])
+
+            # Update cached results
+            await session_manager.update_connector_results(
+                session_id=request.session_id,
+                connector_id=request.edited_connector_id,
+                new_sql=request.edited_sql,
+                new_results=new_results
+            )
+
+        # Get join specification (use updated if provided, else use original)
+        join_spec = session.get('join_specification', {})
+        if request.join_specification:
+            join_spec = {
+                'type': request.join_specification.type,
+                'condition': request.join_specification.condition,
+                'left_key': request.join_specification.left_key,
+                'right_key': request.join_specification.right_key
+            }
+
+        # Re-join all results
+        merged_results, metadata = await session_manager.rejoin_results(
+            session_id=request.session_id,
+            join_specification=join_spec
+        )
+
+        logger.info(
+            "Cross-connector results re-joined",
+            session_id=request.session_id,
+            strategy=metadata.get('strategy'),
+            result_count=len(merged_results)
+        )
+
+        return CrossConnectorRejoinResponse(
+            success=True,
+            results=merged_results,
+            row_count=len(merged_results),
+            session_id=request.session_id,
+            join_strategy=metadata.get('strategy', 'pandas'),
+            metadata=metadata
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cross-connector rejoin failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/optimize", response_model=OptimizationResponse)
 async def optimize_sql(
     request: OptimizeRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Optimize a SQL query."""
     try:
@@ -875,7 +1586,7 @@ async def get_table_schema(
 
 @router.post("/schemas/reindex")
 async def reindex_schemas(
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Reindex all table schemas in the vector database."""
     try:
@@ -896,7 +1607,7 @@ async def reindex_schemas(
 
 @router.get("/cache/stats")
 async def get_cache_stats(
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Get cache statistics and performance metrics."""
     if not generator.cache_manager:
@@ -913,7 +1624,7 @@ async def get_cache_stats(
 @router.get("/cache/popular-queries")
 async def get_popular_queries(
     limit: int = 10,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Get most popular cached queries."""
     if not generator.cache_manager:
@@ -930,7 +1641,7 @@ async def get_popular_queries(
 @router.delete("/cache/sql/{query_hash}")
 async def invalidate_sql_cache(
     query_hash: str,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Invalidate a specific SQL cache entry."""
     if not generator.cache_manager:
@@ -950,7 +1661,7 @@ async def invalidate_sql_cache(
 @router.delete("/cache/schema/{table_name}")
 async def invalidate_schema_cache(
     table_name: str,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Invalidate schema cache for a specific table."""
     if not generator.cache_manager:
@@ -971,7 +1682,7 @@ async def invalidate_schema_cache(
 
 @router.delete("/cache/all")
 async def clear_all_caches(
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Clear all caches (use with caution)."""
     if not generator.cache_manager:
@@ -988,7 +1699,7 @@ async def clear_all_caches(
 @router.post("/cache/warm")
 async def warm_cache(
     queries: List[str],
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Warm the cache with a list of queries."""
     if not generator.cache_manager:
@@ -1326,7 +2037,7 @@ async def invalidate_mv_cache(
 @router.post("/suggestions", response_model=QuerySuggestionsResponse)
 async def get_query_suggestions(
     request: QuerySuggestionRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Get intelligent query suggestions based on user input."""
     try:
@@ -1368,7 +2079,7 @@ async def get_query_suggestions(
 @router.post("/explain", response_model=QueryExplanationResponse)
 async def explain_query(
     request: QueryExplanationRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Generate natural language explanation of SQL query."""
     try:
@@ -1399,7 +2110,7 @@ async def explain_query(
 @router.post("/correct-error", response_model=ErrorCorrectionResponse)
 async def correct_sql_error(
     request: ErrorCorrectionRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Attempt to correct SQL query based on error message."""
     try:
@@ -1438,7 +2149,7 @@ async def correct_sql_error(
 @router.post("/analyze-results", response_model=ResultAnalysisResponse)
 async def analyze_results(
     request: ResultAnalysisRequest,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Analyze query results using AI to provide insights and recommendations."""
     try:
@@ -1590,7 +2301,7 @@ Format the response in a business-friendly way, focusing on actionable insights 
 @router.get("/query-templates")
 async def get_query_templates(
     category: Optional[str] = None,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Get available query templates."""
     try:
@@ -1616,7 +2327,7 @@ async def get_query_templates(
 async def find_similar_queries(
     query: str,
     limit: int = 5,
-    generator: SQLGenerator = Depends(get_sql_generator)
+    generator: SQLGenerator = Depends(get_org_sql_generator)
 ):
     """Find similar queries from history."""
     if not generator.cache_manager:

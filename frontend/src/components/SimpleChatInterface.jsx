@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useConversationStore } from '../stores/conversationStore';
 import {
   Box,
   Paper,
@@ -64,6 +65,7 @@ import {
   AutoGraph as AutoGraphIcon,
   InfoOutlined as InfoIcon,
   SmartToy as SmartToyIcon,
+  Storage as StorageIcon,
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
 import { apiService } from '../services/api';
@@ -74,8 +76,8 @@ import EnhancedAnalyticsModal from './EnhancedAnalyticsModal';
 import MantraxResultsView from './MantraxResultsView';
 import FollowUpSuggestions from './FollowUpSuggestions';
 import PlotlyVisualization from './PlotlyVisualization';
-import DatabaseSelector from './DatabaseSelector';
 import DashboardCreationPreview from './dashboard/DashboardCreationPreview';
+import MultiQueryAccordion from './MultiQueryAccordion';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-sql';
 import 'ace-builds/src-noconflict/theme-monokai';
@@ -89,6 +91,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer
 } from 'recharts';
+
+// Import images as modules for proper caching
+import axisAiLogo from '../assets/axis-ai4.png';
 
 // Chart colors
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0', '#ffb347', '#67b7dc'];
@@ -184,7 +189,7 @@ const SAMPLE_QUERIES = [
 ];
 
 const SimpleChatInterface = forwardRef((props, ref) => {
-  const { onConversationsChange, onConversationIdChange, onLoadingChange, onBackToSearch, onOpenAgentMode } = props;
+  const { onBackToSearch, onOpenAgentMode } = props;
   // Get authenticated user from Cognito
   const { user, loading: authLoading } = useAuth();
   const isUserLoaded = !authLoading;
@@ -192,21 +197,32 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   // Derive userId from authenticated user
   const userId = user?.username || 'default';
 
-  // Pre-populate with welcome message
-  const [messages, setMessages] = useState([{
-    id: Date.now(),
-    type: 'assistant',
-    content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-    timestamp: new Date(),
-  }]);
+  // ============ Zustand Store ============
+  const {
+    // State
+    conversationId,
+    messages,
+    conversations,
+    loadingConversations,
+    isInitializing,
+    isLoading: loading,
+    // Actions
+    initialize,
+    loadConversation,
+    createNewConversation,
+    deleteConversation,
+    clearAllConversations,
+    reloadConversations,
+    addMessage,
+    updateMessage,
+    sendQuery,
+    toggleStar,
+    setIsLoading,
+  } = useConversationStore();
+
+  // ============ Local UI State ============
   const [inputMessage, setInputMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [conversationId, setConversationId] = useState(null);
-  const [selectedDatabase, setSelectedDatabase] = useState('bigquery');
-  const [multiDatabases, setMultiDatabases] = useState(null);
   const [showVisualization, setShowVisualization] = useState({});
-  const [conversations, setConversations] = useState([]);
-  const [loadingConversations, setLoadingConversations] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [openAnalysisDialog, setOpenAnalysisDialog] = useState(false);
@@ -227,79 +243,18 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [analyticsModalMode, setAnalyticsModalMode] = useState('modal'); // 'modal', 'drawer', 'embedded'
   const [showDeepResearch, setShowDeepResearch] = useState(false);
   const [deepResearchQuestion, setDeepResearchQuestion] = useState('');
-  const initializationRef = useRef(false);
 
   // Dashboard creation from chat state
   const [dashboardPreviewOpen, setDashboardPreviewOpen] = useState(false);
   const [dashboardPreviewData, setDashboardPreviewData] = useState(null);
   const [dashboardPreviewQuery, setDashboardPreviewQuery] = useState('');
 
-  console.log('SimpleChatInterface rendering, mode:', mode, 'userId:', userId);
-
-
-  // Initialize on mount - wait for user to be loaded
+  // Initialize store when user is loaded
   useEffect(() => {
-    let isMounted = true;
-
-    const initializeChat = async () => {
-      if (!isMounted || !isUserLoaded) return;
-
-      try {
-        console.log('=== Initializing chat for user:', userId, '===');
-
-        // First check localStorage for existing conversation (scoped to user)
-        const savedConversationId = localStorage.getItem(`currentConversationId_${userId}`);
-        console.log('Saved conversation ID from localStorage:', savedConversationId);
-
-        // Load all conversations for this user from database
-        console.log('Fetching conversations from database for user:', userId);
-        const response = await apiService.listConversations(userId);
-        const loadedConversations = response.data.conversations || [];
-        console.log(`Loaded ${loadedConversations.length} conversations from database`);
-
-        // Sort conversations by updated_at (should already be sorted by backend, but ensure it)
-        const sortedConversations = loadedConversations.sort((a, b) => {
-          const dateA = new Date(a.updated_at || a.updatedAt);
-          const dateB = new Date(b.updated_at || b.updatedAt);
-          return dateB - dateA;
-        });
-
-        setConversations(sortedConversations);
-
-        // If we have a saved conversation ID, try to load it (if it exists in DB)
-        if (savedConversationId && sortedConversations.some(c => (c.conversation_id || c.conversationId) === savedConversationId)) {
-          console.log('Loading saved conversation:', savedConversationId);
-          await loadConversation(savedConversationId);
-        } else if (sortedConversations.length > 0) {
-          // Load the most recent conversation
-          const mostRecentId = sortedConversations[0].conversation_id || sortedConversations[0].conversationId;
-          console.log('Loading most recent conversation:', mostRecentId);
-          await loadConversation(mostRecentId);
-        } else {
-          // No conversations exist, create a new one
-          console.log('No conversations found in database, creating new one');
-          await createNewConversation(false);
-        }
-
-        console.log('=== Chat initialization complete ===');
-      } catch (error) {
-        console.error('Initialization error:', error);
-        // If all else fails, create a new conversation
-        if (isMounted && !conversationId) {
-          await createNewConversation(false);
-        }
-      }
-    };
-
-    // Only initialize if we haven't already and user is loaded
-    if (!conversationId && isUserLoaded) {
-      initializeChat();
+    if (isUserLoaded && userId) {
+      initialize(userId);
     }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isUserLoaded, userId]); // Re-run when user loads or changes
+  }, [isUserLoaded, userId, initialize]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -326,110 +281,27 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     return () => clearTimeout(scrollTimeout);
   }, [messages, conversationId, loading]); // Scroll when messages change, conversation changes, or loading state changes
 
-  // Load conversations from MongoDB
-  const loadConversations = async () => {
-    setLoadingConversations(true);
-    try {
-      const response = await apiService.listConversations(userId);
-      const loadedConversations = response.data.conversations || [];
+  // Listen for events from Layout sidebar (delegate to store)
+  useEffect(() => {
+    const handleNewConversation = () => {
+      console.log('Received newConversation event');
+      createNewConversation();
+    };
 
-      // Sort by updated_at (most recent first)
-      const sortedConversations = loadedConversations.sort((a, b) => {
-        const dateA = new Date(a.updated_at || a.updatedAt);
-        const dateB = new Date(b.updated_at || b.updatedAt);
-        return dateB - dateA; // Descending order
-      });
+    const handleLoadConversationEvent = (event) => {
+      const { conversationId: convId } = event.detail;
+      console.log('Received loadConversation event:', convId);
+      loadConversation(convId);
+    };
 
-      setConversations(sortedConversations);
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-    } finally {
-      setLoadingConversations(false);
-    }
-  };
+    window.addEventListener('newConversation', handleNewConversation);
+    window.addEventListener('loadConversation', handleLoadConversationEvent);
 
-  // Create a new conversation (locally only - backend creation happens on first message)
-  const createNewConversation = async (shouldReloadList = true) => {
-    try {
-      console.log('Creating new local conversation (will be saved on first message)...');
-
-      // Clear messages FIRST to ensure UI is clean
-      const welcomeMessage = {
-        id: Date.now().toString(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
-
-      // Create a temporary local conversation ID
-      // The actual backend conversation will be created when the first user message is sent
-      const tempConvId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      console.log('Created temporary conversation ID:', tempConvId);
-      setConversationId(tempConvId);
-
-      // Save to localStorage (scoped to user)
-      localStorage.setItem(`currentConversationId_${userId}`, tempConvId);
-
-      // Don't add to conversations list yet - will be added when first message is sent
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-      // Fallback to local conversation ID
-      const fallbackId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      setConversationId(fallbackId);
-      localStorage.setItem(`currentConversationId_${userId}`, fallbackId);
-
-      // Still set welcome message even on error
-      const welcomeMessage = {
-        id: Date.now().toString(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
-    }
-  };
-
-  // Load a specific conversation
-  const loadConversation = async (convId) => {
-    try {
-      const response = await apiService.getConversation(convId);
-      const conversation = response.data;
-      
-      // Convert messages to the format expected by the UI
-      const formattedMessages = conversation.messages.map(msg => ({
-        id: msg.id,
-        type: msg.type,
-        content: msg.content,
-        sql: msg.sql,
-        results: msg.results,
-        resultCount: msg.result_count,
-        error: msg.error,
-        metadata: msg.metadata,
-        timestamp: new Date(msg.timestamp),
-      }));
-      
-      // If no messages, add the welcome message
-      if (formattedMessages.length === 0) {
-        formattedMessages.push({
-          id: Date.now(),
-          type: 'assistant',
-          content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-          timestamp: new Date(),
-        });
-      }
-      
-      setMessages(formattedMessages);
-      setConversationId(convId);
-
-      // Save to localStorage for persistence (scoped to user)
-      localStorage.setItem(`currentConversationId_${userId}`, convId);
-      
-      // Don't close the sidebar when selecting a conversation
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-    }
-  };
+    return () => {
+      window.removeEventListener('newConversation', handleNewConversation);
+      window.removeEventListener('loadConversation', handleLoadConversationEvent);
+    };
+  }, [createNewConversation, loadConversation]);
 
   const scrollToBottom = () => {
     const messagesContainer = document.querySelector('[data-messages-container="true"]');
@@ -456,8 +328,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     const hasDashboardIntent = dashboardIntentPatterns.some(pattern => pattern.test(inputMessage));
 
     if (hasDashboardIntent) {
-      // Handle dashboard creation flow
-      setLoading(true);
+      // Handle dashboard creation flow (not using store for this special case)
       try {
         const response = await apiService.createDashboardFromConversation(inputMessage);
         const previewData = response.data;
@@ -469,124 +340,28 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       } catch (error) {
         console.error('Dashboard creation preview error:', error);
         // Fall through to regular query if dashboard creation fails
-      } finally {
-        setLoading(false);
       }
       return;
     }
 
-    const userMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: inputMessage,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    // Use store's sendQuery - handles everything:
+    // - Creating conversation if needed
+    // - Adding user/assistant messages
+    // - API call
+    // - Error handling
+    // - Updating conversations list
+    const question = inputMessage;
     setInputMessage('');
-    setLoading(true);
 
-    // Immediately scroll when user sends message
+    // Scroll when user sends message
     setTimeout(scrollToBottom, 50);
 
-    // Don't save user message here - the backend will save it when processing the query
+    const result = await sendQuery(question);
 
-    try {
-      // If this is a temporary conversation (starts with "temp-"), create the actual conversation on backend first
-      let actualConversationId = conversationId;
-      if (conversationId?.startsWith('temp-')) {
-        console.log('Creating conversation on backend for first message...');
-        const createResponse = await apiService.createConversation(userId);
-        actualConversationId = createResponse.data.conversation_id;
-        console.log('Created conversation:', actualConversationId);
-        setConversationId(actualConversationId);
-        localStorage.setItem(`currentConversationId_${userId}`, actualConversationId);
-      }
+    // Scroll to show the response
+    setTimeout(scrollToBottom, 100);
 
-      // Call API with conversation ID and database selection
-      console.log('Sending query:', inputMessage, 'with conversation ID:', actualConversationId, 'to database:', selectedDatabase);
-      const queryOptions = {
-        conversationId: actualConversationId,
-        databaseType: selectedDatabase,
-      };
-
-      // Add multi-database support if enabled
-      if (multiDatabases && multiDatabases.length > 0) {
-        queryOptions.multiDatabases = multiDatabases;
-      }
-
-      const response = await apiService.executeQuery(inputMessage, queryOptions);
-      const { data } = response;
-      
-      console.log('API Response:', data);
-
-      // Check if we have an error in the response
-      if (data.error) {
-        const errorMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'assistant',
-          content: data.error_details?.user_friendly_message || 'Sorry, I encountered an error processing your query.',
-          error: data.error,
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, errorMessage]);
-        
-        // Scroll to show the error
-        setTimeout(scrollToBottom, 100);
-        
-        // Don't save error message here - backend already saved it
-        
-        return;
-      }
-
-      // Create assistant message with results
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.explanation || 'Query executed successfully.',
-        sql: data.sql,
-        results: data.results || data.execution?.results || [],
-        resultCount: data.row_count || data.execution?.row_count || 0,
-        followUpSuggestions: data.follow_up_suggestions || [],
-        metadata: {
-          cost: data.validation?.estimated_cost_usd,
-          bytesProcessed: data.validation?.total_bytes_processed,
-          tablesUsed: data.tables_used,
-        },
-        timestamp: new Date(),
-      };
-
-      console.log('Assistant message with results:', assistantMessage.results);
-      console.log('Results type:', typeof assistantMessage.results);
-      console.log('Results length:', assistantMessage.results?.length);
-      setMessages(prev => [...prev, assistantMessage]);
-      
-      // Scroll to show the response
-      setTimeout(scrollToBottom, 100);
-      
-      // Don't save assistant message here - backend already saved it
-
-      // Reload conversations to update the list
-      await loadConversations();
-
-    } catch (error) {
-      console.error('Query error:', error);
-      const errorMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: 'Sorry, I encountered an error processing your query.',
-        error: error.response?.data?.detail || error.message,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      
-      // Scroll to show the error
-      setTimeout(scrollToBottom, 100);
-      
-      // Don't save error message here - let backend handle it
-    } finally {
-      setLoading(false);
-    }
+    console.log('Query result:', result);
   };
 
   const handleKeyDown = (e) => {
@@ -597,26 +372,22 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   };
 
   const handleRunModifiedSql = async (messageId, sql) => {
-    setLoading(true);
+    setIsLoading(true);
     try {
       const response = await apiService.executeQuery(sql, { conversationId, isModifiedSql: true });
       const { data } = response;
-      
+
       if (data.error) {
-        const errorMessage = {
-          id: Date.now() + 1,
+        addMessage({
           type: 'assistant',
           content: `Error running modified SQL: ${data.error_details?.user_friendly_message || data.error}`,
           error: data.error,
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, errorMessage]);
+        });
         return;
       }
 
       // Create a new message for the modified query results
-      const resultMessage = {
-        id: Date.now() + 1,
+      addMessage({
         type: 'assistant',
         content: 'Modified query executed successfully.',
         sql: sql,
@@ -627,23 +398,18 @@ const SimpleChatInterface = forwardRef((props, ref) => {
           bytesProcessed: data.validation?.total_bytes_processed,
           tablesUsed: data.tables_used,
         },
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, resultMessage]);
+      });
+
       setEditMode(prev => ({ ...prev, [messageId]: false }));
     } catch (error) {
       console.error('Error running modified SQL:', error);
-      const errorMessage = {
-        id: Date.now() + 1,
+      addMessage({
         type: 'assistant',
         content: 'Sorry, I encountered an error running the modified SQL.',
         error: error.response?.data?.detail || error.message,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -756,89 +522,21 @@ const SimpleChatInterface = forwardRef((props, ref) => {
 
   const handleNewChat = async () => {
     setInputMessage('');
-    // Clear messages and set welcome message
-    setMessages([{
-      id: Date.now(),
-      type: 'assistant',
-      content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-      timestamp: new Date(),
-    }]);
     await createNewConversation();
     setHistoryOpen(false);
   };
 
-  // Delete a conversation
+  // Delete a conversation (uses store's deleteConversation which handles everything)
   const handleDeleteConversation = async (convId) => {
-    try {
-      await apiService.deleteConversation(convId);
-      await loadConversations();
-      
-      // If we deleted the current conversation, create a new one
-      if (convId === conversationId) {
-        await createNewConversation();
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
-    }
+    await deleteConversation(convId);
   };
 
-  // Clear all conversations
+  // Clear all conversations (uses store action)
   const handleClearAllConversations = async () => {
     if (!window.confirm('Are you sure you want to clear all conversations? This cannot be undone.')) {
       return;
     }
-
-    setLoadingConversations(true);
-
-    try {
-      console.log('Starting to delete all conversations for user:', userId);
-
-      // Use bulk delete endpoint
-      const response = await apiService.deleteAllConversations(userId);
-      console.log('Delete all response:', response.data);
-
-      const deletedCount = response.data.deleted_count || 0;
-      console.log(`Successfully deleted ${deletedCount} conversations from database`);
-
-      // Clear local state immediately
-      setConversations([]);
-      setConversationId(null);
-      localStorage.removeItem(`currentConversationId_${userId}`);
-
-      // Set welcome message for new conversation
-      setMessages([{
-        id: Date.now(),
-        type: 'assistant',
-        content: 'Hello! I can help you query your data. Try asking something like "Show me top 5 GL accounts by total amount". I\'ll maintain context throughout our conversation, so you can ask follow-up questions like "filter by amount > 1000".',
-        timestamp: new Date(),
-      }]);
-
-      // Create new conversation
-      await createNewConversation(false); // Don't reload list since we already cleared it
-
-      // Verify deletion by reloading conversations
-      setTimeout(async () => {
-        const verifyResponse = await apiService.listConversations(userId);
-        const remainingConvs = verifyResponse.data.conversations || [];
-        console.log(`Verification: ${remainingConvs.length} conversations remaining after delete`);
-
-        if (remainingConvs.length > 1) {
-          // Should only have the newly created conversation
-          console.warn('Warning: More conversations than expected after delete');
-        }
-      }, 1000);
-
-      console.log('Successfully cleared all conversations and created new one');
-    } catch (error) {
-      console.error('Failed to clear conversations:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      alert(`Failed to clear conversations: ${error.response?.data?.detail || error.message}`);
-
-      // Reload conversations to sync state
-      await loadConversations();
-    } finally {
-      setLoadingConversations(false);
-    }
+    await clearAllConversations();
   };
 
   // Helper to parse formatted numbers (handles $, commas, etc.)
@@ -1000,32 +698,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   useImperativeHandle(ref, () => ({
     loadConversation,
     handleDeleteConversation,
-    handleNewConversation: () => createNewConversation(false), // Don't reload list to avoid race conditions
+    handleNewConversation: createNewConversation,
   }));
-
-  // Notify parent component when conversations change
-  useEffect(() => {
-    if (onConversationsChange) {
-      onConversationsChange(conversations);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations]);
-
-  // Notify parent component when conversationId changes
-  useEffect(() => {
-    if (onConversationIdChange) {
-      onConversationIdChange(conversationId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
-
-  // Notify parent component when loading state changes
-  useEffect(() => {
-    if (onLoadingChange) {
-      onLoadingChange(loadingConversations);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingConversations]);
 
   // Render visualization based on type
   const renderVisualization = (messageId, results) => {
@@ -1469,7 +1143,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             >
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <img src="/axis-ai4.png" alt="Axis AI" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
+                  <img src={axisAiLogo} alt="Axis AI" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
                   <Box sx={{ flex: 1 }}>
                     <Box
                       sx={{
@@ -1662,8 +1336,34 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               </CardContent>
             </Card>
 
-            {/* SQL Query Display - Collapsible with Edit Mode */}
-            {message.sql && (
+            {/* Cross-Database Query Indicator */}
+            {message.isCrossConnector && (
+              <Chip
+                icon={<StorageIcon />}
+                label="Cross-Database Query"
+                size="small"
+                color="info"
+                sx={{ mb: 1 }}
+              />
+            )}
+
+            {/* SQL Query Display - Multi-Query or Single Query */}
+            {message.isCrossConnector && message.connectorQueries ? (
+              // Cross-Connector: Show stacked accordions for each database
+              <Box sx={{ mb: 2 }}>
+                <MultiQueryAccordion
+                  connectorQueries={message.connectorQueries}
+                  joinSpec={message.joinSpec}
+                  initialResults={message.connectorResults}
+                  onResultsUpdate={(newResults) => {
+                    // Update message results after re-join
+                    updateMessage(message.id, { results: newResults, resultCount: newResults?.length || 0 });
+                  }}
+                  editorTheme={sqlTheme}
+                />
+              </Box>
+            ) : message.sql ? (
+              // Single-Connector: Original accordion with edit mode
               <Accordion sx={{ mb: 2, bgcolor: 'grey.100' }}>
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon />}
@@ -1714,8 +1414,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             <ToggleButton value="github">Light</ToggleButton>
                             <ToggleButton value="monokai">Dark</ToggleButton>
                           </ToggleButtonGroup>
-                          <IconButton 
-                            size="small" 
+                          <IconButton
+                            size="small"
                             onClick={() => copyToClipboard(editedSql[message.id] || message.sql)}
                           >
                             <CopyIcon />
@@ -1761,8 +1461,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                           <CopyIcon sx={{ color: 'white', fontSize: 18 }} />
                         </IconButton>
                       </Stack>
-                      <Box sx={{ 
-                        fontFamily: 'monospace', 
+                      <Box sx={{
+                        fontFamily: 'monospace',
                         fontSize: '0.875rem',
                         color: 'white',
                         whiteSpace: 'pre-wrap',
@@ -1774,7 +1474,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                   )}
                 </AccordionDetails>
               </Accordion>
-            )}
+            ) : null}
 
             {/* Results Table */}
             {message.results && message.results.length > 0 && (
@@ -1889,11 +1589,20 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                         }
                         
                         const isNumeric = typeof sampleValue === 'number';
-                        const isAmount = key.toLowerCase().includes('amount') || 
-                                       key.toLowerCase().includes('total') ||
-                                       key.toLowerCase().includes('revenue') ||
-                                       key.toLowerCase().includes('cost') ||
-                                       key.toLowerCase().includes('cogs');
+                        const keyLower = key.toLowerCase();
+                        // Only apply currency formatting to columns that are clearly monetary
+                        const isCurrency = keyLower.includes('amount') ||
+                                          keyLower.includes('revenue') ||
+                                          keyLower.includes('price') ||
+                                          keyLower.includes('cost') ||
+                                          keyLower.includes('margin') ||
+                                          keyLower.includes('profit') ||
+                                          keyLower.includes('cogs') ||
+                                          keyLower.includes('budget') ||
+                                          keyLower.includes('spend') ||
+                                          keyLower.includes('fee') ||
+                                          keyLower.includes('salary') ||
+                                          keyLower.includes('payment');
                         const isFirstColumn = index === 0;
                         
                         return {
@@ -1914,10 +1623,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                                 return <span style={{ color: '#999', fontStyle: 'italic' }}>null</span>;
                               }
                               
-                              if (isNumeric && isAmount && typeof params.value === 'number') {
-                                return `$${params.value.toLocaleString('en-US', { 
-                                  minimumFractionDigits: 2, 
-                                  maximumFractionDigits: 2 
+                              if (isNumeric && isCurrency && typeof params.value === 'number') {
+                                return `$${params.value.toLocaleString('en-US', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2
                                 })}`;
                               }
                               if (isNumeric && typeof params.value === 'number') {
@@ -1998,9 +1707,14 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             {/* No results message */}
             {message.results && message.results.length === 0 && message.sql && (
               <Paper elevation={1} sx={{ p: 2, bgcolor: 'warning.light' }}>
-                <Typography variant="body2">
+                <Typography variant="body2" fontWeight="medium" gutterBottom>
                   The query executed successfully but returned no results.
                 </Typography>
+                {message.emptyResultNote && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    {message.emptyResultNote}
+                  </Typography>
+                )}
               </Paper>
             )}
         </Box>
@@ -2077,7 +1791,6 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         </Box>
 
         {/* Conditional Content Based on Mode */}
-        {console.log('Current mode:', mode)}
         {mode === 'chat' ? (
           <>
             {/* Sub-tabs for Chat Mode */}
@@ -2248,26 +1961,14 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         {/* Input Area - Fixed */}
         <Paper elevation={3} sx={{ p: 2, borderRadius: 0, flexShrink: 0 }}>
           <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-            {/* Database Selector */}
-            <Box sx={{ mb: 2 }}>
-              <DatabaseSelector
-                value={selectedDatabase}
-                onChange={(db) => setSelectedDatabase(db)}
-                onMultiSelect={(databases) => setMultiDatabases(databases)}
-                showMultiSelect={true}
-                showAddNew={true}
-                size="small"
-              />
-            </Box>
-
             <Stack direction="row" spacing={2}>
               <TextField
                 fullWidth
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a question about your data..."
-                disabled={loading}
+                placeholder={isInitializing ? "Initializing..." : "Ask a question about your data..."}
+                disabled={loading || isInitializing}
                 variant="outlined"
                 sx={{
                   '& .MuiOutlinedInput-root': {
@@ -2278,7 +1979,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               <Button
                 variant="contained"
                 onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || loading}
+                disabled={!inputMessage.trim() || loading || isInitializing}
                 sx={{ 
                   borderRadius: 2, 
                   px: 3,
@@ -2505,9 +2206,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                 confidence_level: results.confidence_level,
                 data_quality: results.data_quality
               },
-              timestamp: new Date(),
             };
-            setMessages(prev => [...prev, researchMessage]);
+            addMessage(researchMessage);
           }
         }}
       />

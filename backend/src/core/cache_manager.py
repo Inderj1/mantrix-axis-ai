@@ -45,7 +45,8 @@ class CacheManager:
     PREFIX_MV_RECOMMENDATIONS = "mv:recommendations:"
     PREFIX_MV_COST = "mv:cost:"
     PREFIX_OPTIMIZATION_REPORT = "optimization:report:"
-    
+    PREFIX_WEAVIATE_SEARCH = "weaviate:"
+
     # Default TTLs (in seconds)
     TTL_SQL_FREQUENT = 7 * 24 * 60 * 60  # 7 days for frequent queries
     TTL_SQL_INFREQUENT = 24 * 60 * 60    # 1 day for infrequent queries
@@ -59,7 +60,8 @@ class CacheManager:
     TTL_MV_RECOMMENDATIONS = 24 * 60 * 60 # 24 hours for recommendations
     TTL_MV_COST = 7 * 24 * 60 * 60       # 7 days for cost estimates
     TTL_OPTIMIZATION_REPORT = 60 * 60     # 1 hour for optimization reports
-    
+    TTL_WEAVIATE_SEARCH = 24 * 60 * 60    # 24 hours for vector search results
+
     def __init__(self, 
                  redis_url: Optional[str] = None,
                  host: str = 'localhost',
@@ -161,24 +163,26 @@ class CacheManager:
                            query: str,
                            table_context: List[Dict[str, Any]],
                            generator_func: Callable,
-                           force_refresh: bool = False) -> Tuple[Dict[str, Any], bool]:
+                           force_refresh: bool = False,
+                           connector_ids: Optional[List[str]] = None) -> Tuple[Dict[str, Any], bool]:
         """
         Get SQL from cache or generate if not found.
-        
+
         Args:
             query: Natural language query
             table_context: List of relevant table schemas
             generator_func: Function to generate SQL if cache miss
             force_refresh: Force regeneration even if cached
-            
+            connector_ids: List of connector IDs for cache isolation
+
         Returns:
             Tuple of (result, from_cache)
         """
         start_time = time.time()
-        
+
         # Generate cache key
         normalized_query = self._normalize_query(query)
-        
+
         # Safely extract table names
         table_names = []
         if table_context and isinstance(table_context, list):
@@ -187,8 +191,13 @@ class CacheManager:
                     table_names.append(t["table_name"])
                 elif isinstance(t, str):
                     table_names.append(t)
-                    
-        context_hash = self._hash_dict({"tables": table_names})
+
+        # Include connector_ids in context hash for cache isolation
+        context_data = {"tables": table_names}
+        if connector_ids:
+            context_data["connector_ids"] = sorted(connector_ids)  # Sort for consistent hashing
+
+        context_hash = self._hash_dict(context_data)
         cache_key = self._generate_key(
             self.PREFIX_SQL,
             f"{hashlib.sha256((normalized_query or '').encode()).hexdigest()}:{context_hash}"
@@ -204,11 +213,12 @@ class CacheManager:
         # Cache miss - generate new SQL
         self._record_miss(time.time() - start_time)
         result = generator_func(query, table_context)
-        
-        # Cache successful generation
-        if result and not result.get("error"):
-            self.cache_sql_generation(cache_key, result, normalized_query)
-        
+
+        # NOTE: Do NOT cache here - let cache_validated_sql() handle caching
+        # after execution, so we can check for empty results and errors.
+        # Previously this would cache before execution, causing queries that
+        # return empty results to be cached and keep returning empty.
+
         return result, False
     
     def cache_sql_generation(self, key: str, result: Dict[str, Any], query: str) -> None:
@@ -281,6 +291,11 @@ class CacheManager:
             # QUALITY GATE 2: Execution errors?
             if error_details:
                 logger.warning(f"Rejecting cache - execution error: {error_details}")
+                return False
+
+            # QUALITY GATE 2.5: Empty results (configurable)
+            if row_count == 0 and settings.cache_reject_empty_results:
+                logger.warning(f"Rejecting cache - query returned no results")
                 return False
 
             # QUALITY GATE 3: Confidence threshold
@@ -517,9 +532,103 @@ class CacheManager:
             logger.error(f"Failed to get cached embedding: {e}")
         
         return None
-    
+
+    # Weaviate Vector Search Caching
+
+    def _generate_weaviate_cache_key(
+        self,
+        embedding: List[float],
+        organization_id: str,
+        connector_ids: Optional[List[str]],
+        limit: int
+    ) -> str:
+        """Generate cache key for Weaviate vector search results."""
+        import numpy as np
+
+        # Hash embedding vector (16 hex chars for efficiency)
+        embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
+        embedding_hash = hashlib.sha256(embedding_bytes).hexdigest()[:16]
+
+        # Hash sorted connector IDs for consistent key
+        if connector_ids:
+            connector_str = ','.join(sorted(connector_ids))
+            connector_hash = hashlib.sha256(connector_str.encode()).hexdigest()[:16]
+        else:
+            connector_hash = "none"
+
+        return self._generate_key(
+            self.PREFIX_WEAVIATE_SEARCH,
+            f"{embedding_hash}:{organization_id or 'default'}:{connector_hash}:{limit}"
+        )
+
+    def cache_weaviate_search(
+        self,
+        embedding: List[float],
+        organization_id: str,
+        connector_ids: Optional[List[str]],
+        limit: int,
+        results: List[Dict[str, Any]]
+    ) -> None:
+        """Cache Weaviate vector search results."""
+        key = self._generate_weaviate_cache_key(embedding, organization_id, connector_ids, limit)
+
+        try:
+            cache_data = {
+                "results": results,
+                "cached_at": datetime.now().isoformat(),
+                "limit": limit,
+                "organization_id": organization_id
+            }
+            self.redis.setex(
+                key,
+                self.TTL_WEAVIATE_SEARCH,
+                json.dumps(cache_data)
+            )
+            logger.debug(f"Cached Weaviate search: {len(results)} results, key={key[:50]}...")
+
+        except Exception as e:
+            logger.error(f"Failed to cache Weaviate search: {e}")
+
+    def get_weaviate_search(
+        self,
+        embedding: List[float],
+        organization_id: str,
+        connector_ids: Optional[List[str]],
+        limit: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get cached Weaviate vector search results."""
+        key = self._generate_weaviate_cache_key(embedding, organization_id, connector_ids, limit)
+
+        try:
+            cached_data = self.redis.get(key)
+            if cached_data:
+                data = json.loads(cached_data)
+                logger.debug(f"Weaviate cache HIT: {len(data.get('results', []))} results")
+                return data.get("results")
+
+        except Exception as e:
+            logger.error(f"Failed to get cached Weaviate search: {e}")
+
+        return None
+
+    def invalidate_weaviate_search_by_org(self, organization_id: str) -> int:
+        """Invalidate all Weaviate search cache entries for an organization."""
+        pattern = f"{self.PREFIX_WEAVIATE_SEARCH}*:{organization_id}:*"
+        deleted = 0
+
+        try:
+            for key in self.redis.scan_iter(match=pattern):
+                self.redis.delete(key)
+                deleted += 1
+            logger.info(f"Invalidated {deleted} Weaviate cache entries for org {organization_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to invalidate Weaviate cache: {e}")
+
+        return deleted
+
     # Validation Caching
-    
+
     def cache_validation(self, sql: str, validation_result: Dict[str, Any]) -> None:
         """Cache SQL validation result."""
         key = self._generate_key(

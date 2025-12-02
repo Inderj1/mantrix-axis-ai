@@ -27,9 +27,15 @@ class BusinessConfigManager:
         self.active_config: Optional[BusinessConfiguration] = None
         self.loader = ExcelLoader()
         
-        # Default config path
-        self.config_dir = Path("configs")
-        self.config_dir.mkdir(exist_ok=True)
+        # Default config path - use /tmp for container compatibility
+        self.config_dir = Path(os.environ.get("BUSINESS_CONFIG_DIR", "/tmp/configs"))
+        try:
+            self.config_dir.mkdir(exist_ok=True, parents=True)
+        except PermissionError:
+            # Fall back to /tmp if default location isn't writable
+            self.config_dir = Path("/tmp/configs")
+            self.config_dir.mkdir(exist_ok=True, parents=True)
+            self.logger.warning(f"Using fallback config directory: {self.config_dir}")
     
     def load_client_config(self, client_id: str, dataset_id: str) -> BusinessConfiguration:
         """Load configuration for a specific client and dataset."""

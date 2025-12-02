@@ -116,15 +116,39 @@ class CopilotSuggestionEngine:
             ]
         },
 
-        # Customer queries
+        # Customer queries (removed 'account' - too generic, conflicts with GL accounts)
         'customer': {
-            'keywords': ['customer', 'client', 'account', 'segment'],
+            'keywords': ['customer', 'client', 'buyer', 'segment'],
             'suggestions': [
                 "Show customer concentration",
                 "Analyze customer retention",
                 "Show customer lifetime value",
                 "Compare customer segments",
                 "Show new vs. repeat customers"
+            ]
+        },
+
+        # GL/Accounting queries
+        'gl_accounting': {
+            'keywords': ['gl', 'general ledger', 'gl account', 'gl accounts', 'chart of accounts', 'coa', 'account code', 'account number', 'ledger'],
+            'suggestions': [
+                "Show account balances by period",
+                "Filter by account type (asset/liability/equity)",
+                "Show journal entries for this account",
+                "Compare to prior period",
+                "Show account hierarchy"
+            ]
+        },
+
+        # Inventory/Stock queries
+        'inventory': {
+            'keywords': ['inventory', 'stock', 'warehouse', 'sku', 'material'],
+            'suggestions': [
+                "Show inventory turnover",
+                "Identify slow-moving items",
+                "Show stock levels by location",
+                "Analyze inventory aging",
+                "Show reorder recommendations"
             ]
         },
 
@@ -254,8 +278,9 @@ class CopilotSuggestionEngine:
         """
         start_time = datetime.utcnow()
 
-        # Check cache first
-        cache_key = f"{query}:{len(results)}"
+        # Check cache first - include result columns for better cache specificity
+        result_cols = ','.join(sorted(results[0].keys())) if results else ''
+        cache_key = f"{query}:{len(results)}:{result_cols}"
         if cache_key in self.cache:
             cached = self.cache[cache_key]
             if datetime.utcnow() - cached['timestamp'] < self.cache_ttl:
@@ -279,7 +304,12 @@ class CopilotSuggestionEngine:
             context_suggestions = self._get_context_suggestions(results)
             suggestions.extend(context_suggestions)
 
-        # 3. Generic intelligent suggestions
+        # 3. Column-aware suggestions (based on actual result columns)
+        if results and len(suggestions) < max_suggestions:
+            column_suggestions = self._get_column_aware_suggestions(results, query)
+            suggestions.extend(column_suggestions)
+
+        # 4. Generic intelligent suggestions (fallback)
         if len(suggestions) < max_suggestions:
             generic = self._get_generic_suggestions(query, sql)
             suggestions.extend(generic)
@@ -310,6 +340,73 @@ class CopilotSuggestionEngine:
         )
 
         return unique_suggestions
+
+    def _get_column_aware_suggestions(
+        self,
+        results: List[Dict[str, Any]],
+        query: str
+    ) -> List[str]:
+        """
+        Generate suggestions based on actual result columns.
+        """
+        if not results:
+            return []
+
+        suggestions = []
+        columns = list(results[0].keys()) if results else []
+        columns_lower = [c.lower() for c in columns]
+        query_lower = query.lower()
+
+        # Detect column types and suggest accordingly
+        has_numeric = any(
+            isinstance(results[0].get(col), (int, float))
+            for col in columns
+        )
+        has_category = any(
+            col.lower() in ['category', 'type', 'status', 'channel', 'region', 'segment']
+            or '_category' in col.lower() or '_type' in col.lower()
+            for col in columns
+        )
+        has_date = any(
+            'date' in col.lower() or 'time' in col.lower() or
+            'month' in col.lower() or 'year' in col.lower()
+            for col in columns
+        )
+        has_id = any(
+            col.lower().endswith('_id') or col.lower() == 'id' or
+            'account' in col.lower() or 'sku' in col.lower()
+            for col in columns
+        )
+
+        # Generate contextual suggestions
+        if has_numeric and has_category:
+            suggestions.append(f"Show totals by {self._find_category_column(columns)}")
+
+        if has_id and not has_date:
+            suggestions.append("Show activity over time")
+
+        if has_category:
+            cat_col = self._find_category_column(columns)
+            if cat_col:
+                suggestions.append(f"Filter by specific {cat_col}")
+
+        if has_numeric:
+            suggestions.append("Show summary statistics")
+
+        if len(results) > 1 and has_id:
+            suggestions.append("Show details for a specific item")
+
+        return suggestions[:3]  # Return max 3 column-aware suggestions
+
+    def _find_category_column(self, columns: List[str]) -> Optional[str]:
+        """Find the most likely category column."""
+        priority_keywords = ['category', 'type', 'status', 'channel', 'region', 'segment']
+        for col in columns:
+            col_lower = col.lower()
+            for keyword in priority_keywords:
+                if keyword in col_lower:
+                    return col.replace('_', ' ')
+        return None
 
     def _get_generic_suggestions(self, query: str, sql: str) -> List[str]:
         """

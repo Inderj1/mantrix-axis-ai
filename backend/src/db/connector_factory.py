@@ -55,7 +55,7 @@ class ConnectorFactory:
             'required_config': ['project_id', 'dataset_id'],
             'optional_config': [
                 'credentials_path',
-                'location',
+                'location',              # BigQuery location (US, EU, etc.)
                 # Multi-auth support
                 'auth_method',           # 'service_account', 'workload_identity', 'oauth'
                 'credentials_json',      # Service account JSON as string
@@ -69,8 +69,18 @@ class ConnectorFactory:
         'snowflake': {
             'class': SnowflakeConnector if SNOWFLAKE_AVAILABLE else None,
             'available': SNOWFLAKE_AVAILABLE,
-            'required_config': ['account', 'user', 'password'],
-            'optional_config': ['warehouse', 'database', 'schema', 'role']
+            'required_config': ['account'],  # Base requirement; auth-specific validation in connector
+            'optional_config': [
+                'warehouse', 'database', 'schema', 'role',
+                # Authentication method selection
+                'auth_method',  # 'password', 'keypair', or 'pat'
+                # Password authentication
+                'user', 'password',
+                # Key-pair authentication
+                'private_key', 'private_key_passphrase',
+                # Programmatic Access Token (PAT) authentication
+                'programmatic_access_token',
+            ]
         },
         'postgresql': {
             'class': PostgreSQLConnector if POSTGRESQL_AVAILABLE else None,
@@ -181,15 +191,19 @@ class ConnectorFactory:
         # Get connector class
         connector_class = connector_info['class']
 
+        # Filter out metadata fields that shouldn't be passed to connector
+        METADATA_FIELDS = {'database_type', 'connector_id', 'connector_name'}
+        filtered_config = {k: v for k, v in config.items() if k not in METADATA_FIELDS}
+
         try:
             logger.info(
                 f"Creating {connector_type} connector",
                 connector_type=connector_type,
-                config_keys=list(config.keys())
+                config_keys=list(filtered_config.keys())
             )
 
-            # Create connector instance with config
-            connector = connector_class(**config)
+            # Create connector instance with filtered config
+            connector = connector_class(**filtered_config)
 
             logger.info(f"{connector_type} connector created successfully")
             return connector
@@ -230,6 +244,9 @@ class ConnectorFactory:
         try:
             # Create connector
             connector = cls.create_connector(connector_type, config)
+
+            # Connect to the database
+            connector.connect()
 
             # Test with a simple query
             if connector_type == 'bigquery':

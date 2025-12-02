@@ -49,18 +49,36 @@ class WeaviateClient:
             raise
     
     def _ensure_collection_exists(self):
-        """Create the TableSchemas collection if it doesn't exist."""
+        """Create the TableSchemas collection if it doesn't exist or schema is outdated."""
+        # Required properties that must exist in the collection
+        required_properties = {
+            "table_name", "dataset", "project", "description", "columns",
+            "row_count", "combined_text", "schema_version", "schema_hash",
+            "column_count", "database_type", "organization_id", "connector_id",
+            "created_at", "modified_at", "indexed_at", "business_domains",
+            "has_relationships", "column_names"
+        }
+
         try:
             if self.client.collections.exists(self.collection_name):
-                logger.info(f"Collection {self.collection_name} already exists")
-                # Check if we need to recreate due to dimension change
+                # Check if schema has all required properties
                 try:
                     collection = self.client.collections.get(self.collection_name)
-                    # If collection exists and is accessible, keep it
-                    return
-                except Exception:
-                    # If there's an issue, delete and recreate
-                    logger.info("Deleting existing collection due to configuration change")
+                    config = collection.config.get()
+                    existing_properties = {prop.name for prop in config.properties}
+                    missing_properties = required_properties - existing_properties
+
+                    if missing_properties:
+                        logger.warning(
+                            f"Collection {self.collection_name} missing properties: {missing_properties}. Recreating."
+                        )
+                        self.client.collections.delete(self.collection_name)
+                    else:
+                        logger.info(f"Collection {self.collection_name} exists with correct schema")
+                        return
+                except Exception as e:
+                    # If there's an issue checking, delete and recreate
+                    logger.info(f"Deleting existing collection due to error: {e}")
                     self.client.collections.delete(self.collection_name)
             
             # Get embedding dimension from service
@@ -83,6 +101,7 @@ class WeaviateClient:
                     Property(name="column_count", data_type=DataType.INT),
                     Property(name="database_type", data_type=DataType.TEXT),
                     Property(name="organization_id", data_type=DataType.TEXT),  # Add organization ID
+                    Property(name="connector_id", data_type=DataType.TEXT),  # Connector ID for filtering
                     Property(name="created_at", data_type=DataType.TEXT),
                     Property(name="modified_at", data_type=DataType.TEXT),
                     Property(name="indexed_at", data_type=DataType.TEXT),
@@ -179,9 +198,14 @@ class WeaviateClient:
                     col_desc += f": {col['description']}"
                 columns_text.append(col_desc)
             
+            # Support both BigQuery (dataset/project) and Snowflake/PostgreSQL/etc (schema/database) field names
+            dataset_name = schema.get("dataset", schema.get("schema", ""))
+            project_name = schema.get("project", schema.get("database", ""))
+
             combined_text = f"""
             Table: {schema['table_name']}
-            Dataset: {schema['dataset']}
+            Dataset: {dataset_name}
+            Project: {project_name}
             Description: {schema.get('description', 'No description')}
             Columns: {', '.join(columns_text)}
             Row Count: {schema.get('row_count', 'Unknown')}
@@ -192,14 +216,15 @@ class WeaviateClient:
             
             data_object = {
                 "table_name": schema["table_name"],
-                "dataset": schema["dataset"],
-                "project": schema["project"],
+                "dataset": dataset_name,
+                "project": project_name,
                 "description": schema.get("description", ""),
                 "columns": json.dumps(schema["columns"]),
                 "row_count": schema.get("row_count", 0),
                 "combined_text": combined_text.strip(),
-                "database_type": schema.get("source_database_type", schema.get("database_type", "bigquery")),  # Support both field names
-                "organization_id": schema.get("organization_id", "default")  # Add organization ID
+                "database_type": schema.get("source_database_type", schema.get("database_type", "bigquery")),
+                "organization_id": schema.get("organization_id", "default"),
+                "connector_id": schema.get("connector_id", "")
             }
             
             collection.data.insert(
@@ -218,7 +243,9 @@ class WeaviateClient:
         limit: int = 5,
         database_type: str = None,
         organization_id: str = None,
-        enabled_databases: List[str] = None
+        enabled_databases: List[str] = None,
+        connector_id: str = None,
+        connector_ids: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Search for tables similar to the query with optional filtering.
@@ -229,6 +256,8 @@ class WeaviateClient:
             database_type: Filter by specific database type
             organization_id: Filter by organization ID
             enabled_databases: List of enabled database types to filter by
+            connector_id: Filter by specific connector ID
+            connector_ids: Filter by list of connector IDs (use for multiple enabled connectors)
         """
         try:
             import json
@@ -236,8 +265,20 @@ class WeaviateClient:
 
             # Build filter conditions
             filters = None
-            if organization_id or database_type or enabled_databases:
+            logger.info(f"Vector search filters: connector_id={connector_id}, connector_ids={connector_ids}, "
+                       f"database_type={database_type}, organization_id={organization_id}")
+            if organization_id or database_type or enabled_databases or connector_id or connector_ids:
                 filter_conditions = []
+
+                # Connector ID filter (highest priority - most specific)
+                if connector_id:
+                    filter_conditions.append(
+                        wvc.query.Filter.by_property("connector_id").equal(connector_id)
+                    )
+                elif connector_ids:  # Multiple connector IDs
+                    filter_conditions.append(
+                        wvc.query.Filter.by_property("connector_id").contains_any(connector_ids)
+                    )
 
                 # Organization filter
                 if organization_id:
@@ -266,7 +307,7 @@ class WeaviateClient:
             # Specify which properties to return to avoid None values
             response = collection.query.near_vector(
                 near_vector=query_embedding,
-                where=filters,  # Apply filters
+                filters=filters,  # Apply filters (Weaviate v4 uses 'filters' not 'where')
                 limit=limit,
                 return_metadata=wvc.query.MetadataQuery(distance=True),
                 return_properties=[
@@ -278,7 +319,10 @@ class WeaviateClient:
                     "row_count",
                     "combined_text",
                     "database_type",
-                    "organization_id"
+                    "organization_id",
+                    "connector_id",
+                    "business_domains",
+                    "has_relationships"
                 ]
             )
 
@@ -294,6 +338,16 @@ class WeaviateClient:
                         logger.warning(f"Failed to parse columns for {item.properties.get('table_name')}: {parse_error}")
                         columns = []
 
+                # Parse business_domains if stored as JSON string
+                business_domains_raw = item.properties.get("business_domains", [])
+                if isinstance(business_domains_raw, str):
+                    try:
+                        business_domains = json.loads(business_domains_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        business_domains = []
+                else:
+                    business_domains = business_domains_raw if business_domains_raw else []
+
                 result = {
                     "table_name": item.properties.get("table_name", "unknown"),
                     "dataset": item.properties.get("dataset", ""),
@@ -301,11 +355,22 @@ class WeaviateClient:
                     "description": item.properties.get("description", ""),
                     "columns": columns,
                     "row_count": item.properties.get("row_count", 0),
-                    "distance": item.metadata.distance if item.metadata else None
+                    "distance": item.metadata.distance if item.metadata else None,
+                    "connector_id": item.properties.get("connector_id", ""),
+                    "database_type": item.properties.get("database_type", "bigquery"),
+                    "business_domains": business_domains,
+                    "has_relationships": item.properties.get("has_relationships", False)
                 }
                 results.append(result)
 
             logger.info(f"Vector search found {len(results)} similar tables")
+            if len(results) == 0:
+                # Debug: check total count in collection
+                try:
+                    aggregate = collection.aggregate.over_all(total_count=True)
+                    logger.warning(f"Vector search returned 0 results but collection has {aggregate.total_count} total objects")
+                except Exception as agg_err:
+                    logger.warning(f"Could not get collection count: {agg_err}")
             return results
         except Exception as e:
             logger.error(f"Failed to search tables: {e}")
@@ -320,6 +385,69 @@ class WeaviateClient:
         except Exception as e:
             logger.error(f"Failed to delete schemas: {e}")
             raise
+
+    def recreate_collection(self):
+        """
+        Delete and recreate the TableSchemas collection with the current schema.
+
+        Use this when the collection schema is outdated (e.g., missing connector_id property).
+        """
+        try:
+            # Delete existing collection
+            if self.client.collections.exists(self.collection_name):
+                self.client.collections.delete(self.collection_name)
+                logger.info(f"Deleted existing collection {self.collection_name}")
+
+            # Recreate with current schema
+            self._ensure_collection_exists()
+            logger.info(f"Recreated collection {self.collection_name} with updated schema")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to recreate collection: {e}")
+            raise
+
+    def delete_schemas_by_connector(self, connector_id: str) -> int:
+        """
+        Delete all schemas belonging to a specific connector.
+
+        Args:
+            connector_id: The ID of the connector whose schemas should be deleted
+
+        Returns:
+            Number of schemas deleted
+        """
+        try:
+            collection = self.client.collections.get(self.collection_name)
+            result = collection.data.delete_many(
+                where=wvc.query.Filter.by_property("connector_id").equal(connector_id)
+            )
+            deleted_count = result.successful if hasattr(result, 'successful') else 0
+            logger.info(f"Deleted {deleted_count} schemas for connector {connector_id}")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Failed to delete schemas for connector {connector_id}: {e}")
+            raise
+
+    def get_schema_count_by_connector(self, connector_id: str) -> int:
+        """
+        Get the count of schemas for a specific connector.
+
+        Args:
+            connector_id: The ID of the connector
+
+        Returns:
+            Number of schemas indexed for this connector
+        """
+        try:
+            collection = self.client.collections.get(self.collection_name)
+            response = collection.aggregate.over_all(
+                filters=wvc.query.Filter.by_property("connector_id").equal(connector_id),
+                total_count=True
+            )
+            return response.total_count if response.total_count else 0
+        except Exception as e:
+            logger.error(f"Failed to count schemas for connector {connector_id}: {e}")
+            return 0
 
     def record_query_performance(
         self,

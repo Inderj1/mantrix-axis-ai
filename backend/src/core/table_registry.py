@@ -50,6 +50,7 @@ class TableRegistry:
     def _initialize_domain_configs(self) -> Dict[TableDomain, DomainConfig]:
         """Initialize domain configurations."""
         return {
+            # Note: default_tables removed - tables come from connector/Weaviate search
             TableDomain.FINANCIAL: DomainConfig(
                 domain=TableDomain.FINANCIAL,
                 table_patterns=[
@@ -64,9 +65,9 @@ class TableRegistry:
                     "ebitda", "income", "earnings", "financial", "gl"
                 ],
                 priority=1,
-                default_tables=["copa_export_copa_data_000000000000"]
+                default_tables=[]  # Tables discovered from Weaviate
             ),
-            
+
             TableDomain.SALES_OPERATIONS: DomainConfig(
                 domain=TableDomain.SALES_OPERATIONS,
                 table_patterns=[
@@ -81,7 +82,7 @@ class TableRegistry:
                     "billing", "dispatch", "cockpit", "sales order"
                 ],
                 priority=2,
-                default_tables=["sales_order_cockpit_export"]
+                default_tables=[]  # Tables discovered from Weaviate
             ),
             
             TableDomain.INVENTORY: DomainConfig(
@@ -139,60 +140,23 @@ class TableRegistry:
         }
     
     def _initialize_relationships(self) -> List[TableRelationship]:
-        """Initialize known table relationships with actual schema column names."""
-        return [
-            # COPA (dataset_25m_table) to Sales Order Cockpit relationship
-            # Primary join on Sales Order number
-            TableRelationship(
-                source_table="dataset_25m_table",
-                target_table="sales_order_cockpit_export",
-                join_keys=[
-                    ("Sales_Order_KDAUF", "SalesDocument_VBELN"),  # Primary: Order number
-                ],
-                join_type="left",
-                relationship_type="one_to_many"
-            ),
+        """
+        Initialize table relationships.
 
-            # Alternative COPA to Sales Order join paths
-            TableRelationship(
-                source_table="dataset_25m_table",
-                target_table="sales_order_cockpit_export",
-                join_keys=[
-                    ("Customer", "SoldToParty_KUNNR"),  # Join by customer
-                ],
-                join_type="left",
-                relationship_type="one_to_many"
-            ),
+        Note: Hardcoded relationships have been removed. Table relationships
+        are now discovered dynamically through:
+        1. RDF/Jena knowledge graph (foreign key relationships)
+        2. Weaviate schema metadata (column name matching)
+        3. LLM inference based on column naming patterns
 
-            TableRelationship(
-                source_table="dataset_25m_table",
-                target_table="sales_order_cockpit_export",
-                join_keys=[
-                    ("Material_Number", "Material_MATNR"),  # Join by material
-                ],
-                join_type="left",
-                relationship_type="one_to_many"
-            ),
+        Use register_relationship() to add relationships at runtime.
+        """
+        return []  # Relationships discovered dynamically from connector metadata
 
-            # Legacy relationships for backward compatibility
-            # Sales Order to Customer Master
-            TableRelationship(
-                source_table="sales_order_cockpit_export",
-                target_table="customer_master",
-                join_keys=[("SoldToParty_KUNNR", "CustomerCode")],
-                join_type="left",
-                relationship_type="many_to_one"
-            ),
-
-            # Sales Order to Product Master
-            TableRelationship(
-                source_table="sales_order_cockpit_export",
-                target_table="product_master",
-                join_keys=[("Material_MATNR", "MaterialNumber")],
-                join_type="left",
-                relationship_type="many_to_one"
-            )
-        ]
+    def register_relationship(self, relationship: TableRelationship) -> None:
+        """Register a dynamically discovered relationship."""
+        self.table_relationships.append(relationship)
+        logger.info(f"Registered relationship: {relationship.source_table} -> {relationship.target_table}")
     
     def classify_table(self, table_name: str) -> TableDomain:
         """Classify a table into a business domain."""

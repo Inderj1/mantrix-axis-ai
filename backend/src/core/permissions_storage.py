@@ -10,8 +10,9 @@ Author: Mantrix Axis AI
 from typing import Optional, List, Dict
 from datetime import datetime
 import structlog
+from pymongo import MongoClient
 
-from src.db.mongodb_client import get_mongodb_client
+from src.config import settings
 from src.core.database_permissions import UserDatabasePermissions, DatabasePermission
 
 logger = structlog.get_logger()
@@ -28,11 +29,17 @@ class PermissionsStorageBackend:
     """
 
     def __init__(self):
-        """Initialize storage backend with MongoDB client."""
-        self.mongodb_client = get_mongodb_client()
-        self.db = self.mongodb_client.db if self.mongodb_client else None
+        """Initialize storage backend with synchronous MongoDB client."""
+        try:
+            # Use synchronous pymongo client for synchronous code paths
+            self.mongodb_client = MongoClient(settings.mongodb_url)
+            self.db = self.mongodb_client[settings.mongodb_database]
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB: {e}")
+            self.mongodb_client = None
+            self.db = None
 
-        if self.db:
+        if self.db is not None:
             self.user_permissions_collection = self.db["user_database_permissions"]
             self.org_permissions_collection = self.db["organization_database_permissions"]
             self.audit_log_collection = self.db["permission_audit_log"]
@@ -40,6 +47,9 @@ class PermissionsStorageBackend:
             # Create indexes
             self._create_indexes()
         else:
+            self.user_permissions_collection = None
+            self.org_permissions_collection = None
+            self.audit_log_collection = None
             logger.warning("MongoDB client not available, permissions storage disabled")
 
     def _create_indexes(self):
@@ -79,7 +89,7 @@ class PermissionsStorageBackend:
         Returns:
             UserDatabasePermissions object or None if not found
         """
-        if not self.db:
+        if self.db is None:
             return None
 
         try:
@@ -118,7 +128,7 @@ class PermissionsStorageBackend:
         Returns:
             True if successful, False otherwise
         """
-        if not self.db:
+        if self.db is None:
             logger.warning("MongoDB not available, cannot save permissions")
             return False
 
@@ -171,7 +181,7 @@ class PermissionsStorageBackend:
         Returns:
             True if successful, False otherwise
         """
-        if not self.db:
+        if self.db is None:
             return False
 
         try:
@@ -215,7 +225,7 @@ class PermissionsStorageBackend:
         Returns:
             List of user IDs
         """
-        if not self.db:
+        if self.db is None:
             return []
 
         try:
@@ -251,7 +261,7 @@ class PermissionsStorageBackend:
         Returns:
             Organization permissions dict or None
         """
-        if not self.db:
+        if self.db is None:
             return None
 
         try:
@@ -284,7 +294,7 @@ class PermissionsStorageBackend:
         Returns:
             True if successful, False otherwise
         """
-        if not self.db:
+        if self.db is None:
             return False
 
         try:
@@ -326,7 +336,7 @@ class PermissionsStorageBackend:
             details: Change details
             performed_by: User who performed the action
         """
-        if not self.db:
+        if self.db is None:
             return
 
         try:
@@ -358,7 +368,7 @@ class PermissionsStorageBackend:
         Returns:
             List of audit log entries
         """
-        if not self.db:
+        if self.db is None:
             return []
 
         try:

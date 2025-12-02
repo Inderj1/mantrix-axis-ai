@@ -202,8 +202,8 @@ class AlertNotificationScheduler:
     async def _get_user_preferences(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user notification preferences from MongoDB."""
         try:
-            mongodb = get_mongodb_client()
-            prefs = await mongodb.notification_preferences.find_one({"user_id": user_id})
+            mongodb = await get_mongodb_client()
+            prefs = await mongodb.notification_preferences_collection.find_one({"user_id": user_id})
 
             if prefs:
                 return {

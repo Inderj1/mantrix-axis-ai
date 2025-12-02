@@ -5,6 +5,11 @@ Implements the BaseDatabaseConnector interface for Snowflake.
 Provides query execution, schema introspection, and metadata operations for Snowflake.
 
 Features connection pooling for efficient connection reuse.
+
+Supports multiple authentication methods:
+- Password: Traditional username/password authentication
+- Key-Pair: RSA private key authentication
+- PAT: Programmatic Access Token (generated from Snowflake UI)
 """
 from typing import List, Dict, Any, Optional
 from contextlib import contextmanager
@@ -20,6 +25,14 @@ except ImportError:
     SNOWFLAKE_AVAILABLE = False
     snowflake = None
 
+# Optional: cryptography for key-pair authentication
+try:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    CRYPTOGRAPHY_AVAILABLE = False
+
 from ..base_connector import (
     BaseDatabaseConnector,
     QueryExecutionError,
@@ -31,6 +44,12 @@ from ..database_capabilities import SNOWFLAKE_CAPABILITIES, DatabaseCapabilities
 from src.config import settings
 
 logger = structlog.get_logger()
+
+# Authentication method constants
+AUTH_METHOD_PASSWORD = "password"
+AUTH_METHOD_KEYPAIR = "keypair"
+AUTH_METHOD_PAT = "pat"  # Programmatic Access Token
+VALID_AUTH_METHODS = [AUTH_METHOD_PASSWORD, AUTH_METHOD_KEYPAIR, AUTH_METHOD_PAT]
 
 # Default pool settings
 DEFAULT_MIN_CONNECTIONS = 2
@@ -59,7 +78,13 @@ class SnowflakeConnector(BaseDatabaseConnector):
         role: Optional[str] = None,
         min_connections: int = DEFAULT_MIN_CONNECTIONS,
         max_connections: int = DEFAULT_MAX_CONNECTIONS,
-        use_pool: bool = True
+        use_pool: bool = True,
+        # Authentication method parameters
+        auth_method: str = AUTH_METHOD_PASSWORD,
+        private_key: Optional[str] = None,
+        private_key_passphrase: Optional[str] = None,
+        programmatic_access_token: Optional[str] = None,
+        **kwargs  # Accept additional kwargs for flexibility
     ):
         """
         Initialize Snowflake connector with connection pooling.
@@ -67,7 +92,7 @@ class SnowflakeConnector(BaseDatabaseConnector):
         Args:
             account: Snowflake account identifier (e.g., 'xy12345.us-east-1')
             user: Snowflake username
-            password: Snowflake password
+            password: Snowflake password (required for 'password' auth method)
             warehouse: Virtual warehouse name
             database: Database name
             schema: Schema name (default: PUBLIC)
@@ -75,6 +100,11 @@ class SnowflakeConnector(BaseDatabaseConnector):
             min_connections: Minimum connections to keep in pool (default: 2)
             max_connections: Maximum connections allowed in pool (default: 10)
             use_pool: Whether to use connection pooling (default: True)
+            auth_method: Authentication method - 'password', 'keypair', or 'pat'
+            private_key: RSA private key in PEM format (for 'keypair' auth)
+            private_key_passphrase: Passphrase for encrypted private key
+            programmatic_access_token: PAT from Snowflake UI (for 'pat' auth)
+            **kwargs: Additional parameters for future compatibility
         """
         if not SNOWFLAKE_AVAILABLE:
             raise ImportError(
@@ -93,6 +123,12 @@ class SnowflakeConnector(BaseDatabaseConnector):
         self.schema = schema or getattr(settings, 'snowflake_schema', 'PUBLIC')
         self.role = role or getattr(settings, 'snowflake_role', None)
 
+        # Authentication method
+        self.auth_method = auth_method or getattr(settings, 'snowflake_auth_method', AUTH_METHOD_PASSWORD)
+        self.private_key = private_key
+        self.private_key_passphrase = private_key_passphrase
+        self.programmatic_access_token = programmatic_access_token
+
         # Pool configuration
         self.min_connections = min_connections
         self.max_connections = max_connections
@@ -107,26 +143,68 @@ class SnowflakeConnector(BaseDatabaseConnector):
         self._connection: Optional[snowflake.connector.SnowflakeConnection] = None
         self._capabilities = SNOWFLAKE_CAPABILITIES
 
-        # Validate required parameters
-        if not all([self.account, self.user, self.password]):
+        # Validate auth method
+        if self.auth_method not in VALID_AUTH_METHODS:
             raise ValueError(
-                "Snowflake connector requires account, user, and password. "
-                "Provide them as parameters or set SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, "
-                "and SNOWFLAKE_PASSWORD in environment variables."
+                f"Invalid auth_method '{self.auth_method}'. "
+                f"Must be one of: {', '.join(VALID_AUTH_METHODS)}"
             )
+
+        # Validate required parameters based on auth method
+        self._validate_auth_config()
 
         # Auto-connect on initialization
         self.connect()
 
-    def _create_connection(self) -> snowflake.connector.SnowflakeConnection:
-        """Create a new Snowflake connection."""
-        connection_params = {
-            'account': self.account,
-            'user': self.user,
-            'password': self.password,
-        }
+    def _validate_auth_config(self) -> None:
+        """Validate authentication configuration based on auth method."""
+        if not self.account:
+            raise ValueError("Snowflake connector requires 'account' parameter.")
 
-        # Add optional parameters if provided
+        if self.auth_method == AUTH_METHOD_PASSWORD:
+            if not all([self.user, self.password]):
+                raise ValueError(
+                    "Snowflake password authentication requires 'user' and 'password'. "
+                    "Provide them as parameters or set SNOWFLAKE_USER and SNOWFLAKE_PASSWORD "
+                    "in environment variables."
+                )
+
+        elif self.auth_method == AUTH_METHOD_KEYPAIR:
+            if not CRYPTOGRAPHY_AVAILABLE:
+                raise ImportError(
+                    "Key-pair authentication requires the 'cryptography' package. "
+                    "Install it with: pip install cryptography"
+                )
+            if not self.user:
+                raise ValueError("Snowflake key-pair authentication requires 'user' parameter.")
+            if not self.private_key:
+                raise ValueError(
+                    "Snowflake key-pair authentication requires 'private_key' parameter "
+                    "(RSA private key in PEM format)."
+                )
+
+        elif self.auth_method == AUTH_METHOD_PAT:
+            if not self.user:
+                raise ValueError("Snowflake PAT authentication requires 'user' parameter.")
+            if not self.programmatic_access_token:
+                raise ValueError(
+                    "Snowflake PAT authentication requires 'programmatic_access_token' parameter. "
+                    "Generate a token from Snowflake UI: Profile → Programmatic Access Tokens."
+                )
+
+    def _create_connection(self) -> snowflake.connector.SnowflakeConnection:
+        """Create a new Snowflake connection using the configured auth method."""
+        # Get auth-specific connection parameters
+        if self.auth_method == AUTH_METHOD_PASSWORD:
+            connection_params = self._get_password_connection_params()
+        elif self.auth_method == AUTH_METHOD_KEYPAIR:
+            connection_params = self._get_keypair_connection_params()
+        elif self.auth_method == AUTH_METHOD_PAT:
+            connection_params = self._get_pat_connection_params()
+        else:
+            raise ValueError(f"Unknown auth method: {self.auth_method}")
+
+        # Add common optional parameters
         if self.warehouse:
             connection_params['warehouse'] = self.warehouse
         if self.database:
@@ -136,7 +214,80 @@ class SnowflakeConnector(BaseDatabaseConnector):
         if self.role:
             connection_params['role'] = self.role
 
+        logger.debug(
+            "Creating Snowflake connection",
+            auth_method=self.auth_method,
+            account=self.account,
+            user=self.user,
+            warehouse=self.warehouse
+        )
+
         return snowflake.connector.connect(**connection_params)
+
+    def _get_password_connection_params(self) -> Dict[str, Any]:
+        """Get connection parameters for password authentication."""
+        return {
+            'account': self.account,
+            'user': self.user,
+            'password': self.password,
+        }
+
+    def _get_keypair_connection_params(self) -> Dict[str, Any]:
+        """
+        Get connection parameters for key-pair authentication.
+
+        Parses the PEM-encoded private key and converts it to the DER format
+        required by Snowflake.
+        """
+        if not CRYPTOGRAPHY_AVAILABLE:
+            raise ImportError("cryptography package required for key-pair auth")
+
+        try:
+            # Parse the PEM private key
+            private_key_bytes = self.private_key.encode('utf-8')
+
+            # Handle passphrase if provided
+            passphrase = None
+            if self.private_key_passphrase:
+                passphrase = self.private_key_passphrase.encode('utf-8')
+
+            # Load the private key
+            p_key = serialization.load_pem_private_key(
+                private_key_bytes,
+                password=passphrase,
+                backend=default_backend()
+            )
+
+            # Convert to DER format (PKCS8) as required by Snowflake
+            pkb = p_key.private_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+
+            return {
+                'account': self.account,
+                'user': self.user,
+                'private_key': pkb,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to parse private key: {e}")
+            raise ValueError(f"Failed to parse private key for key-pair authentication: {e}")
+
+    def _get_pat_connection_params(self) -> Dict[str, Any]:
+        """
+        Get connection parameters for Programmatic Access Token (PAT) authentication.
+
+        PATs are generated from the Snowflake UI and provide secure programmatic access
+        without sharing passwords. They're ideal for users who log in via SSO.
+        """
+        return {
+            'account': self.account,
+            'user': self.user,
+            'token': self.programmatic_access_token,
+            'authenticator': 'programmatic_access_token',
+        }
 
     def connect(self) -> None:
         """

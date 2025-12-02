@@ -40,6 +40,62 @@ class SQLExecuteRequest(BaseModel):
     sql: str = Field(..., description="SQL query to execute")
 
 
+class SingleConnectorExecuteRequest(BaseModel):
+    """Request model for executing a single connector query (cross-connector edit & re-run)."""
+    connector_id: str = Field(..., description="The connector ID to execute against")
+    sql: str = Field(..., description="The SQL query to execute")
+    database_type: str = Field(..., description="The database type (bigquery, snowflake, postgresql, etc.)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "connector_id": "bq_connector_123",
+                "sql": "SELECT customer_id, name FROM customers WHERE active = true",
+                "database_type": "bigquery"
+            }
+        }
+
+
+class JoinSpecification(BaseModel):
+    """Join specification for cross-connector queries."""
+    type: str = Field("INNER", description="Join type: INNER, LEFT, RIGHT, FULL")
+    condition: str = Field(..., description="Join condition (e.g., 'customers.id = orders.customer_id')")
+    left_key: Optional[str] = Field(None, description="Left table join key")
+    right_key: Optional[str] = Field(None, description="Right table join key")
+
+
+class CrossConnectorRejoinRequest(BaseModel):
+    """Request model for re-joining cross-connector results after editing a query."""
+    session_id: str = Field(..., description="Session ID from original cross-connector query")
+    edited_connector_id: Optional[str] = Field(None, description="Connector ID that was edited (if any)")
+    edited_sql: Optional[str] = Field(None, description="New SQL for the edited connector")
+    join_specification: Optional[JoinSpecification] = Field(None, description="Updated join specification")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "xc_abc123def456",
+                "edited_connector_id": "bq_connector_123",
+                "edited_sql": "SELECT customer_id, name, email FROM customers WHERE active = true",
+                "join_specification": {
+                    "type": "INNER",
+                    "condition": "customers.customer_id = orders.customer_id"
+                }
+            }
+        }
+
+
+class CrossConnectorRejoinResponse(BaseModel):
+    """Response model for cross-connector re-join."""
+    success: bool
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    row_count: int = 0
+    session_id: str
+    join_strategy: str = Field("pandas", description="Strategy used: pandas, staging_table, s3_federation")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
 class OptimizeRequest(BaseModel):
     sql: str = Field(..., description="SQL query to optimize")
 
@@ -58,6 +114,7 @@ class QueryResponse(BaseModel):
     suggestions: Optional[List[Dict[str, Any]]] = None
     follow_up_suggestions: Optional[List[str]] = None  # Copilot follow-up suggestions
     from_cache: bool = False
+    empty_result_note: Optional[str] = None  # Helpful note when query returns no results
     # Chart intelligence fields (backend-driven visualization recommendations)
     chart_recommendations: Optional[List[str]] = None  # ["bar", "line", "pie"]
     dimensions: Optional[List[str]] = None  # Categorical columns
@@ -67,6 +124,11 @@ class QueryResponse(BaseModel):
     semantic_types: Optional[Dict[str, str]] = None  # {"revenue": "currency"}
     default_aggregations: Optional[Dict[str, str]] = None  # {"revenue": "SUM"}
     visualization_config: Optional[Dict[str, Any]] = None  # Suggested chart config
+    # Cross-connector query fields
+    is_cross_connector: bool = False
+    connector_queries: Optional[Dict[str, Any]] = None
+    join_specification: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None  # Session ID for re-join operations
 
 
 # Document Intelligence Models
@@ -430,13 +492,20 @@ class ConnectorTestResponse(BaseModel):
 
 
 class ConnectorResponse(BaseModel):
-    connector_id: str
+    id: str  # Frontend expects 'id', not 'connector_id'
     connector_type: str
     name: str
     status: str = Field(..., description="connected, disconnected, error")
     created_at: str
     updated_at: str
-    config_summary: Dict[str, Any] = Field(..., description="Config without sensitive data")
+    config: Dict[str, Any] = Field(..., description="Config without sensitive data")
+    enabled_for_chat: bool = False
+    metadata: Optional[Dict[str, Any]] = None
+    organization_id: Optional[str] = None
+    sync_status: Optional[str] = None
+    sync_error: Optional[str] = None
+    sync_started_at: Optional[str] = None
+    sync_completed_at: Optional[str] = None
 
 
 class ConnectorListResponse(BaseModel):

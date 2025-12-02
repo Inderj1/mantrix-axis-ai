@@ -106,6 +106,9 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
+// Import images as modules for proper caching
+import axisAiLogo from '../assets/axis-ai4.png';
+
 // Chart colors
 const COLORS = ['#8884d8', '#60a5fa', '#ffc658', '#ff7c7c', '#a78bfa', '#d084d0', '#ffb347', '#67b7dc'];
 
@@ -1843,7 +1846,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                 <Stack direction="row" spacing={1.5} alignItems="flex-start">
                   <Box
                     component="img"
-                    src="/axis-ai4.png"
+                    src={axisAiLogo}
                     alt="AXIS AI"
                     sx={{ height: 72, width: 'auto', objectFit: 'contain' }}
                   />
@@ -2509,7 +2512,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
                         <Stack direction="row" spacing={1.5} alignItems="flex-start">
                           <Box
                             component="img"
-                            src="/axis-ai4.png"
+                            src={axisAiLogo}
                             alt="AXIS AI"
                             sx={{ height: 72, width: 'auto', objectFit: 'contain', display: 'block' }}
                           />

@@ -70,6 +70,14 @@ export const apiService = {
     // Don't send dataset parameter - let backend use its configured values
     const { conversationId, databaseType, databaseConfig, multiDatabases, ...otherOptions } = options;
 
+    console.log('[API] executeQuery called with options:', {
+      conversationId,
+      databaseType,
+      databaseConfig: databaseConfig ? 'present' : 'none',
+      multiDatabases,
+      otherOptionsKeys: Object.keys(otherOptions)
+    });
+
     // Build the request payload
     const payload = {
       question,
@@ -79,7 +87,10 @@ export const apiService = {
 
     // Add database selection if specified
     if (databaseType) {
+      console.log('[API] Adding database_type to payload:', databaseType);
       payload.database_type = databaseType;
+    } else {
+      console.log('[API] No databaseType provided - letting backend auto-detect');
     }
 
     if (databaseConfig) {
@@ -91,6 +102,7 @@ export const apiService = {
       payload.multi_databases = multiDatabases;
     }
 
+    console.log('[API] Final payload:', JSON.stringify(payload, null, 2));
     return api.post('/api/v1/query', payload);
   },
   
@@ -488,6 +500,14 @@ export const apiService = {
   testExistingConnector: (connectorId) =>
     api.post(`/api/v1/connectors/${connectorId}/test`),
 
+  // Trigger schema sync for a connector
+  syncConnector: (connectorId) =>
+    api.post(`/api/v1/connectors/${connectorId}/sync`),
+
+  // Clear all schema cache (admin only)
+  clearSchemaCache: () =>
+    api.post(`/api/v1/connectors/admin/clear-schema-cache`),
+
   // Check connector status
   checkConnectorStatus: () =>
     api.get('/api/v1/connectors/status'),
@@ -515,9 +535,9 @@ export const apiService = {
       params: redirectUri ? { redirect_uri: redirectUri } : {}
     }),
 
-  completeBigQueryOAuth: ({ code, state, project_id, dataset, name, location }) =>
+  completeBigQueryOAuth: ({ code, state, project_id, dataset_id, name, location }) =>
     api.post('/api/v1/connectors/bigquery/oauth/complete', null, {
-      params: { code, state, project_id, dataset, name, location }
+      params: { code, state, project_id, dataset_id, name, location }
     }),
 
   // Control Center endpoints
@@ -640,6 +660,47 @@ export const apiService = {
 
   deleteAnnotation: (annotationId) =>
     api.delete(`/api/v1/annotations/${annotationId}`),
+
+  // Cross-Connector Query endpoints
+  /**
+   * Execute a single connector query (for re-running edited queries in cross-connector scenarios)
+   * @param {Object} params - Query parameters
+   * @param {string} params.connector_id - The connector ID to execute against
+   * @param {string} params.sql - The SQL query to execute
+   * @param {string} params.database_type - The database type (bigquery, snowflake, etc.)
+   * @returns {Promise} API response with results
+   */
+  executeSingleConnectorQuery: ({ connector_id, sql, database_type }) =>
+    api.post('/api/v1/query/execute-single-connector', {
+      connector_id,
+      sql,
+      database_type
+    }),
+
+  /**
+   * Re-join cross-connector results after editing a query.
+   * Performs secure server-side re-joining.
+   *
+   * @param {Object} params
+   * @param {string} params.session_id - Session ID from original cross-connector query
+   * @param {string} [params.edited_connector_id] - Connector ID that was edited
+   * @param {string} [params.edited_sql] - New SQL for the edited connector
+   * @param {Object} [params.join_specification] - Updated join specification
+   * @param {string} params.join_specification.type - Join type (INNER, LEFT, RIGHT, FULL)
+   * @param {string} params.join_specification.condition - Join condition
+   */
+  rejoinCrossConnectorResults: ({
+    session_id,
+    edited_connector_id,
+    edited_sql,
+    join_specification
+  }) =>
+    api.post('/api/v1/query/rejoin-cross-connector', {
+      session_id,
+      edited_connector_id,
+      edited_sql,
+      join_specification
+    }),
 
   // Generic HTTP methods
   get: (url, config) => api.get(url, config),

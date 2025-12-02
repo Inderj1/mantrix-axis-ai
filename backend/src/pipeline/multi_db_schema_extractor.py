@@ -294,3 +294,81 @@ class MultiDatabaseSchemaExtractor:
             db_type: all_schemas.get(db_type, [])
             for db_type in db_types
         }
+
+    def extract_schema_for_connector(
+        self,
+        connector_type: str,
+        connector_config: Dict[str, Any],
+        organization_id: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract schema from a specific connector configuration.
+
+        This method is used when extracting schema for a specific connector
+        (e.g., OAuth-authenticated BigQuery connector) rather than using
+        environment variables.
+
+        Args:
+            connector_type: Type of database connector (bigquery, snowflake, etc.)
+            connector_config: Full configuration for the connector including credentials
+            organization_id: Organization ID for multi-tenancy
+
+        Returns:
+            List of table schemas with source_database_type and organization_id
+        """
+        org_id = organization_id or self.organization_id
+
+        logger.info(
+            f"Extracting schema for connector",
+            connector_type=connector_type,
+            organization_id=org_id
+        )
+
+        connector = None
+        try:
+            # Create connector using factory with provided config
+            connector = self.factory.create_connector(connector_type, connector_config)
+
+            if connector is None:
+                logger.error(f"Could not create connector for {connector_type}")
+                return []
+
+            # Connect to the database
+            logger.info(f"Connecting to {connector_type} database...")
+            connector.connect()
+            logger.info(f"Successfully connected to {connector_type} database")
+
+            # Extract schema using the connector
+            tables = self._extract_database_schema(connector, connector_type)
+
+            # Add source_database_type and organization_id to each table
+            for table in tables:
+                table["source_database_type"] = connector_type
+                table["organization_id"] = org_id
+
+            logger.info(
+                f"Extracted {len(tables)} tables from {connector_type} connector",
+                connector_type=connector_type,
+                table_count=len(tables),
+                organization_id=org_id
+            )
+
+            return tables
+
+        except Exception as e:
+            logger.error(
+                f"Failed to extract schema for connector: {e}",
+                connector_type=connector_type,
+                error=str(e),
+                exc_info=True
+            )
+            return []
+
+        finally:
+            # Clean up connection
+            try:
+                if connector is not None:
+                    connector.disconnect()
+                    logger.info(f"Disconnected from {connector_type} database")
+            except Exception as cleanup_error:
+                logger.warning(f"Error during connector cleanup: {cleanup_error}")

@@ -26,6 +26,9 @@ import {
   Person as PersonIcon,
 } from '@mui/icons-material';
 
+// Import images as modules for proper caching
+import mantraLogo from '../assets/mantra9.png';
+
 const EnhancedSidebar = ({
   drawerOpen,
   setDrawerOpen,
@@ -132,7 +135,7 @@ const EnhancedSidebar = ({
         >
           {drawerOpen ? (
             <>
-              <Box component="img" src="/mantra9.png" alt="Mantra9" sx={{ height: 40 }} />
+              <Box component="img" src={mantraLogo} alt="Mantra9" sx={{ height: 40 }} />
               <IconButton onClick={() => setDrawerOpen(false)} size="small">
                 <MenuOpenIcon />
               </IconButton>

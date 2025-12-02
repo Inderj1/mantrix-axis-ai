@@ -124,7 +124,8 @@ class CrossDatabaseExecutor:
         plan: ExecutionPlan,
         user_id: str,
         organization_id: str,
-        database_configs: Optional[Dict[str, Dict[str, Any]]] = None
+        database_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        skip_permission_check: bool = False
     ) -> ExecutionResult:
         """
         Execute a federated query plan.
@@ -134,6 +135,8 @@ class CrossDatabaseExecutor:
             user_id: User ID for permissions
             organization_id: Organization ID
             database_configs: Optional database connection configs
+            skip_permission_check: If True, skip database-type permission check.
+                Use when access has already been verified via connector permissions.
 
         Returns:
             ExecutionResult with data and metadata
@@ -147,19 +150,21 @@ class CrossDatabaseExecutor:
             strategy=plan.strategy.value,
             databases=plan.databases_involved,
             steps=len(plan.steps),
-            user_id=user_id
+            user_id=user_id,
+            skip_permission_check=skip_permission_check
         )
 
         start_time = datetime.now()
         step_results = {}
 
         try:
-            # Check permissions for all databases
-            await self._check_permissions(
-                plan.databases_involved,
-                user_id,
-                organization_id
-            )
+            # Check permissions for all databases (unless already verified via connector access)
+            if not skip_permission_check:
+                await self._check_permissions(
+                    plan.databases_involved,
+                    user_id,
+                    organization_id
+                )
 
             # Execute steps based on strategy
             if plan.strategy == ExecutionStrategy.SINGLE_DATABASE:
@@ -593,6 +598,7 @@ class CrossDatabaseExecutor:
             step.database_type,
             config=database_configs.get(step.database_type) if database_configs else None
         )
+        connector.connect()
 
         result_df = await self._execute_query(connector, step.sql)
         return result_df
@@ -608,10 +614,16 @@ class CrossDatabaseExecutor:
         """
         Execute by fetching from secondary databases and joining in primary.
         """
+        configs = database_configs or {}
+
         # Execute all fetch steps in parallel
         fetch_tasks = []
         for step in plan.steps[:-1]:  # All but last step
-            connector = self.factory.create_connector(step.database_type)
+            connector = self.factory.create_connector(
+                step.database_type,
+                configs.get(step.database_type, {})
+            )
+            connector.connect()
             task = self._execute_step_async(step, connector)
             fetch_tasks.append(task)
 
@@ -628,7 +640,11 @@ class CrossDatabaseExecutor:
         # For now, just return the first result
         # In a full implementation, we'd join the results based on the query
         final_step = plan.steps[-1]
-        primary_connector = self.factory.create_connector(plan.primary_database)
+        primary_connector = self.factory.create_connector(
+            plan.primary_database,
+            configs.get(plan.primary_database, {})
+        )
+        primary_connector.connect()
         final_result = await self._execute_query(primary_connector, final_step.sql)
 
         return final_result
@@ -642,10 +658,16 @@ class CrossDatabaseExecutor:
         step_results: Dict[int, StepResult]
     ) -> pd.DataFrame:
         """Execute query parts in parallel across databases and merge."""
-        # Execute sub-queries in parallel
+        # Execute all query steps in parallel
+        # For UNION/UNION_ALL, all steps are query steps (no merge step)
         tasks = []
-        for step in plan.steps[:-1]:  # All but merge step
-            connector = self.factory.create_connector(step.database_type)
+        configs = database_configs or {}
+        for step in plan.steps:  # Process ALL steps
+            connector = self.factory.create_connector(
+                step.database_type,
+                configs.get(step.database_type, {})
+            )
+            connector.connect()
             task = self._execute_step_async(step, connector)
             tasks.append(task)
 

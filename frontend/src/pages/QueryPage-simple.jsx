@@ -339,7 +339,14 @@ function QueryPage() {
                       </Box>
                     ) : (
                       <Alert severity="info">
-                        The query executed successfully but returned no results.
+                        <Typography variant="body2" fontWeight="medium">
+                          The query executed successfully but returned no results.
+                        </Typography>
+                        {result.empty_result_note && (
+                          <Typography variant="body2" sx={{ mt: 1 }}>
+                            {result.empty_result_note}
+                          </Typography>
+                        )}
                       </Alert>
                     )}
 

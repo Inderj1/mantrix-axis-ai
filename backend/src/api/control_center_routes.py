@@ -426,11 +426,11 @@ async def get_data_sources():
             from ..db.mongodb_client import get_mongodb_client
             from bson import ObjectId
 
-            mongo_client = get_mongodb_client()
-            db = mongo_client.get_database()
+            mongo_client = await get_mongodb_client()
+            db = mongo_client.db
             connectors_collection = db["database_connectors"]
 
-            external_connectors = list(connectors_collection.find())
+            external_connectors = await connectors_collection.find().to_list(length=None)
 
             for connector in external_connectors:
                 connector_data = {

@@ -4,6 +4,7 @@ import { Box, Paper, Typography, CssBaseline } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import { sapFioriTheme } from './themes/sapFioriTheme';
 import { AuthProvider } from './contexts/AuthContext';
+// ConversationContext replaced by Zustand store (stores/conversationStore.js)
 import Layout from './components/Layout';
 import QueryPage from './pages/QueryPage-simple';
 import SimpleChatInterface from './components/SimpleChatInterface';
@@ -44,9 +45,9 @@ function App() {
 
   return (
     <AuthProvider>
-      <ThemeProvider theme={sapFioriTheme}>
-        <CssBaseline />
-        <Routes>
+        <ThemeProvider theme={sapFioriTheme}>
+          <CssBaseline />
+          <Routes>
         {/* Public routes */}
         <Route path="/" element={<HomePage />} />
 
@@ -205,8 +206,8 @@ function App() {
             </Box>
           }
         />
-      </Routes>
-      </ThemeProvider>
+          </Routes>
+        </ThemeProvider>
     </AuthProvider>
   );
 }

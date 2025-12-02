@@ -164,14 +164,26 @@ class QuerySuggestionService:
         self,
         original_query: str,
         generated_sql: str,
-        performance_stats: Optional[Dict[str, Any]] = None
+        performance_stats: Optional[Dict[str, Any]] = None,
+        execution_error: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Suggest improvements to the query based on SQL analysis."""
+        """Suggest improvements to the query based on SQL analysis.
+
+        Note: Error-specific analysis is now handled by ErrorCorrectionAgent
+        which provides detailed error_analysis in the response. This method
+        focuses on performance and query optimization suggestions.
+        """
         improvements = []
-        
+
+        # Skip suggestions if there was an execution error
+        # (error analysis is handled by ErrorCorrectionAgent)
+        if execution_error:
+            return improvements
+
         # Analyze the generated SQL
         sql_upper = generated_sql.upper()
-        
+        query_lower = original_query.lower()
+
         # Check for SELECT *
         if "SELECT *" in sql_upper:
             improvements.append({
@@ -180,16 +192,31 @@ class QuerySuggestionService:
                 "impact": "Reduces data transfer and improves query speed",
                 "example": "Instead of 'show all customer data', try 'show customer name and total purchases'"
             })
-        
-        # Check for missing LIMIT
-        if "LIMIT" not in sql_upper and any(word in original_query.lower() for word in ["show", "list", "display"]):
+
+        # Check for missing LIMIT - but be smarter about implicit limits
+        has_explicit_limit = "LIMIT" in sql_upper or "TOP " in sql_upper
+        has_implicit_limit = any(word in query_lower for word in [
+            "top ", "first ", "single", " one ", "latest", "most recent",
+            "highest", "lowest", "best", "worst"
+        ])
+        # Check for specific ID lookups (e.g., "show order 12345")
+        has_specific_id = any(word in query_lower for word in ["id ", "number ", "code "])
+
+        # Only suggest limit if: no limit, no implicit limit, and query is for listing data
+        list_query_words = ["show", "list", "display", "all", "every"]
+        is_list_query = any(word in query_lower for word in list_query_words)
+
+        if (not has_explicit_limit
+            and not has_implicit_limit
+            and not has_specific_id
+            and is_list_query):
             improvements.append({
                 "type": "performance",
                 "suggestion": "Add a limit to your query",
                 "impact": "Prevents retrieving too much data",
                 "example": f"{original_query} (limit to 100 results)"
             })
-        
+
         # Check for expensive operations without filters
         if "JOIN" in sql_upper and "WHERE" not in sql_upper:
             improvements.append({
@@ -198,7 +225,7 @@ class QuerySuggestionService:
                 "impact": "Significantly reduces query execution time",
                 "example": "Add a date range or specific conditions"
             })
-        
+
         # Suggest using materialized views if available
         if performance_stats and performance_stats.get("bytes_processed", 0) > 1_000_000_000:  # 1GB
             improvements.append({
@@ -207,9 +234,9 @@ class QuerySuggestionService:
                 "impact": "Could reduce query time by 90% or more",
                 "example": "Ask your admin about creating a pre-aggregated view for this data"
             })
-        
+
         return improvements
-    
+
     def _is_incomplete_query(self, query: str) -> bool:
         """Check if the query appears to be incomplete."""
         # Very short queries

@@ -101,7 +101,9 @@ ORDER BY current_inventory ASC"""
         column_mappings: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         database_type: str = 'bigquery',
         database_name: str = 'BigQuery',
-        dialect_guide: str = ''
+        dialect_guide: str = '',
+        database_config: Optional[Dict[str, Any]] = None,
+        persona_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Generate SQL query from natural language using table schemas."""
         logger.info(f"=== Starting SQL generation ===")
@@ -120,8 +122,12 @@ ORDER BY current_inventory ASC"""
 
         try:
             logger.info("Building system prompt...")
-            system_prompt = self._build_system_prompt(financial_context)
-            logger.info("System prompt built successfully")
+            system_prompt = self._build_system_prompt(
+                financial_context,
+                database_config=database_config,
+                persona_context=persona_context
+            )
+            logger.info(f"System prompt built successfully (project={database_config.get('project_id') if database_config else 'default'}, persona={persona_context.get('role_display_name') if persona_context else 'default'})")
 
             # Use provided examples or default few-shot examples
             logger.info("Getting relevant examples...")
@@ -345,11 +351,306 @@ ORDER BY current_inventory ASC"""
             )
             error_result["sql"] = None
             return error_result
-    
-    def _build_system_prompt(self, financial_context: Optional[Dict[str, Any]] = None) -> str:
-        base_prompt = f"""You are an expert SQL query generator for Google BigQuery with the persona of a seasoned Financial Analyst.
 
-PERSONA - Financial Analyst:
+    def generate_cross_connector_sql(
+        self,
+        user_query: str,
+        schemas_by_connector: Dict[str, List[Dict[str, Any]]],
+        connector_metadata: Dict[str, Dict[str, Any]],
+        financial_context: Optional[Dict[str, Any]] = None,
+        business_context: Optional[Dict[str, Any]] = None,
+        conversation_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate SQL for cross-connector queries (multiple databases/projects).
+
+        When user has multiple connectors enabled (e.g., two BigQuery projects, or
+        BigQuery + Snowflake), this method generates separate queries for each
+        connector and specifies how to join the results.
+
+        Args:
+            user_query: Natural language query from user
+            schemas_by_connector: Dict mapping connector_id -> list of table schemas
+            connector_metadata: Dict mapping connector_id -> {database_type, project, dataset}
+            financial_context: Optional financial context
+            business_context: Optional business context
+            conversation_context: Optional conversation history
+
+        Returns:
+            Dict with:
+                - requires_cross_connector: bool
+                - connector_queries: Dict[connector_id, {sql, tables_used}]
+                - join_specification: {type, left_connector_id, right_connector_id, left_key, right_key}
+                - explanation: str
+        """
+        logger.info(
+            "=== Starting cross-connector SQL generation ===",
+            user_query=user_query[:100],
+            connector_count=len(schemas_by_connector),
+            connector_ids=list(schemas_by_connector.keys())
+        )
+
+        # Build connector-aware prompt
+        connector_schemas_text = self._build_connector_schemas_prompt(
+            schemas_by_connector, connector_metadata
+        )
+
+        # Determine SQL dialects involved
+        dialects = set(m.get('database_type', 'bigquery') for m in connector_metadata.values())
+        dialect_note = ""
+        if len(dialects) > 1:
+            dialect_note = f"""
+IMPORTANT - Multiple SQL Dialects:
+This query spans multiple database types: {', '.join(dialects)}
+Each connector_query MUST use the correct SQL dialect for that connector's database type.
+- BigQuery: Uses backticks for identifiers, STRUCT types, DATE functions
+- Snowflake: Uses double quotes for identifiers, VARIANT for JSON
+- PostgreSQL: Standard SQL, uses double quotes for identifiers
+"""
+
+        system_prompt = f"""You are an expert SQL query generator that works with MULTIPLE database connectors.
+
+{dialect_note}
+
+CROSS-CONNECTOR QUERY RULES:
+1. If the user's question can be answered from a SINGLE connector, set requires_cross_connector=false
+2. If data from MULTIPLE connectors is needed, generate SEPARATE queries for each connector
+3. Each connector_query must be valid SQL for that connector's database type
+4. Specify join_specification ONLY if results need to be joined (not for simple unions)
+5. For JOINs, identify the key columns that link data between connectors
+
+AVAILABLE CONNECTORS AND TABLES:
+{connector_schemas_text}
+"""
+
+        user_prompt = f"""User Question: {user_query}
+
+Analyze this question and determine:
+1. Can it be answered from a single connector? If yes, which one?
+2. Does it require data from multiple connectors? If yes, how should they be combined?
+
+Use the generate_cross_connector_query tool to provide your response."""
+
+        # Define the cross-connector tool schema
+        cross_connector_tool = {
+            "name": "generate_cross_connector_query",
+            "description": "Generate queries for cross-connector scenarios (multiple databases/projects)",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "requires_cross_connector": {
+                        "type": "boolean",
+                        "description": "True if query requires data from multiple connectors"
+                    },
+                    "single_connector_id": {
+                        "type": "string",
+                        "description": "If requires_cross_connector=false, the connector_id to use"
+                    },
+                    "connector_queries": {
+                        "type": "object",
+                        "description": "SQL query for each connector_id involved",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "sql": {
+                                    "type": "string",
+                                    "description": "SQL query for this connector (use correct dialect)"
+                                },
+                                "tables_used": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Tables referenced in this query"
+                                },
+                                "database_type": {
+                                    "type": "string",
+                                    "description": "Database type for this connector"
+                                }
+                            },
+                            "required": ["sql", "tables_used", "database_type"]
+                        }
+                    },
+                    "join_specification": {
+                        "type": "object",
+                        "description": "How to join results from multiple connectors (only if cross-connector JOIN needed)",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["INNER", "LEFT", "RIGHT", "FULL", "UNION", "UNION_ALL"],
+                                "description": "Join type"
+                            },
+                            "left_connector_id": {
+                                "type": "string",
+                                "description": "Connector ID for left side of join"
+                            },
+                            "right_connector_id": {
+                                "type": "string",
+                                "description": "Connector ID for right side of join"
+                            },
+                            "left_key": {
+                                "type": "string",
+                                "description": "Column name from left connector for join key"
+                            },
+                            "right_key": {
+                                "type": "string",
+                                "description": "Column name from right connector for join key"
+                            }
+                        }
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "description": "Explanation of the query strategy"
+                    }
+                },
+                "required": ["requires_cross_connector", "explanation"]
+            }
+        }
+
+        try:
+            if self.use_openai:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    functions=[{
+                        "name": "generate_cross_connector_query",
+                        "description": cross_connector_tool["description"],
+                        "parameters": cross_connector_tool["input_schema"]
+                    }],
+                    function_call={"name": "generate_cross_connector_query"},
+                    temperature=0,
+                    max_tokens=4000
+                )
+                if response.choices[0].message.function_call:
+                    result = json.loads(response.choices[0].message.function_call.arguments)
+                else:
+                    raise ValueError("No function call in OpenAI response")
+            else:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4000,
+                    temperature=0,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    tools=[cross_connector_tool],
+                    tool_choice={"type": "tool", "name": "generate_cross_connector_query"}
+                )
+
+                tool_use = None
+                for content in response.content:
+                    if content.type == "tool_use" and content.name == "generate_cross_connector_query":
+                        tool_use = content
+                        break
+
+                if tool_use and hasattr(tool_use, 'input'):
+                    result = tool_use.input
+                else:
+                    raise ValueError("No tool use in Anthropic response")
+
+            logger.info(
+                "Cross-connector SQL generation completed",
+                requires_cross_connector=result.get("requires_cross_connector"),
+                connector_queries=list(result.get("connector_queries", {}).keys()) if result.get("connector_queries") else []
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to generate cross-connector SQL: {e}")
+            return {
+                "requires_cross_connector": False,
+                "error": str(e),
+                "explanation": f"Error generating cross-connector query: {e}"
+            }
+
+    def _build_connector_schemas_prompt(
+        self,
+        schemas_by_connector: Dict[str, List[Dict[str, Any]]],
+        connector_metadata: Dict[str, Dict[str, Any]]
+    ) -> str:
+        """
+        Build prompt with RDF-enriched schema data grouped by connector.
+
+        Enhanced format includes:
+        - Business domains from RDF
+        - Row count/size hints
+        - Column stats (PK/FK, selectivity, indexes)
+        - JOIN relationships
+        """
+        lines = []
+
+        for connector_id, schemas in schemas_by_connector.items():
+            meta = connector_metadata.get(connector_id, {})
+            db_type = meta.get('database_type', 'unknown')
+            project = meta.get('project', '')
+            dataset = meta.get('dataset', meta.get('schema', ''))
+
+            # Connector header
+            location = f"{project}.{dataset}" if project and dataset else (project or dataset or '')
+            header = f"[CONNECTOR: {connector_id} ({db_type}"
+            if location:
+                header += f" - {location}"
+            header += ")]"
+            lines.append(header)
+            lines.append("")
+
+            # Format each table with RDF data
+            for schema in schemas:
+                lines.append(self._format_schema_with_rdf(schema))
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _build_system_prompt(self, financial_context: Optional[Dict[str, Any]] = None,
+                             database_config: Optional[Dict[str, Any]] = None,
+                             database_type: str = "bigquery",
+                             persona_context: Optional[Dict[str, Any]] = None) -> str:
+        # Get database type from config, fallback to parameter, then default to bigquery
+        db_type = database_config.get('database_type', database_type) if database_config else database_type
+
+        # Database-specific naming
+        db_names = {
+            "bigquery": "Google BigQuery",
+            "snowflake": "Snowflake",
+            "postgresql": "PostgreSQL",
+            "redshift": "Amazon Redshift",
+            "databricks": "Databricks"
+        }
+        db_name = db_names.get(db_type, db_type.title())
+
+        # Get persona from context, default to Finance Analyst
+        if persona_context:
+            persona_name = persona_context.get('role_display_name', 'Financial Analyst')
+            persona_additions = persona_context.get('system_prompt_additions', '')
+        else:
+            persona_name = 'Financial Analyst'
+            persona_additions = ''
+
+        # Get project/dataset from database_config, fallback to settings
+        project_id = database_config.get('project_id', settings.google_cloud_project) if database_config else settings.google_cloud_project
+        dataset_id = database_config.get('dataset_id', settings.bigquery_dataset) if database_config else settings.bigquery_dataset
+
+        # Database-specific table qualification rules
+        if db_type == "bigquery":
+            table_qual_rule = f"ALWAYS qualify table names with backticks: `{project_id}.{dataset_id}.table_name`"
+            table_qual_example = f"`{project_id}.{dataset_id}.table`"
+        elif db_type == "snowflake":
+            table_qual_rule = f"Use three-part names WITHOUT backticks: {project_id}.{dataset_id}.TABLE_NAME (Snowflake is case-insensitive, uppercase is conventional)"
+            table_qual_example = f"{project_id}.{dataset_id}.TABLE"
+        elif db_type in ("postgresql", "redshift"):
+            table_qual_rule = f"Use schema-qualified names: {dataset_id}.table_name"
+            table_qual_example = f"{dataset_id}.table"
+        elif db_type == "databricks":
+            table_qual_rule = f"Use catalog.schema.table format: {project_id}.{dataset_id}.table_name"
+            table_qual_example = f"{project_id}.{dataset_id}.table"
+        else:
+            table_qual_rule = "Use fully-qualified table names appropriate for this database"
+            table_qual_example = "database.schema.table"
+
+        base_prompt = f"""You are an expert SQL query generator for {db_name} with the persona of a seasoned {persona_name}.
+
+PERSONA - {persona_name}:
 - You have deep expertise in financial analysis, accounting principles, and business metrics
 - You understand financial terminology: EBITDA, COGS, gross margin, contribution margin, variance analysis
 - You think in terms of P&L statements, balance sheets, and cash flow
@@ -406,7 +707,7 @@ You have deep understanding of General Ledger accounting concepts and practices:
    - Favorable vs unfavorable variances (revenue up = favorable, expenses up = unfavorable)
    - Period-over-period analysis requires consistent account selection
 
-Your task is to convert natural language questions into optimized BigQuery SQL queries that deliver financial insights.
+Your task is to convert natural language questions into optimized {db_name} SQL queries that deliver financial insights.
 
 !!!! ABSOLUTELY CRITICAL - REVENUE CALCULATION RULES !!!!
 THIS IS THE MOST IMPORTANT RULE - FOLLOW EXACTLY:
@@ -435,22 +736,15 @@ Revenue column mapping:
 - "gross sales" → SUM(COALESCE(Gross_Sales, 0))
 
 Rules:
-1. Generate valid BigQuery SQL syntax
-2. ALWAYS qualify table names with the dataset: `{settings.google_cloud_project}.{settings.bigquery_dataset}.table_name`
-3. IMPORTANT: If a table name contains hyphens or special characters, wrap the ENTIRE qualified table name in backticks
+1. Generate valid {db_name} SQL syntax
+2. {table_qual_rule}
+3. IMPORTANT: Use the table's "Qualified Name" shown in the schema below - it contains the correct database-specific format
 4. ⚠️ CRITICAL - AVOID UNNECESSARY JOINS & PREFER SINGLE-TABLE QUERIES:
     - FIRST: Check if ALL required columns exist in a SINGLE table - if yes, use ONLY that table (no joins!)
-    - If columns exist in multiple tables, prefer the SMALLEST/MOST SPECIFIC table:
-      * For sales order queries → use sales_order_cockpit_export (3.8M rows) NOT dataset_25m_table (72M rows)
-      * For customer analysis → use customer_master_analysis (2.9K rows) NOT dataset_25m_table
-      * For product queries → use product_customer_matrix first, then dataset_25m_table if needed
+    - If columns exist in multiple tables, prefer the SMALLEST/MOST SPECIFIC table based on row counts in the schema
     - JOINs on large tables (>1M rows) are EXTREMELY EXPENSIVE - avoid unless absolutely necessary
-    - Example scenario:
-      * Query: "List sales orders where delivered quantity is 0"
-      * Check: sales_order_cockpit_export has ActualQuantityDelivered_InSalesUnits_LFIMG ✅
-      * Result: Use ONLY sales_order_cockpit_export, NO JOIN to dataset_25m_table ✅
     - Before adding a JOIN, ask yourself: "Do I really need data from the second table, or does the first table have everything?"
-    - If you're tempted to join dataset_25m_table (72M rows), STOP and verify the columns don't exist elsewhere
+    - IMPORTANT: Use ONLY tables provided in the schema context below - do NOT reference any tables not explicitly listed
 5. Use CTEs for complex queries to improve readability
 6. Consider using APPROX functions for large datasets when exact results aren't required
 7. Use proper date/timestamp functions for time-based queries
@@ -511,29 +805,14 @@ Rules:
       * Example: "add customer name" → Add ONLY Customer_Name column (NOT profit, margin, etc.)
       * Example: "add profit and margin" → Add ONLY Profit and Margin columns
       * The word "add" means append ONE column, not rebuild the entire result set
-17. For GL account total amount queries:
-    - Use dataset_25m_table as the primary table
+17. For GL account queries:
+    - Use the table containing GL_Account column from the schema provided
     - Always include GL_Account in SELECT and GROUP BY
-    - Use ROUND(SUM(GL_Amount_in_CC), 2) for total amounts
-    - Filter by Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 YEAR) unless otherwise specified
-    - Order by GL_Account for consistency
-    - IMPORTANT: GL accounts have format 'ACA1/XXXXXXXX' (e.g., 'ACA1/41000000')
-    - When filtering specific GL accounts, use the full format: WHERE GL_Account = 'ACA1/41000000'
-    - For partial matches, use: WHERE GL_Account LIKE '%41000000'
-18. CRITICAL - TABLE JOIN RULES (Data Format Transformations):
-    - When joining dataset_25m_table with sales_order_cockpit_export:
-      * COPA table (dataset_25m_table) has Sales_Order_KDAUF with leading zeros (e.g., '0000507250')
-      * Cockpit table (sales_order_cockpit_export) has SalesDocument_VBELN without leading zeros (e.g., '507250')
-      * MUST use: LTRIM(copa.Sales_Order_KDAUF, '0') = cockpit.SalesDocument_VBELN
-      * DO NOT use direct equality: copa.Sales_Order_KDAUF = cockpit.SalesDocument_VBELN (this will match < 0.01% of records!)
-    - Correct JOIN example:
-      ```sql
-      FROM dataset_25m_table copa
-      LEFT JOIN sales_order_cockpit_export cockpit
-        ON LTRIM(copa.Sales_Order_KDAUF, '0') = cockpit.SalesDocument_VBELN
-      ```
-    - This applies to ALL queries joining these two tables
-    - Expected match rate with LTRIM: ~85-95% of COPA records
+    - Use ROUND(SUM(amount_column), 2) for total amounts
+    - Apply appropriate date filters based on available date columns
+18. TABLE JOIN RULES:
+    - When joining tables, use appropriate key columns from the schema
+    - The system will automatically detect and fix format mismatches (e.g., leading zeros) in JOINs
 
 19. CRITICAL - COLUMN FORMATTING RULES (Make Results Readable):
     ⭐ ALWAYS FORMAT MONETARY VALUES, PERCENTAGES, AND COUNTS ⭐
@@ -689,18 +968,16 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
 
             base_prompt += financial_rules
 
+        # Add persona-specific instructions from user profile
+        if persona_additions:
+            base_prompt += f"""
+
+=== ROLE-SPECIFIC GUIDANCE ===
+{persona_additions}"""
+
         return base_prompt
 
-    def _load_temporal_context(self) -> Optional[Dict[str, Any]]:
-        """Load temporal context from JSON file."""
-        try:
-            temporal_file = Path(__file__).parent.parent.parent / "temporal_context.json"
-            if temporal_file.exists():
-                with open(temporal_file, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.warning(f"Failed to load temporal context: {e}")
-        return None
+    # Note: _load_temporal_context removed - temporal context now comes from connector metadata
 
     def _build_user_prompt(
         self,
@@ -729,18 +1006,8 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
             prompt_parts.append("## 🗄️ TARGET DATABASE: BigQuery\n\n")
             prompt_parts.append("=" * 80 + "\n\n")
 
-        # Load temporal context for date handling
-        temporal_context = self._load_temporal_context()
-        if temporal_context:
-            prompt_parts.append("## ⏰ TEMPORAL CONTEXT & DATA AVAILABILITY\n")
-            prompt_parts.append(f"**CRITICAL**: Data is available through **{temporal_context['data_availability']['dataset_25m_table']['max_date']}** ONLY.\n\n")
-            prompt_parts.append("### Date Handling Instructions:\n")
-            for hint in temporal_context['prompt_hints']['important']:
-                prompt_parts.append(f"- {hint}\n")
-            prompt_parts.append("\n### Relative Date Mappings:\n")
-            for term, mapping in temporal_context['temporal_guidance']['relative_date_handling'].items():
-                prompt_parts.append(f"- **'{term}'**: {mapping}\n")
-            prompt_parts.append("\n" + "=" * 80 + "\n\n")
+        # Note: Temporal context is now derived from connector metadata, not hardcoded JSON
+        # Data availability should come from the schema's metadata when available
 
         # If this is a follow-up query, prepend context-aware prompt
         if conversation_context and conversation_context.get("is_follow_up"):
@@ -757,22 +1024,12 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
             prompt_parts.append(context_prompt)
             prompt_parts.append("\n" + "=" * 80 + "\n")
 
-        # Add table schemas
-        prompt_parts.append("Available tables and their schemas:")
+        # Add table schemas with RDF enrichment (business domains, size, relationships, column stats)
+        prompt_parts.append("AVAILABLE TABLES:")
+        schema_sections = []
         for schema in schemas:
-            table_info = f"\nTable: {schema['table_name']}"
-            if schema.get('description'):
-                table_info += f"\nDescription: {schema['description']}"
-            
-            table_info += "\nColumns:"
-            for col in schema['columns']:
-                col_info = f"\n  - {col['name']} ({col['type']})"
-                if col.get('description'):
-                    col_info += f": {col['description']}"
-                col_info += f" {'[REQUIRED]' if not col['is_nullable'] else '[NULLABLE]'}"
-                table_info += col_info
-            
-            prompt_parts.append(table_info)
+            schema_sections.append(self._format_schema_with_rdf(schema))
+        prompt_parts.append("\n\n".join(schema_sections))
 
         # Add JOIN hints if multiple tables are involved
         if join_hints and len(join_hints) > 0:
@@ -819,21 +1076,11 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
                     for col in key_columns:
                         prompt_parts.append(f"    - {col} → Use {table_alias}.{col}")
 
-            # Add JOIN example
-            prompt_parts.append("\n\nEXAMPLE MULTI-TABLE QUERY PATTERN:")
-            prompt_parts.append("```sql")
-            prompt_parts.append("SELECT")
-            prompt_parts.append("    copa.Gross_Revenue,")
-            prompt_parts.append("    copa.Customer,")
-            prompt_parts.append("    cockpit.DocumentDate_AUDAT,")
-            prompt_parts.append("    cockpit.Delivery_VBELN")
-            prompt_parts.append("FROM `project.dataset.dataset_25m_table` copa")
-            prompt_parts.append("LEFT JOIN `project.dataset.sales_order_cockpit_export` cockpit")
-            prompt_parts.append("    ON LTRIM(copa.Sales_Order_KDAUF, '0') = cockpit.SalesDocument_VBELN")
-            prompt_parts.append("WHERE copa.Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)")
-            prompt_parts.append("```")
-            prompt_parts.append("\n✓ REMEMBER: Use table aliases (copa, cockpit) to qualify ALL column references")
-            prompt_parts.append("✓ REMEMBER: Choose the correct table for each column based on the guide above")
+            # Add multi-table query reminders
+            prompt_parts.append("\n\n⚠️ MULTI-TABLE QUERY RULES:")
+            prompt_parts.append("✓ Use table aliases (e.g., t1, t2) to qualify ALL column references")
+            prompt_parts.append("✓ Choose the correct table for each column based on the schema above")
+            prompt_parts.append("✓ IMPORTANT: Use ONLY tables listed in the schema - do NOT reference any other tables")
 
         # Add examples if provided
         if examples:
@@ -954,6 +1201,126 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
             return ''.join(p[0] for p in parts[:3])
         else:
             return table_name[:4]
+
+    def _get_size_hint(self, row_count: int) -> str:
+        """Convert row count to human-readable size hint (no optimization advice)."""
+        if not row_count:
+            return "unknown size"
+        elif row_count < 1000:
+            return f"~{row_count:,} rows"
+        elif row_count < 1000000:
+            return f"~{row_count:,} rows"
+        else:
+            return f"~{row_count/1000000:.1f}M rows"
+
+    def _format_column_with_stats(self, col: Dict[str, Any]) -> str:
+        """Format column with RDF statistics."""
+        name = col.get('name', col.get('column_name', ''))
+        dtype = col.get('type', col.get('data_type', ''))
+
+        hints = []
+        stats = col.get('stats', {})
+
+        # Key indicators
+        if col.get('is_primary_key') or stats.get('isPrimaryKey'):
+            hints.append("PK")
+        if col.get('is_foreign_key') or stats.get('isForeignKey'):
+            hints.append("FK")
+        if col.get('has_index') or stats.get('hasIndex'):
+            hints.append("indexed")
+
+        # Selectivity (good for WHERE)
+        selectivity = stats.get('selectivity', 0)
+        if selectivity and selectivity < 0.01:
+            hints.append("high selectivity")
+        elif selectivity and selectivity > 0.9:
+            hints.append("low cardinality")
+
+        result = f"{name} ({dtype})"
+        if hints:
+            result += f" [{', '.join(hints)}]"
+        return result
+
+    def _get_table_relationships(self, schema: Dict[str, Any]) -> List[str]:
+        """Extract JOIN relationships from schema."""
+        rels = []
+
+        # Direct relationships (from RDF)
+        for rel in schema.get('relationships', []):
+            target = rel.get('target_table', '')
+            col = rel.get('join_column', '')
+            if target and col:
+                rels.append(f"{target}.{col}")
+
+        # Infer from FK columns
+        for col in schema.get('columns', []):
+            if col.get('is_foreign_key') or col.get('stats', {}).get('isForeignKey'):
+                col_name = col.get('name', '')
+                if col_name.endswith('_id'):
+                    inferred = col_name[:-3].upper() + 'S'
+                    if f"{inferred}.{col_name}" not in rels:
+                        rels.append(f"{inferred}.{col_name} (inferred)")
+
+        return rels
+
+    def _format_schema_with_rdf(self, schema: Dict[str, Any]) -> str:
+        """Format a single schema with all RDF-enriched data."""
+        lines = []
+        table_name = schema.get('table_name', 'unknown')
+        db_type = schema.get('database_type', 'bigquery')
+
+        # Build fully-qualified table name based on database type
+        dataset = schema.get('dataset', schema.get('schema', ''))
+        project = schema.get('project', schema.get('database', ''))
+
+        if db_type == 'bigquery':
+            qualified_name = f"`{project}.{dataset}.{table_name}`" if project and dataset else table_name
+        elif db_type == 'snowflake':
+            # Snowflake: DATABASE.SCHEMA.TABLE (no backticks, uppercase convention)
+            qualified_name = f"{project}.{dataset}.{table_name}" if project and dataset else table_name
+        elif db_type in ('postgresql', 'redshift'):
+            qualified_name = f"{dataset}.{table_name}" if dataset else table_name
+        elif db_type == 'databricks':
+            qualified_name = f"{project}.{dataset}.{table_name}" if project and dataset else table_name
+        else:
+            qualified_name = table_name
+
+        # Table header
+        lines.append(f"TABLE: {table_name}")
+        lines.append(f"  Qualified Name: {qualified_name}")
+        lines.append(f"  Database Type: {db_type}")
+
+        # Business domains
+        domains = schema.get('business_domains', [])
+        if isinstance(domains, str):
+            try:
+                domains = json.loads(domains)
+            except:
+                domains = []
+        if domains:
+            lines.append(f"  Domain: {', '.join(domains)}")
+
+        # Size hint
+        row_count = schema.get('row_count', 0)
+        lines.append(f"  Size: {self._get_size_hint(row_count)}")
+
+        # Columns with stats
+        lines.append("  Columns:")
+        for col in schema.get('columns', [])[:15]:
+            col_info = self._format_column_with_stats(col)
+            lines.append(f"    - {col_info}")
+
+        if len(schema.get('columns', [])) > 15:
+            lines.append(f"    ... and {len(schema['columns']) - 15} more")
+
+        # Relationships
+        rels = self._get_table_relationships(schema)
+        if rels:
+            lines.append("  Joins with:")
+            for rel in rels[:5]:
+                lines.append(f"    -> {rel}")
+
+        return '\n'.join(lines)
 
     def _parse_llm_response(self, content: str) -> Dict[str, Any]:
         """Parse the LLM response to extract SQL and metadata."""

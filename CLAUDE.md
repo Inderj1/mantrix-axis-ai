@@ -414,6 +414,33 @@ POSTGRES_DATABASE=mantrix_madison
 4. Check cache stats: `GET /api/v1/cache/stats`
 5. Verify knowledge graph: Run `backend/test_jena_queries.py`
 
+**Checking Backend Logs**:
+```bash
+# Follow logs in real-time
+tail -f logs/backend.log
+
+# Show last 100 lines with errors/warnings highlighted
+tail -100 logs/backend.log | grep -iE --color "error|warning|exception|failed"
+
+# Filter for SQL generation logs
+tail -200 logs/backend.log | grep -iE "SQL|generate_sql|sql_generator|dialect|database_type"
+
+# Filter for persona-related logs
+tail -200 logs/backend.log | grep -iE "persona|role_display_name|system_prompt|user_profile"
+
+# Filter for query execution logs
+tail -200 logs/backend.log | grep -iE "query|execute|POST /api/v1/query|process_query"
+
+# Filter for cache-related logs
+tail -200 logs/backend.log | grep -iE "cache|redis|weaviate"
+
+# Filter for connector/database logs
+tail -200 logs/backend.log | grep -iE "connector|bigquery|snowflake|database_config"
+
+# Show logs with timestamps for last hour (macOS)
+tail -500 logs/backend.log | grep "$(date -v-1H +%Y-%m-%d)"
+```
+
 **Adding Financial Metrics**:
 - Define in `backend/src/core/financial_hierarchy.py`
 - Add SQL templates in `backend/src/core/financial_templates.py`

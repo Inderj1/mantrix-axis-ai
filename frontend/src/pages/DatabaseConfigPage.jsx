@@ -56,6 +56,9 @@ import {
   ContentCopy as CopyIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
+  Sync as SyncIcon,
+  HourglassEmpty as PendingIcon,
+  CloudSync as SyncingIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
@@ -68,7 +71,7 @@ const DATABASE_TYPES = {
     supportsOAuth: true,
     fields: [
       { name: 'project_id', label: 'Project ID', required: true, type: 'text', placeholder: 'my-gcp-project' },
-      { name: 'dataset', label: 'Dataset', required: true, type: 'text', placeholder: 'my_dataset' },
+      { name: 'dataset_id', label: 'Dataset', required: true, type: 'text', placeholder: 'my_dataset' },
       { name: 'location', label: 'Location', required: false, type: 'text', default: 'US' },
       {
         name: 'auth_method',
@@ -116,14 +119,52 @@ const DATABASE_TYPES = {
     icon: '❄️',
     color: '#29B5E8',
     category: 'Cloud Data Warehouse',
+    supportsOAuth: false,
     fields: [
-      { name: 'account', label: 'Account', required: true, type: 'text' },
+      // Account is always required
+      { name: 'account', label: 'Account', required: true, type: 'text', placeholder: 'xy12345.us-east-1', helpText: 'Your Snowflake account identifier' },
+      // Auth method selector
+      {
+        name: 'auth_method',
+        label: 'Authentication Method',
+        required: true,
+        type: 'select',
+        default: 'password',
+        options: [
+          { value: 'password', label: 'Username & Password' },
+          { value: 'keypair', label: 'Key Pair (RSA Private Key)' },
+          { value: 'pat', label: 'Programmatic Access Token (PAT)' },
+        ],
+      },
+      // Username (shown for all auth methods)
       { name: 'user', label: 'Username', required: true, type: 'text' },
-      { name: 'password', label: 'Password', required: true, type: 'password' },
-      { name: 'warehouse', label: 'Warehouse', required: true, type: 'text' },
+      // Password auth fields
+      { name: 'password', label: 'Password', required: true, type: 'password', showWhen: { auth_method: 'password' } },
+      // Key-pair auth fields - input method selector
+      {
+        name: 'private_key_input_method',
+        label: 'Private Key Input',
+        type: 'select',
+        default: 'paste',
+        options: [
+          { value: 'paste', label: 'Paste PEM text' },
+          { value: 'upload', label: 'Upload .pem file' },
+        ],
+        showWhen: { auth_method: 'keypair' }
+      },
+      // Key-pair: Paste PEM text
+      { name: 'private_key', label: 'Private Key (PEM format)', required: true, type: 'textarea', rows: 8, placeholder: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----', showWhen: { auth_method: 'keypair', private_key_input_method: 'paste' }, helpText: 'Paste your RSA private key content' },
+      // Key-pair: Upload file
+      { name: 'private_key_file', label: 'Private Key File', required: true, type: 'file', accept: '.pem,.key,.p8', showWhen: { auth_method: 'keypair', private_key_input_method: 'upload' }, helpText: 'Upload your .pem or .p8 key file' },
+      // Key passphrase (optional for both paste and upload)
+      { name: 'private_key_passphrase', label: 'Key Passphrase (optional)', required: false, type: 'password', showWhen: { auth_method: 'keypair' }, helpText: 'If your key is encrypted' },
+      // PAT auth field
+      { name: 'programmatic_access_token', label: 'Access Token', required: true, type: 'password', showWhen: { auth_method: 'pat' }, helpText: 'Generate from Snowflake: Profile → Programmatic Access Tokens' },
+      // Common fields (always shown)
+      { name: 'warehouse', label: 'Warehouse', required: true, type: 'text', placeholder: 'COMPUTE_WH' },
       { name: 'database', label: 'Database', required: true, type: 'text' },
       { name: 'schema', label: 'Schema', required: false, type: 'text', default: 'PUBLIC' },
-      { name: 'role', label: 'Role', required: false, type: 'text' },
+      { name: 'role', label: 'Role', required: false, type: 'text', helpText: 'Optional role to assume' },
     ],
   },
   postgresql: {
@@ -239,10 +280,27 @@ const DatabaseConfigPage = () => {
   const handleEditConnector = (connector) => {
     setEditMode(true);
     setSelectedConnector(connector);
+    // Populate form with existing connector data
+    // API returns connector_type, but we also support type as fallback
+    const connectorType = connector.connector_type || connector.type;
+
+    // Filter out masked sensitive values (***) - backend merges, so omitting preserves existing
+    const sensitiveFields = [
+      'password', 'api_key', 'secret', 'credentials', 'private_key',
+      'private_key_passphrase', 'oauth_access_token', 'access_token',
+      'refresh_token', 'programmatic_access_token', 'credentials_json'
+    ];
+    const cleanConfig = { ...(connector.config || {}) };
+    sensitiveFields.forEach(field => {
+      if (cleanConfig[field] === '***') {
+        delete cleanConfig[field];
+      }
+    });
+
     setFormData({
       name: connector.name,
-      type: connector.type,
-      config: connector.config || {},
+      type: connectorType,
+      config: cleanConfig,
     });
     setFormErrors({});
     setDialogOpen(true);
@@ -259,6 +317,73 @@ const DatabaseConfigPage = () => {
     }
   };
 
+  const handleSyncConnector = async (connectorId) => {
+    try {
+      await apiService.syncConnector(connectorId);
+      alert('Schema sync initiated. Check the connector status for progress.');
+      // Reload connectors to show updated status
+      setTimeout(() => loadConnectors(), 1000);
+    } catch (error) {
+      alert(`Failed to sync: ${error.response?.data?.detail || error.message}`);
+    }
+  };
+
+  const handleClearSchemaCache = async () => {
+    if (!window.confirm('This will clear all cached schema data (Jena, Weaviate, Redis). You will need to re-sync connectors after this. Continue?')) {
+      return;
+    }
+    try {
+      const response = await apiService.clearSchemaCache();
+      alert(`Schema cache cleared successfully!\n\nJena: ${response.data.jena_cleared}\nWeaviate: ${response.data.weaviate_cleared}\nRedis: ${response.data.redis_cleared}`);
+    } catch (error) {
+      alert(`Failed to clear cache: ${error.response?.data?.detail || error.message}`);
+    }
+  };
+
+  // Check if a field should be shown based on showWhen condition
+  // Supports multiple conditions (all must be true - AND logic)
+  const shouldShowField = (field) => {
+    if (!field.showWhen) return true;
+
+    // Check ALL conditions (AND logic)
+    return Object.entries(field.showWhen).every(([conditionField, conditionValue]) => {
+      const currentValue = formData.config[conditionField];
+      // Handle array conditions (e.g., showWhen: { auth_method: ['password', 'keypair'] })
+      if (Array.isArray(conditionValue)) {
+        return conditionValue.includes(currentValue);
+      }
+      return currentValue === conditionValue;
+    });
+  };
+
+  const getSyncStatusIcon = (connector) => {
+    const status = connector.sync_status;
+    if (status === 'success') {
+      return (
+        <Tooltip title={`Schema synced: ${connector.metadata?.table_count || 0} tables`}>
+          <CheckCircleIcon sx={{ color: 'success.main', fontSize: 18 }} />
+        </Tooltip>
+      );
+    } else if (status === 'syncing') {
+      return (
+        <Tooltip title="Schema sync in progress...">
+          <SyncingIcon sx={{ color: 'info.main', fontSize: 18 }} className="rotating" />
+        </Tooltip>
+      );
+    } else if (status === 'failed') {
+      return (
+        <Tooltip title={`Sync failed: ${connector.sync_error || 'Unknown error'}`}>
+          <ErrorIcon sx={{ color: 'error.main', fontSize: 18 }} />
+        </Tooltip>
+      );
+    }
+    return (
+      <Tooltip title="Schema not synced yet">
+        <PendingIcon sx={{ color: 'warning.main', fontSize: 18 }} />
+      </Tooltip>
+    );
+  };
+
   const validateForm = () => {
     const errors = {};
 
@@ -270,11 +395,19 @@ const DatabaseConfigPage = () => {
       errors.type = 'Database type is required';
     }
 
+    // Sensitive fields that can be left blank in edit mode (backend preserves existing)
+    const sensitiveFieldTypes = ['password', 'file', 'textarea'];
+
     if (formData.type) {
       const dbConfig = DATABASE_TYPES[formData.type];
       if (dbConfig) {
         dbConfig.fields.forEach(field => {
-          if (field.required && !formData.config[field.name]) {
+          // Only validate fields that are currently visible (respects showWhen conditions)
+          // In edit mode, skip required validation for sensitive fields (they'll use existing values)
+          const isSensitiveField = sensitiveFieldTypes.includes(field.type);
+          const skipRequiredInEdit = editMode && isSensitiveField;
+
+          if (field.required && shouldShowField(field) && !formData.config[field.name] && !skipRequiredInEdit) {
             errors[field.name] = `${field.label} is required`;
           }
         });
@@ -294,7 +427,11 @@ const DatabaseConfigPage = () => {
       if (editMode) {
         await apiService.updateConnector(selectedConnector.id, formData);
       } else {
-        await apiService.createConnector(formData.type, formData.name, formData.config);
+        await apiService.createConnector({
+          connector_type: formData.type,
+          name: formData.name,
+          config: formData.config,
+        });
       }
       setDialogOpen(false);
       loadConnectors();
@@ -310,7 +447,10 @@ const DatabaseConfigPage = () => {
     }
 
     try {
-      const response = await apiService.testConnector(formData.type, formData.config);
+      const response = await apiService.testConnector({
+        connector_type: formData.type,
+        config: formData.config,
+      });
       if (response.data.success) {
         alert('Connection successful!');
       } else {
@@ -349,13 +489,6 @@ const DatabaseConfigPage = () => {
     return <WarningIcon sx={{ color: 'warning.main' }} />;
   };
 
-  // Check if a field should be shown based on showWhen condition
-  const shouldShowField = (field) => {
-    if (!field.showWhen) return true;
-    const [conditionField, conditionValue] = Object.entries(field.showWhen)[0];
-    return formData.config[conditionField] === conditionValue;
-  };
-
   // Handle OAuth flow for BigQuery
   const handleOAuthConnect = async () => {
     try {
@@ -386,7 +519,7 @@ const DatabaseConfigPage = () => {
                 code: event.data.code,
                 state: event.data.state,
                 project_id: formData.config.project_id,
-                dataset: formData.config.dataset,
+                dataset_id: formData.config.dataset_id,
                 name: formData.name,
                 location: formData.config.location || 'US',
               });
@@ -417,7 +550,7 @@ const DatabaseConfigPage = () => {
     if (!dbConfig) return null;
 
     // Check if OAuth is selected for BigQuery
-    const isOAuthSelected = formData.type === 'bigquery' && formData.config.auth_method === 'oauth';
+    const isBigQueryOAuthSelected = formData.type === 'bigquery' && formData.config.auth_method === 'oauth';
 
     return (
       <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -462,9 +595,10 @@ const DatabaseConfigPage = () => {
                   label={field.label}
                   value={formData.config[field.name] || ''}
                   onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                  required={field.required}
+                  required={field.required && !editMode}
                   error={!!formErrors[field.name]}
-                  helperText={formErrors[field.name] || field.helpText}
+                  helperText={formErrors[field.name] || (editMode ? 'Leave blank to keep existing value' : field.helpText)}
+                  placeholder={editMode ? '(unchanged)' : undefined}
                   InputProps={{
                     endAdornment: (
                       <IconButton
@@ -479,40 +613,68 @@ const DatabaseConfigPage = () => {
                     ),
                   }}
                 />
+              ) : field.type === 'textarea' ? (
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={field.rows || 4}
+                  label={field.label}
+                  value={formData.config[field.name] || ''}
+                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                  required={field.required && !editMode}
+                  error={!!formErrors[field.name]}
+                  helperText={formErrors[field.name] || (editMode ? 'Leave blank to keep existing value' : field.helpText)}
+                  placeholder={editMode ? '(leave blank to keep existing)' : field.placeholder}
+                  InputProps={{
+                    sx: { fontFamily: 'monospace', fontSize: '0.85rem' }
+                  }}
+                />
               ) : field.type === 'file' ? (
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     {field.label}
+                    {editMode && (
+                      <Typography component="span" variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+                        (leave empty to keep existing)
+                      </Typography>
+                    )}
                   </Typography>
                   <Button
                     variant="outlined"
                     component="label"
                     fullWidth
                   >
-                    Upload {field.label}
+                    {editMode ? 'Upload New File (optional)' : `Upload ${field.label}`}
                     <input
                       type="file"
                       hidden
-                      accept=".json"
+                      accept={field.accept || '.json'}
                       onChange={(e) => {
                         const file = e.target.files[0];
                         if (file) {
                           const reader = new FileReader();
                           reader.onload = (event) => {
-                            handleFieldChange(field.name, event.target.result);
+                            // For private_key_file, store content in private_key field
+                            const targetField = field.name === 'private_key_file' ? 'private_key' : field.name;
+                            handleFieldChange(targetField, event.target.result);
                           };
                           reader.readAsText(file);
                         }
                       }}
                     />
                   </Button>
-                  {formData.config[field.name] && (
+                  {(formData.config[field.name] || (field.name === 'private_key_file' && formData.config.private_key)) && (
                     <Chip
-                      label="File uploaded"
+                      label={field.name.includes('private_key') ? 'Private key loaded' : 'File uploaded'}
                       size="small"
                       color="success"
                       sx={{ mt: 1 }}
                     />
+                  )}
+                  {field.helpText && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      {field.helpText}
+                    </Typography>
                   )}
                 </Box>
               ) : (
@@ -533,7 +695,7 @@ const DatabaseConfigPage = () => {
         })}
 
         {/* OAuth Connect Button for BigQuery */}
-        {isOAuthSelected && (
+        {isBigQueryOAuthSelected && (
           <Grid item xs={12}>
             <Alert severity="info" sx={{ mb: 2 }}>
               Click the button below to authenticate with your Google account.
@@ -544,7 +706,7 @@ const DatabaseConfigPage = () => {
               color="primary"
               fullWidth
               onClick={handleOAuthConnect}
-              disabled={!formData.name || !formData.config.project_id || !formData.config.dataset}
+              disabled={!formData.name || !formData.config.project_id || !formData.config.dataset_id}
               startIcon={<CloudIcon />}
               sx={{ py: 1.5 }}
             >
@@ -646,6 +808,14 @@ const DatabaseConfigPage = () => {
             Refresh
           </Button>
         </Stack>
+        <Button
+          variant="outlined"
+          color="warning"
+          startIcon={<DeleteIcon />}
+          onClick={handleClearSchemaCache}
+        >
+          Clear Schema Cache
+        </Button>
       </Box>
 
       {/* Connector Cards */}
@@ -664,7 +834,7 @@ const DatabaseConfigPage = () => {
           </Grid>
         ) : (
           connectors.map((connector) => {
-            const dbType = DATABASE_TYPES[connector.type] || {};
+            const dbType = DATABASE_TYPES[connector.connector_type] || DATABASE_TYPES[connector.type] || {};
             return (
               <Grid item xs={12} sm={6} md={4} key={connector.id}>
                 <Card>
@@ -678,21 +848,46 @@ const DatabaseConfigPage = () => {
                           {connector.name}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          {dbType.label || connector.type}
+                          {dbType.label || connector.connector_type || connector.type}
                         </Typography>
                       </Box>
-                      {getStatusIcon(connector.id)}
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        {getSyncStatusIcon(connector)}
+                        {getStatusIcon(connector.id)}
+                      </Box>
                     </Box>
 
                     <Stack spacing={1}>
-                      <Chip
-                        label={dbType.category || 'Database'}
-                        size="small"
-                        variant="outlined"
-                      />
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        <Chip
+                          label={dbType.category || 'Database'}
+                          size="small"
+                          variant="outlined"
+                        />
+                        {connector.sync_status === 'success' && connector.metadata?.table_count > 0 && (
+                          <Chip
+                            label={`${connector.metadata.table_count} tables`}
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                          />
+                        )}
+                        {connector.enabled_for_chat && (
+                          <Chip
+                            label="Chat enabled"
+                            size="small"
+                            color="primary"
+                          />
+                        )}
+                      </Box>
                       <Typography variant="body2" color="text.secondary">
                         Created: {new Date(connector.created_at).toLocaleDateString()}
                       </Typography>
+                      {connector.sync_error && (
+                        <Alert severity="error" sx={{ py: 0, px: 1 }}>
+                          <Typography variant="caption">{connector.sync_error}</Typography>
+                        </Alert>
+                      )}
                     </Stack>
                   </CardContent>
                   <CardActions>
@@ -702,6 +897,14 @@ const DatabaseConfigPage = () => {
                       onClick={() => testConnection(connector.id)}
                     >
                       Test
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={<SyncIcon />}
+                      onClick={() => handleSyncConnector(connector.id)}
+                      disabled={connector.sync_status === 'syncing'}
+                    >
+                      {connector.sync_status === 'syncing' ? 'Syncing...' : 'Sync'}
                     </Button>
                     <Button
                       size="small"

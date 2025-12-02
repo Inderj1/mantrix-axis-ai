@@ -8,11 +8,14 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Allow extra env vars not defined in model
     )
 
     # Anthropic (for NLP-to-SQL system)
     anthropic_api_key: Optional[str] = Field(None, alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-sonnet-4-5-20250929", alias="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-opus-4-5-20251101", alias="ANTHROPIC_MODEL")
+    anthropic_fast_model: str = Field(default="claude-haiku-4-5-20251001", alias="ANTHROPIC_FAST_MODEL")
+    ai_suggestion_timeout_seconds: float = Field(default=5.0, alias="AI_SUGGESTION_TIMEOUT_SECONDS")
 
     # OpenAI (for embeddings)
     openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
@@ -123,6 +126,9 @@ class Settings(BaseSettings):
     cache_result_enabled: bool = Field(
         default=False, alias="CACHE_RESULT_ENABLED"
     )  # Off by default for fresh data
+    cache_weaviate_enabled: bool = Field(
+        default=True, alias="CACHE_WEAVIATE_ENABLED"
+    )  # Cache Weaviate vector search results
 
     # Cache quality settings
     cache_execution_threshold_ms: int = Field(
@@ -143,6 +149,9 @@ class Settings(BaseSettings):
     cache_invalidate_on_pipeline: bool = Field(
         default=True, alias="CACHE_INVALIDATE_ON_PIPELINE"
     )  # Automatically invalidate cache when pipeline updates schemas
+    cache_reject_empty_results: bool = Field(
+        default=True, alias="CACHE_REJECT_EMPTY_RESULTS"
+    )  # Don't cache queries that return zero results
 
     # Cache quality tier TTLs (in seconds)
     cache_ttl_gold: int = Field(
@@ -170,6 +179,8 @@ class Settings(BaseSettings):
     snowflake_database: Optional[str] = Field(None, alias="SNOWFLAKE_DATABASE")
     snowflake_schema: Optional[str] = Field(default="PUBLIC", alias="SNOWFLAKE_SCHEMA")
     snowflake_role: Optional[str] = Field(None, alias="SNOWFLAKE_ROLE")
+    # Snowflake authentication method: 'password' (default), 'keypair', or 'pat'
+    snowflake_auth_method: str = Field(default="password", alias="SNOWFLAKE_AUTH_METHOD")
 
     # External PostgreSQL Configuration (for customer databases, separate from internal)
     external_postgres_host: Optional[str] = Field(None, alias="EXTERNAL_POSTGRES_HOST")

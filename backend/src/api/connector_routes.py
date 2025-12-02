@@ -48,7 +48,11 @@ def sanitize_config(config: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Sanitized config with sensitive fields masked
     """
-    sensitive_fields = ['password', 'api_key', 'secret', 'credentials', 'private_key']
+    sensitive_fields = [
+        'password', 'api_key', 'secret', 'credentials', 'private_key',
+        'private_key_passphrase', 'oauth_access_token', 'access_token', 'refresh_token',
+        'programmatic_access_token'
+    ]
     sanitized = config.copy()
 
     for field in sensitive_fields:
@@ -82,13 +86,25 @@ def serialize_connector(connector_doc: Dict[str, Any]) -> Dict[str, Any]:
             "total_size": connector_doc.get('metadata', {}).get('total_size', 'Unknown'),
             "last_sync": connector_doc.get('metadata', {}).get('last_sync')
         },
-        "organization_id": connector_doc.get('organization_id')
+        "organization_id": connector_doc.get('organization_id'),
+        # Schema sync status
+        "sync_status": connector_doc.get('sync_status', 'pending'),
+        "sync_error": connector_doc.get('sync_error'),
+        "sync_started_at": connector_doc.get('sync_started_at'),
+        "sync_completed_at": connector_doc.get('sync_completed_at')
     }
 
 
 async def trigger_pipeline_for_connector(connector_id: str, connector_type: str, organization_id: str):
     """
     Trigger pipeline run for a specific connector to extract schema and build RDF/vectors.
+
+    This function:
+    1. Loads connector config from MongoDB (including OAuth credentials)
+    2. Decrypts OAuth credentials if applicable
+    3. Extracts schema using connector-specific config
+    4. Builds RDF triples and vector embeddings
+    5. Updates connector metadata with sync status
 
     Args:
         connector_id: Unique connector identifier
@@ -99,36 +115,190 @@ async def trigger_pipeline_for_connector(connector_id: str, connector_type: str,
         Task that runs the pipeline in the background
     """
     import asyncio
-    from src.pipeline.orchestrator import PipelineOrchestrator
+    from src.pipeline.multi_db_schema_extractor import MultiDatabaseSchemaExtractor
+    from src.pipeline.rdf_builder import RDFBuilder
+    from src.db.weaviate_client import WeaviateClient
+    from src.core.embeddings import EmbeddingService
 
     async def run_pipeline():
+        sync_error = None
+        tables_extracted = 0
+
         try:
             logger.info(f"Starting pipeline for connector {connector_id} ({connector_type})")
 
-            # Run pipeline in background
-            orchestrator = PipelineOrchestrator()
-            run = orchestrator.execute_pipeline(
-                incremental=True,
-                force_refresh=False
-            )
-
-            # Update connector metadata with results
+            # Load connector document from MongoDB
             mongodb_client = await get_mongodb_client()
             collection = mongodb_client.db[CONNECTORS_COLLECTION]
 
+            connector_doc = await collection.find_one({'_id': ObjectId(connector_id)})
+            if not connector_doc:
+                raise ValueError(f"Connector {connector_id} not found")
+
+            # Update sync status to 'syncing'
             await collection.update_one(
                 {'_id': ObjectId(connector_id)},
                 {'$set': {
-                    'metadata.last_sync': datetime.now().isoformat(),
-                    'metadata.table_count': run.tables_processed if hasattr(run, 'tables_processed') else 0,
+                    'sync_status': 'syncing',
+                    'sync_started_at': datetime.now().isoformat(),
                     'updated_at': datetime.now().isoformat()
                 }}
             )
 
-            logger.info(f"Pipeline completed for connector {connector_id}")
+            # Build connector config
+            config = connector_doc.get('config', {}).copy()
+
+            # Handle OAuth credentials if applicable
+            if config.get('auth_method') == 'oauth' and connector_doc.get('oauth_credentials'):
+                try:
+                    from src.core.google_oauth_service import get_google_oauth_service
+                    oauth_service = get_google_oauth_service()
+                    decrypted_creds = oauth_service.decrypt_tokens(connector_doc['oauth_credentials'])
+                    config['oauth_credentials'] = decrypted_creds
+                    logger.info(f"Decrypted OAuth credentials for connector {connector_id}")
+                except Exception as e:
+                    raise ValueError(f"Failed to decrypt OAuth credentials: {e}")
+
+            # Extract schema using connector-specific config
+            extractor = MultiDatabaseSchemaExtractor(organization_id=organization_id)
+            tables = extractor.extract_schema_for_connector(
+                connector_type=connector_type,
+                connector_config=config,
+                organization_id=organization_id
+            )
+
+            tables_extracted = len(tables)
+
+            if not tables:
+                logger.warning(f"No tables extracted for connector {connector_id}")
+            else:
+                logger.info(f"Extracted {tables_extracted} tables from connector {connector_id}")
+
+                # Build RDF triples using simplified approach
+                try:
+                    from src.pipeline.schema_extractor import TableSchemaSnapshot, SchemaExtractor
+                    from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph
+
+                    # Convert tables to TableSchemaSnapshot objects
+                    snapshots = []
+                    for table in tables:
+                        snapshot = TableSchemaSnapshot(
+                            table_name=table['table_name'],
+                            database_type=connector_type,
+                            organization_id=organization_id,
+                            dataset=table.get('dataset', table.get('schema', '')),
+                            project=table.get('project', config.get('project_id', '')),
+                            description=table.get('description', ''),
+                            row_count=table.get('row_count', 0),
+                            size_bytes=table.get('size_bytes', 0),
+                            created_at=table.get('created_at'),
+                            modified_at=table.get('modified_at'),
+                            columns=table.get('columns', []),
+                            schema_hash=table.get('schema_hash', ''),
+                            snapshot_timestamp=datetime.now().isoformat(),
+                            version=table.get('version', 1)
+                        )
+                        snapshots.append(snapshot)
+
+                    # Build RDF using the builder
+                    rdf_builder = RDFBuilder()
+                    rdf_result = rdf_builder.build_from_snapshots(
+                        snapshots,
+                        include_stats=True,
+                        discover_relationships=True
+                    )
+
+                    # Save to table_metadata_kg.ttl
+                    rdf_builder.export_to_file("table_metadata_kg.ttl", format="turtle")
+
+                    logger.info(
+                        f"Built RDF triples for {tables_extracted} tables: "
+                        f"{rdf_result.triples_added} triples, {rdf_result.relationships_discovered} relationships"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to build RDF: {e}")
+                    # Continue - don't fail entire pipeline for RDF errors
+
+                # Build vector embeddings (enriched with RDF relationships)
+                try:
+                    weaviate_client = WeaviateClient()
+                    embedding_service = EmbeddingService()
+
+                    # Delete old schemas for this connector before indexing new ones
+                    try:
+                        deleted_count = weaviate_client.delete_schemas_by_connector(connector_id)
+                        logger.info(f"Deleted {deleted_count} old schemas for connector {connector_id}")
+                    except Exception as delete_error:
+                        logger.warning(f"Failed to delete old schemas: {delete_error}")
+
+                    for table in tables:
+                        # Add connector_id to table for Weaviate indexing
+                        table['connector_id'] = connector_id
+
+                        # Query RDF for discovered relationships to enrich the vector
+                        related_tables_text = ""
+                        try:
+                            relationships = rdf_builder.query_relationships(table['table_name'])
+                            if relationships:
+                                # Format: "related to orders via customer_id, related to products via product_id"
+                                rel_parts = []
+                                for rel in relationships[:5]:  # Limit to top 5 relationships
+                                    rel_parts.append(f"{rel['target_table']} via {rel['source_column']}")
+                                related_tables_text = f"\nRelated Tables: {', '.join(rel_parts)}"
+                        except Exception as rel_error:
+                            logger.debug(f"Could not get relationships for {table['table_name']}: {rel_error}")
+
+                        # Generate embedding for table (enriched with relationships)
+                        combined_text = f"""
+                        Table: {table['table_name']}
+                        Dataset: {table.get('dataset', table.get('schema', ''))}
+                        Description: {table.get('description', 'No description')}
+                        Columns: {', '.join([col['name'] for col in table.get('columns', [])])}{related_tables_text}
+                        """
+                        embedding = embedding_service.generate_embedding(combined_text)
+
+                        # Index in Weaviate
+                        weaviate_client.index_table_schema(table, embedding)
+
+                    logger.info(f"Built vector embeddings for {tables_extracted} tables with connector_id={connector_id}")
+                except Exception as e:
+                    logger.error(f"Failed to build vectors: {e}")
+                    # Continue - don't fail entire pipeline for vector errors
+
+            # Update connector metadata with success
+            await collection.update_one(
+                {'_id': ObjectId(connector_id)},
+                {'$set': {
+                    'sync_status': 'success',
+                    'sync_completed_at': datetime.now().isoformat(),
+                    'sync_error': None,
+                    'metadata.last_sync': datetime.now().isoformat(),
+                    'metadata.table_count': tables_extracted,
+                    'updated_at': datetime.now().isoformat()
+                }}
+            )
+
+            logger.info(f"Pipeline completed successfully for connector {connector_id}: {tables_extracted} tables")
 
         except Exception as e:
+            sync_error = str(e)
             logger.error(f"Error running pipeline for connector {connector_id}: {e}")
+
+            # Update connector with error status
+            try:
+                mongodb_client = await get_mongodb_client()
+                collection = mongodb_client.db[CONNECTORS_COLLECTION]
+                await collection.update_one(
+                    {'_id': ObjectId(connector_id)},
+                    {'$set': {
+                        'sync_status': 'failed',
+                        'sync_completed_at': datetime.now().isoformat(),
+                        'sync_error': sync_error,
+                        'updated_at': datetime.now().isoformat()
+                    }}
+                )
+            except Exception as update_error:
+                logger.error(f"Failed to update sync error status: {update_error}")
 
     # Create background task
     asyncio.create_task(run_pipeline())
@@ -137,23 +307,31 @@ async def trigger_pipeline_for_connector(connector_id: str, connector_type: str,
 
 async def reinitialize_sql_generator(organization_id: str):
     """
-    Reinitialize SQLGenerator for an organization after database changes.
+    Invalidate SQLGenerator for an organization after connector changes.
+
+    Uses the centralized singleton module which:
+    1. Signals invalidation via Redis for cross-worker sync
+    2. Clears the local cached instance
+    3. New instance is created on next query with updated connector_ids
 
     Args:
         organization_id: Organization ID
     """
     try:
-        from src.api.routes import get_sql_generator
+        from src.core.sql_generator_singleton import invalidate_sql_generator
 
-        logger.info(f"Reinitializing SQLGenerator for organization: {organization_id}")
+        logger.info(f"Invalidating SQLGenerator for organization: {organization_id}")
 
-        # Force reinitialization by creating new instance
-        generator = get_sql_generator(organization_id=organization_id)
+        # Invalidate cached instance - will be recreated on next query
+        invalidated = invalidate_sql_generator(organization_id=organization_id)
 
-        logger.info(f"SQLGenerator reinitialized for organization: {organization_id}")
+        if invalidated:
+            logger.info(f"SQLGenerator invalidated for organization: {organization_id}")
+        else:
+            logger.debug(f"No cached SQLGenerator to invalidate for: {organization_id}")
 
     except Exception as e:
-        logger.error(f"Error reinitializing SQLGenerator for {organization_id}: {e}")
+        logger.error(f"Error invalidating SQLGenerator for {organization_id}: {e}")
 
 
 @router.get("/types")
@@ -285,8 +463,9 @@ async def test_connector(
             target_user_id = user_id
             target_org_id = organization_id
 
-        # Check permissions if user is authenticated
-        if target_user_id:
+        # Check permissions if user is authenticated (admins can test any connector)
+        is_admin = current_user.get("is_admin", False) if current_user else False
+        if target_user_id and not is_admin:
             has_access = ConnectorFactory.check_user_access(
                 user_id=target_user_id,
                 database_type=request.connector_type,
@@ -406,7 +585,12 @@ async def create_connector(
             'test_result': {
                 'success': True,
                 'connection_time_ms': test_result.get('connection_time_ms')
-            }
+            },
+            # Initialize sync status
+            'sync_status': 'pending',
+            'sync_error': None,
+            'sync_started_at': None,
+            'sync_completed_at': None
         }
 
         result = await collection.insert_one(connector_doc)
@@ -759,7 +943,7 @@ async def toggle_connector_for_chat(
             organization_id=organization_id
         )
 
-        # If enabling for chat, trigger pipeline and reinitialize SQLGenerator
+        # If enabling for chat, trigger pipeline to sync schemas
         if is_enabling:
             logger.info(f"Triggering pipeline for newly enabled connector {connector_id}")
 
@@ -770,7 +954,9 @@ async def toggle_connector_for_chat(
                 organization_id=organization_id
             )
 
-            # Reinitialize SQLGenerator
+        # Always invalidate SQLGenerator when chat status changes (enable OR disable)
+        # This ensures queries use the updated list of enabled connectors
+        if was_enabled != enabled:
             await reinitialize_sql_generator(organization_id)
 
         # Fetch updated connector
@@ -789,7 +975,7 @@ async def toggle_connector_for_chat(
 @router.delete("/{connector_id}")
 async def delete_connector(connector_id: str):
     """
-    Delete a connector configuration.
+    Delete a connector configuration and its associated Weaviate schemas.
 
     Args:
         connector_id: Unique connector identifier
@@ -801,16 +987,35 @@ async def delete_connector(connector_id: str):
         mongodb_client = await get_mongodb_client()
         collection = mongodb_client.db[CONNECTORS_COLLECTION]
 
+        # Fetch connector first to get organization_id for invalidation
+        connector = await collection.find_one({'_id': ObjectId(connector_id)})
+        organization_id = connector.get('organization_id', 'default') if connector else 'default'
+
+        # Delete from MongoDB
         result = await collection.delete_one({'_id': ObjectId(connector_id)})
 
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail=f"Connector {connector_id} not found")
 
+        # Clean up Weaviate schemas for this connector
+        schemas_deleted = 0
+        try:
+            from src.db.weaviate_client import WeaviateClient
+            weaviate_client = WeaviateClient()
+            schemas_deleted = weaviate_client.delete_schemas_by_connector(connector_id)
+            logger.info(f"Deleted {schemas_deleted} Weaviate schemas for connector {connector_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete Weaviate schemas for connector {connector_id}: {e}")
+
+        # Invalidate SQLGenerator to pick up connector deletion
+        await reinitialize_sql_generator(organization_id)
+
         logger.info(f"Deleted connector: {connector_id}")
 
         return {
             'success': True,
-            'message': f'Connector {connector_id} deleted successfully'
+            'message': f'Connector {connector_id} deleted successfully',
+            'schemas_deleted': schemas_deleted
         }
 
     except HTTPException:
@@ -840,10 +1045,29 @@ async def test_existing_connector(connector_id: str):
         if not connector:
             raise HTTPException(status_code=404, detail=f"Connector {connector_id} not found")
 
+        # Build config for testing
+        config = connector['config'].copy()
+
+        # For OAuth connectors, decrypt and include OAuth credentials
+        if config.get('auth_method') == 'oauth' and connector.get('oauth_credentials'):
+            try:
+                from src.core.google_oauth_service import get_google_oauth_service
+                oauth_service = get_google_oauth_service()
+                decrypted_creds = oauth_service.decrypt_tokens(connector['oauth_credentials'])
+                config['oauth_credentials'] = decrypted_creds
+            except Exception as e:
+                logger.error(f"Failed to decrypt OAuth credentials: {e}")
+                return ConnectorTestResponse(
+                    success=False,
+                    connector_type=connector['connector_type'],
+                    message="Failed to decrypt OAuth credentials",
+                    error=str(e)
+                )
+
         # Test the connection
         result = ConnectorFactory.test_connection(
             connector_type=connector['connector_type'],
-            config=connector['config']
+            config=config
         )
 
         # Update test results in database
@@ -959,6 +1183,9 @@ async def toggle_chat_enabled(
             user_id=current_user.get('id'),
             organization_id=org_id
         )
+
+        # Invalidate SQLGenerator to pick up connector change
+        await reinitialize_sql_generator(org_id)
 
         return {
             "success": True,
@@ -1133,7 +1360,7 @@ async def complete_bigquery_oauth(
     code: str,
     state: str,
     project_id: str,
-    dataset: str,
+    dataset_id: str,
     name: str,
     location: Optional[str] = "US",
     current_user: Dict[str, Any] = Depends(require_auth)
@@ -1147,7 +1374,7 @@ async def complete_bigquery_oauth(
         code: Authorization code from Google
         state: State token for CSRF protection
         project_id: GCP project ID
-        dataset: BigQuery dataset name
+        dataset_id: BigQuery dataset ID
         name: Friendly name for the connector
         location: BigQuery location (default: US)
         current_user: Current authenticated user
@@ -1181,7 +1408,7 @@ async def complete_bigquery_oauth(
 
         test_connector = BigQueryConnector(
             project_id=project_id,
-            dataset_id=dataset,
+            dataset_id=dataset_id,
             auth_method=AUTH_METHOD_OAUTH,
             oauth_credentials=token_info  # Use unencrypted for testing
         )
@@ -1206,7 +1433,7 @@ async def complete_bigquery_oauth(
             'name': name,
             'config': {
                 'project_id': project_id,
-                'dataset': dataset,
+                'dataset_id': dataset_id,
                 'location': location,
                 'auth_method': AUTH_METHOD_OAUTH
             },
@@ -1225,7 +1452,12 @@ async def complete_bigquery_oauth(
             'last_tested': datetime.now().isoformat(),
             'test_result': {
                 'success': True
-            }
+            },
+            # Initialize sync status
+            'sync_status': 'pending',
+            'sync_error': None,
+            'sync_started_at': None,
+            'sync_completed_at': None
         }
 
         result = await collection.insert_one(connector_doc)
@@ -1255,3 +1487,532 @@ async def complete_bigquery_oauth(
     except Exception as e:
         logger.error(f"Error completing OAuth flow: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# Admin/Utility Endpoints
+# =====================================================
+
+@router.post("/{connector_id}/sync")
+async def sync_connector(
+    connector_id: str,
+    current_user: Dict[str, Any] = Depends(require_auth)
+):
+    """
+    Manually trigger schema sync for a specific connector.
+
+    This endpoint:
+    1. Finds the connector in MongoDB
+    2. Triggers the pipeline to extract schema and build RDF/vectors
+    3. Returns immediately (sync runs in background)
+
+    Args:
+        connector_id: Connector ID
+        current_user: Current authenticated user
+
+    Returns:
+        Sync initiation status
+    """
+    try:
+        mongodb_client = await get_mongodb_client()
+        collection = mongodb_client.db[CONNECTORS_COLLECTION]
+
+        # Get user's organization
+        org_id = current_user.get('organization_id', 'default')
+
+        # Verify connector exists and belongs to user's organization
+        connector = await collection.find_one({
+            "_id": ObjectId(connector_id),
+            "organization_id": org_id
+        })
+
+        if not connector:
+            raise HTTPException(
+                status_code=404,
+                detail="Connector not found or access denied"
+            )
+
+        # Check if already syncing
+        if connector.get('sync_status') == 'syncing':
+            raise HTTPException(
+                status_code=400,
+                detail="Sync already in progress"
+            )
+
+        # Trigger pipeline
+        await trigger_pipeline_for_connector(
+            connector_id=connector_id,
+            connector_type=connector['connector_type'],
+            organization_id=org_id
+        )
+
+        logger.info(
+            f"Sync initiated for connector",
+            connector_id=connector_id,
+            user_id=current_user.get('id'),
+            organization_id=org_id
+        )
+
+        return {
+            "success": True,
+            "connector_id": connector_id,
+            "message": "Sync initiated. Check connector status for progress."
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Error initiating sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/clear-schema-cache")
+async def clear_schema_cache(
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Clear all schema cache data (admin only).
+
+    This endpoint clears:
+    1. Weaviate vector embeddings (TableSchemas collection)
+    2. Redis SQL cache
+    3. Jena RDF table metadata (by deleting table_metadata_kg.ttl)
+
+    Use this when schema data is stale or corrupted.
+
+    Args:
+        current_user: Current authenticated admin user
+
+    Returns:
+        Cleared data statistics
+    """
+    import os
+    results = {
+        "weaviate_cleared": False,
+        "redis_cleared": False,
+        "jena_cleared": False,
+        "errors": []
+    }
+
+    # Clear Weaviate schemas
+    try:
+        from src.db.weaviate_client import WeaviateClient
+        weaviate_client = WeaviateClient()
+        weaviate_client.delete_all_schemas()
+        results["weaviate_cleared"] = True
+        logger.info("Cleared Weaviate schemas")
+    except Exception as e:
+        results["errors"].append(f"Weaviate: {str(e)}")
+        logger.error(f"Failed to clear Weaviate: {e}")
+
+    # Clear Redis SQL cache
+    try:
+        from src.core.cache_manager import CacheManager
+        from src.config import settings
+        cache_manager = CacheManager(
+            host=settings.redis_host,
+            port=settings.redis_port
+        )
+        deleted = cache_manager.clear_all_caches()
+        results["redis_cleared"] = True
+        results["redis_keys_deleted"] = deleted
+        logger.info(f"Cleared {deleted} Redis cache keys")
+    except Exception as e:
+        results["errors"].append(f"Redis: {str(e)}")
+        logger.error(f"Failed to clear Redis: {e}")
+
+    # Clear Jena table metadata file
+    try:
+        table_metadata_file = "table_metadata_kg.ttl"
+        if os.path.exists(table_metadata_file):
+            os.remove(table_metadata_file)
+            results["jena_cleared"] = True
+            logger.info(f"Deleted {table_metadata_file}")
+        else:
+            results["jena_cleared"] = True
+            results["jena_note"] = "File did not exist"
+    except Exception as e:
+        results["errors"].append(f"Jena: {str(e)}")
+        logger.error(f"Failed to clear Jena: {e}")
+
+    logger.info(
+        "Schema cache cleared",
+        results=results,
+        user_id=current_user.get('id')
+    )
+
+    return {
+        "success": len(results["errors"]) == 0,
+        "message": "Schema cache cleared" if len(results["errors"]) == 0 else "Partial success",
+        "details": results
+    }
+
+
+@router.post("/admin/resync-schemas")
+async def resync_all_schemas(
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Clear all Weaviate schemas and re-sync from all active connectors (admin only).
+
+    This endpoint:
+    1. Clears all TableSchema objects in Weaviate
+    2. Clears Redis SQL cache (to prevent stale cache hits)
+    3. Re-runs pipeline for each enabled connector
+    4. Returns status of resync operations
+
+    Use this when schema data is completely out of sync or after switching connectors.
+
+    Args:
+        current_user: Current authenticated admin user
+
+    Returns:
+        Resync status with details per connector
+    """
+    results = {
+        "weaviate_cleared": False,
+        "redis_cleared": False,
+        "connectors_synced": [],
+        "errors": []
+    }
+
+    # Step 1: Clear all Weaviate schemas
+    try:
+        from src.db.weaviate_client import WeaviateClient
+        weaviate_client = WeaviateClient()
+        weaviate_client.delete_all_schemas()
+        results["weaviate_cleared"] = True
+        logger.info("Cleared all Weaviate schemas for resync")
+    except Exception as e:
+        results["errors"].append(f"Weaviate clear: {str(e)}")
+        logger.error(f"Failed to clear Weaviate for resync: {e}")
+
+    # Step 2: Clear Redis SQL cache
+    try:
+        from src.core.cache_manager import CacheManager
+        from src.config import settings
+        cache_manager = CacheManager(
+            host=settings.redis_host,
+            port=settings.redis_port
+        )
+        deleted = cache_manager.clear_all_caches()
+        results["redis_cleared"] = True
+        results["redis_keys_deleted"] = deleted
+        logger.info(f"Cleared {deleted} Redis cache keys for resync")
+    except Exception as e:
+        results["errors"].append(f"Redis clear: {str(e)}")
+        logger.error(f"Failed to clear Redis for resync: {e}")
+
+    # Step 3: Get all enabled connectors and trigger pipeline for each
+    try:
+        mongodb_client = await get_mongodb_client()
+        collection = mongodb_client.db[CONNECTORS_COLLECTION]
+
+        # Find all enabled connectors
+        cursor = collection.find({
+            "enabled_for_chat": True,
+            "status": {"$in": ["connected", "active"]}
+        })
+
+        async for connector in cursor:
+            connector_id = str(connector['_id'])
+            connector_type = connector['connector_type']
+            org_id = connector.get('organization_id', 'default')
+
+            try:
+                # Trigger pipeline for this connector
+                await trigger_pipeline_for_connector(
+                    connector_id=connector_id,
+                    connector_type=connector_type,
+                    organization_id=org_id
+                )
+                results["connectors_synced"].append({
+                    "id": connector_id,
+                    "name": connector.get('name', 'Unknown'),
+                    "type": connector_type,
+                    "organization_id": org_id,
+                    "status": "pipeline_triggered"
+                })
+                logger.info(f"Triggered resync for connector {connector_id} ({connector.get('name')})")
+            except Exception as e:
+                results["connectors_synced"].append({
+                    "id": connector_id,
+                    "name": connector.get('name', 'Unknown'),
+                    "type": connector_type,
+                    "status": "failed",
+                    "error": str(e)
+                })
+                results["errors"].append(f"Connector {connector_id}: {str(e)}")
+                logger.error(f"Failed to trigger resync for connector {connector_id}: {e}")
+
+    except Exception as e:
+        results["errors"].append(f"Connector lookup: {str(e)}")
+        logger.error(f"Failed to lookup connectors for resync: {e}")
+
+    logger.info(
+        "Schema resync initiated",
+        results=results,
+        user_id=current_user.get('id')
+    )
+
+    return {
+        "success": len(results["errors"]) == 0,
+        "message": f"Resync initiated for {len(results['connectors_synced'])} connectors",
+        "details": results
+    }
+
+
+@router.post("/admin/recreate-weaviate-collection")
+async def recreate_weaviate_collection(
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Recreate the Weaviate TableSchemas collection with updated schema (admin only).
+
+    Use this when the collection schema is outdated (e.g., missing connector_id property).
+    After recreating, you should resync all connectors.
+    """
+    try:
+        from src.db.weaviate_client import WeaviateClient
+        weaviate_client = WeaviateClient()
+        weaviate_client.recreate_collection()
+
+        logger.info(
+            "Weaviate collection recreated",
+            user_id=current_user.get('id')
+        )
+
+        return {
+            "success": True,
+            "message": "Weaviate collection recreated with updated schema. Please resync connectors."
+        }
+    except Exception as e:
+        logger.error(f"Failed to recreate Weaviate collection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/diagnostics")
+async def get_schema_diagnostics(
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Get diagnostic information about Weaviate and Jena schema data (admin only).
+
+    Returns counts and samples of indexed schemas to verify data integrity.
+    """
+    results = {
+        "weaviate": {
+            "connected": False,
+            "total_schemas": 0,
+            "schemas_with_connector_id": 0,
+            "schemas_by_connector": {},
+            "sample_schemas": []
+        },
+        "jena": {
+            "connected": False,
+            "triple_count": 0,
+            "tables_in_graph": 0
+        },
+        "errors": []
+    }
+
+    # Check Weaviate
+    try:
+        from src.db.weaviate_client import WeaviateClient
+
+        weaviate_client = WeaviateClient()
+        results["weaviate"]["connected"] = True
+
+        collection = weaviate_client.client.collections.get(weaviate_client.collection_name)
+
+        # Get total count
+        total_response = collection.aggregate.over_all(total_count=True)
+        results["weaviate"]["total_schemas"] = total_response.total_count or 0
+
+        # Get sample schemas (first 5)
+        sample_response = collection.query.fetch_objects(
+            limit=5,
+            return_properties=["table_name", "database_type", "organization_id", "connector_id"]
+        )
+        for obj in sample_response.objects:
+            results["weaviate"]["sample_schemas"].append({
+                "table_name": obj.properties.get("table_name"),
+                "database_type": obj.properties.get("database_type"),
+                "organization_id": obj.properties.get("organization_id"),
+                "connector_id": obj.properties.get("connector_id")
+            })
+
+        # Group by connector_id and calculate total schemas with connector_id
+        # Note: We sum per-connector counts instead of using not_equal("") filter
+        # which fails with Weaviate stopwords error
+        schemas_with_connector_count = 0
+        mongodb_client = await get_mongodb_client()
+        connectors_coll = mongodb_client.db[CONNECTORS_COLLECTION]
+        async for connector in connectors_coll.find({}):
+            connector_id = str(connector['_id'])
+            count = weaviate_client.get_schema_count_by_connector(connector_id)
+            if count > 0:
+                results["weaviate"]["schemas_by_connector"][connector.get('name', connector_id)] = count
+                schemas_with_connector_count += count
+
+        results["weaviate"]["schemas_with_connector_id"] = schemas_with_connector_count
+
+    except Exception as e:
+        results["errors"].append(f"Weaviate: {str(e)}")
+        logger.error(f"Weaviate diagnostic failed: {e}")
+
+    # Check Jena
+    try:
+        from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph
+
+        jena_client = get_jena_knowledge_graph()
+        if jena_client and jena_client.graph:
+            results["jena"]["connected"] = True
+            results["jena"]["triple_count"] = len(jena_client.graph)
+
+            # Count unique tables
+            tables = set()
+            for s, p, o in jena_client.graph:
+                if "table" in str(s).lower():
+                    tables.add(str(s))
+            results["jena"]["tables_in_graph"] = len(tables)
+    except Exception as e:
+        results["errors"].append(f"Jena: {str(e)}")
+        logger.error(f"Jena diagnostic failed: {e}")
+
+    return {
+        "success": len(results["errors"]) == 0,
+        "diagnostics": results
+    }
+
+
+@router.post("/admin/test-vector-search")
+async def test_vector_search(
+    query: str,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Test vector search with different connector configurations (admin only).
+
+    This endpoint helps diagnose why vector search might not return results from
+    all enabled connectors.
+
+    Args:
+        query: The search query to test (e.g., "clients", "customers")
+
+    Returns:
+        Results from:
+        - Combined search (all connectors)
+        - Per-connector search (each connector separately)
+    """
+    organization_id = current_user.get("organization_id", "default")
+    results = {
+        "query": query,
+        "organization_id": organization_id,
+        "embedding_provider": None,
+        "embedding_dimension": None,
+        "combined_search": [],
+        "per_connector_search": {},
+        "analysis": {},
+        "errors": []
+    }
+
+    try:
+        from src.db.weaviate_client import WeaviateClient
+        from src.core.embeddings import EmbeddingService
+
+        # Initialize services
+        weaviate_client = WeaviateClient()
+        embedding_service = EmbeddingService()
+
+        results["embedding_provider"] = embedding_service.provider_type
+        results["embedding_dimension"] = embedding_service.dimension
+
+        # Generate embedding for query
+        embedding = embedding_service.generate_embedding(query)
+
+        # Get enabled connectors for this organization
+        mongodb_client = await get_mongodb_client()
+        connectors_coll = mongodb_client.db[CONNECTORS_COLLECTION]
+
+        enabled_connectors = []
+        async for connector in connectors_coll.find({
+            "organization_id": organization_id,
+            "enabled_for_chat": True
+        }):
+            enabled_connectors.append({
+                "id": str(connector['_id']),
+                "name": connector.get('name', 'Unknown'),
+                "type": connector.get('connector_type', 'unknown')
+            })
+
+        if not enabled_connectors:
+            results["errors"].append("No enabled connectors found for organization")
+            return results
+
+        connector_ids = [c["id"] for c in enabled_connectors]
+
+        # Test 1: Combined search (current behavior)
+        combined_results = weaviate_client.search_similar_tables(
+            query_embedding=embedding,
+            limit=10,
+            connector_ids=connector_ids,
+            organization_id=organization_id
+        )
+
+        for r in combined_results:
+            results["combined_search"].append({
+                "table_name": r.get("table_name"),
+                "database_type": r.get("database_type"),
+                "connector_id": r.get("connector_id"),
+                "distance": round(r.get("distance", 0), 4) if r.get("distance") else None
+            })
+
+        # Test 2: Per-connector search
+        for connector in enabled_connectors:
+            connector_results = weaviate_client.search_similar_tables(
+                query_embedding=embedding,
+                limit=5,
+                connector_id=connector["id"],
+                organization_id=organization_id
+            )
+
+            results["per_connector_search"][connector["name"]] = {
+                "connector_id": connector["id"],
+                "connector_type": connector["type"],
+                "tables": [
+                    {
+                        "table_name": r.get("table_name"),
+                        "distance": round(r.get("distance", 0), 4) if r.get("distance") else None
+                    }
+                    for r in connector_results
+                ]
+            }
+
+        # Analysis
+        db_types_in_combined = list(set(r.get("database_type") for r in combined_results if r.get("database_type")))
+        results["analysis"] = {
+            "enabled_connectors": len(enabled_connectors),
+            "connector_types": [c["type"] for c in enabled_connectors],
+            "combined_search_count": len(combined_results),
+            "db_types_in_combined_results": db_types_in_combined,
+            "all_connectors_represented": len(db_types_in_combined) == len(set(c["type"] for c in enabled_connectors)),
+            "recommendation": None
+        }
+
+        # Add recommendation if not all connectors represented
+        if not results["analysis"]["all_connectors_represented"]:
+            missing_types = set(c["type"] for c in enabled_connectors) - set(db_types_in_combined)
+            results["analysis"]["missing_connector_types"] = list(missing_types)
+            results["analysis"]["recommendation"] = (
+                f"Vector search is biased towards {db_types_in_combined}. "
+                f"Tables from {list(missing_types)} are not making it into top results. "
+                f"Consider implementing per-connector search to ensure all databases are represented."
+            )
+
+    except Exception as e:
+        results["errors"].append(f"Error: {str(e)}")
+        logger.error(f"Vector search test failed: {e}")
+
+    return results

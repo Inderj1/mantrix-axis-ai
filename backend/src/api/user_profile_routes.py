@@ -4,18 +4,54 @@ User Profile API Routes
 Provides endpoints for managing user profiles and role templates.
 """
 
-from fastapi import APIRouter, HTTPException, status
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends
+from typing import List, Optional
 from ..models.user_profile import (
     UserProfile,
     UserProfileCreate,
     UserProfileUpdate,
     UserRole,
-    RoleTemplate
+    RoleTemplate,
+    ROLE_TEMPLATES
 )
 from ..core.user_profile_manager import user_profile_manager
+from src.api.middleware.cognito_auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/user-profiles", tags=["user-profiles"])
+
+
+@router.get("/persona")
+async def get_current_user_persona(current_user: dict = Depends(get_current_user)):
+    """
+    Get persona context for the currently authenticated user.
+
+    Returns the user's role template and personalization context.
+    If no profile exists, returns default Finance Analyst persona.
+    """
+    user_id = current_user.get("sub") or current_user.get("cognito:username")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not determine user ID from token"
+        )
+
+    context = user_profile_manager.get_personalization_context(user_id)
+
+    if not context:
+        # Return default Finance Analyst persona if no profile exists
+        default_template = ROLE_TEMPLATES[UserRole.FINANCE_ANALYST]
+        return {
+            "user_role": "finance_analyst",
+            "role_display_name": "Finance Analyst",
+            "role_description": default_template.description,
+            "system_prompt_additions": default_template.system_prompt_additions,
+            "insight_focuses": [focus.value for focus in default_template.insight_focuses],
+            "key_metrics": default_template.key_metrics,
+            "preferred_visualizations": default_template.preferred_visualizations
+        }
+
+    return context
 
 
 @router.get("/templates", response_model=List[RoleTemplate])

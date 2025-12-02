@@ -77,11 +77,13 @@ class RDFBuilder:
 
     def __init__(
         self,
-        schema_extractor: SchemaExtractor,
+        schema_extractor: Optional[SchemaExtractor] = None,
         jena_kg=None,
         cache_manager: Optional[CacheManager] = None,
         enable_statistics: bool = True
     ):
+        # Note: schema_extractor is optional - kept for backward compatibility
+        # but not used. Schemas are passed directly to build_from_snapshots().
         self.schema_extractor = schema_extractor
         self.jena_kg = jena_kg or get_jena_knowledge_graph()
         self.cache_manager = cache_manager

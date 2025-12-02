@@ -4,7 +4,7 @@ Financial Agent API Routes
 API endpoints for the multi-agent financial analysis system.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List, Optional, AsyncGenerator
 import structlog
@@ -17,7 +17,9 @@ from decimal import Decimal
 # Lazy import for CrewAI to avoid startup failures when ChromaDB can't initialize
 # from src.agents.financial_crew import get_agent_hierarchy
 from src.core.sql_generator import SQLGenerator
+from src.core.sql_generator_singleton import get_sql_generator
 from src.db.bigquery import BigQueryClient
+from src.api.middleware.cognito_auth import get_current_user
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["agents"], prefix="/api/v1/agents")
@@ -51,19 +53,9 @@ def json_serializer(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 # Initialize SQL components
-sql_generator = None
+# Note: sql_generator is now managed by sql_generator_singleton module
+# get_sql_generator is imported from sql_generator_singleton
 bq_client = None
-
-def get_sql_generator(organization_id: str = None) -> SQLGenerator:
-    """Get SQL generator instance with optional organization context."""
-    global sql_generator
-    if sql_generator is None:
-        # Create with default organization_id if not provided
-        sql_generator = SQLGenerator(organization_id=organization_id)
-    elif organization_id and sql_generator.organization_id != organization_id:
-        # Create new instance if organization_id differs
-        sql_generator = SQLGenerator(organization_id=organization_id)
-    return sql_generator
 
 def get_bq_client() -> BigQueryClient:
     global bq_client
@@ -92,7 +84,10 @@ class AgentAnalysisResponse(BaseModel):
 
 
 @router.post("/analyze", response_model=AgentAnalysisResponse)
-async def analyze_financial_query(request: AgentAnalysisRequest) -> AgentAnalysisResponse:
+async def analyze_financial_query(
+    request: AgentAnalysisRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+) -> AgentAnalysisResponse:
     """
     Analyze a financial query using the multi-agent system.
 
@@ -105,9 +100,10 @@ async def analyze_financial_query(request: AgentAnalysisRequest) -> AgentAnalysi
     try:
         logger.info("Starting agent analysis", query=request.query)
 
-        # Get components
+        # Get components with organization context
+        org_id = user.get('organization_id') if user else None
         agent_hierarchy = get_agent_hierarchy_lazy()
-        sql_gen = get_sql_generator()
+        sql_gen = get_sql_generator(organization_id=org_id)
         bq = get_bq_client()
 
         # Create SQL executor function that agents can use
@@ -226,7 +222,10 @@ async def route_query(query: str) -> Dict[str, Any]:
 
 
 @router.post("/analyze-stream")
-async def analyze_financial_query_stream(request: AgentAnalysisRequest):
+async def analyze_financial_query_stream(
+    request: AgentAnalysisRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+):
     """
     Analyze a financial query using the multi-agent system with streaming updates.
 
@@ -237,6 +236,9 @@ async def analyze_financial_query_stream(request: AgentAnalysisRequest):
     - Results as they become available
     - Final summary
     """
+    # Get organization context for SQL generator
+    org_id = user.get('organization_id') if user else None
+
     # Use a queue to collect events from nested callbacks
     event_queue = asyncio.Queue()
 
@@ -246,9 +248,9 @@ async def analyze_financial_query_stream(request: AgentAnalysisRequest):
             await event_queue.put({'type': 'status', 'message': 'Understanding your financial question...'})
             yield f"data: {json.dumps({'type': 'status', 'message': 'Understanding your financial question...'}, default=json_serializer)}\n\n"
 
-            # Get components
+            # Get components with organization context
             agent_hierarchy = get_agent_hierarchy_lazy()
-            sql_gen = get_sql_generator()
+            sql_gen = get_sql_generator(organization_id=org_id)
             bq = get_bq_client()
 
             # Send routing information

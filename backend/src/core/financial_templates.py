@@ -234,6 +234,7 @@ FINANCIAL_QUERY_TEMPLATES = {
     ),
     
     # Level 3: GL Account Detail Templates
+    # Note: Table names should come from Weaviate schema search, not hardcoded
     "l3_gl_total_amount": QueryTemplate(
         name="gl_account_total_amount",
         description="Calculate total amount by GL account",
@@ -243,15 +244,14 @@ FINANCIAL_QUERY_TEMPLATES = {
             GL_Account,
             GL_Account_Description,
             ROUND(SUM(GL_Amount_in_CC), 2) AS total_amount
-        FROM `{project}.{dataset}.dataset_25m_table`
+        FROM `{project}.{dataset}.{primary_table}`
         WHERE GL_Account IS NOT NULL
-            AND Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 YEAR)
             {additional_filters}
         GROUP BY GL_Account, GL_Account_Description
         ORDER BY GL_Account
         """,
-        required_tables=["dataset_25m_table"],
-        parameters=["additional_filters"]
+        required_tables=[],  # Tables come from Weaviate search
+        parameters=["primary_table", "additional_filters"]
     ),
     
     "l3_specific_account": QueryTemplate(
