@@ -3382,19 +3382,15 @@ const AgentModeInterface = forwardRef((props, ref) => {
           }
         }}
       >
-        <DialogTitle sx={{ 
-          borderBottom: 1, 
-          borderColor: 'divider',
-          pb: 2,
-        }}>
+        <DialogTitle>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Stack direction="row" spacing={1} alignItems="center">
               <InsightsIcon color="primary" />
-              <Typography variant="h5" fontWeight="bold">
+              <Typography variant="h6" fontWeight="bold">
                 AI Analysis Results
               </Typography>
             </Stack>
-            <IconButton 
+            <IconButton
               onClick={() => setOpenAnalysisDialog(false)}
               size="small"
             >
@@ -3402,7 +3398,7 @@ const AgentModeInterface = forwardRef((props, ref) => {
             </IconButton>
           </Stack>
         </DialogTitle>
-        <DialogContent sx={{ p: 3 }}>
+        <DialogContent>
           {activeAnalysis || analysisLoading ? (
             <ResultAnalysis
               analysis={activeAnalysis}

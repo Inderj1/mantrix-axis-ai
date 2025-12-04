@@ -21,6 +21,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   ToggleButton,
   ToggleButtonGroup,
@@ -29,6 +30,8 @@ import {
   Tabs,
   Card,
   CardContent,
+  useTheme,
+  alpha,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -66,6 +69,13 @@ import {
   InfoOutlined as InfoIcon,
   SmartToy as SmartToyIcon,
   Storage as StorageIcon,
+  Warning as WarningIcon,
+  TrendingUp as TrendingUpIcon,
+  AccountBalance as AccountBalanceIcon,
+  People as PeopleIcon,
+  Speed as SpeedIcon,
+  AutoAwesome as AutoAwesomeIcon,
+  Map as MapIcon,
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
 import { apiService } from '../services/api';
@@ -78,6 +88,9 @@ import FollowUpSuggestions from './FollowUpSuggestions';
 import PlotlyVisualization from './PlotlyVisualization';
 import DashboardCreationPreview from './dashboard/DashboardCreationPreview';
 import MultiQueryAccordion from './MultiQueryAccordion';
+import QueryProgress from './QueryProgress';
+import EnhancedResultsCard from './results/EnhancedResultsCard';
+import AIExplanation from './results/AIExplanation';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-sql';
 import 'ace-builds/src-noconflict/theme-monokai';
@@ -152,34 +165,46 @@ const groupConversations = (conversations) => {
   return groups;
 };
 
-// Sample queries for quick access
+// Sample queries for quick access with soft, friendly colors
 const SAMPLE_QUERIES = [
-  { 
-    category: "Revenue Analysis", 
+  {
+    category: "Revenue Analysis",
+    icon: "TrendingUp",
+    color: "#10b981",
+    bgColor: "rgba(16, 185, 129, 0.06)",
     queries: [
       "What's our monthly recurring revenue?",
       "Show revenue by product line",
       "Compare this year vs last year revenue"
     ]
   },
-  { 
-    category: "Cost Management", 
+  {
+    category: "Cost Management",
+    icon: "AccountBalance",
+    color: "#3b82f6",
+    bgColor: "rgba(59, 130, 246, 0.06)",
     queries: [
       "What are our biggest expense categories?",
       "Show COGS trend over time",
       "Calculate gross margin by product"
     ]
   },
-  { 
-    category: "Customer Insights", 
+  {
+    category: "Customer Insights",
+    icon: "People",
+    color: "#8b5cf6",
+    bgColor: "rgba(139, 92, 246, 0.06)",
     queries: [
       "Who are our top customers by lifetime value?",
       "Show customer acquisition trends",
       "Analyze churn rate by segment"
     ]
   },
-  { 
-    category: "Performance Metrics", 
+  {
+    category: "Performance Metrics",
+    icon: "Speed",
+    color: "#f59e0b",
+    bgColor: "rgba(245, 158, 11, 0.06)",
     queries: [
       "Calculate ROI for marketing campaigns",
       "Show key performance indicators dashboard",
@@ -193,6 +218,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   // Get authenticated user from Cognito
   const { user, loading: authLoading } = useAuth();
   const isUserLoaded = !authLoading;
+  const theme = useTheme();
 
   // Derive userId from authenticated user
   const userId = user?.username || 'default';
@@ -206,6 +232,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     loadingConversations,
     isInitializing,
     isLoading: loading,
+    queryProgress,
     // Actions
     initialize,
     loadConversation,
@@ -216,6 +243,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     addMessage,
     updateMessage,
     sendQuery,
+    sendQueryStreaming,
+    resetQueryProgress,
     toggleStar,
     setIsLoading,
   } = useConversationStore();
@@ -248,6 +277,87 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const [dashboardPreviewOpen, setDashboardPreviewOpen] = useState(false);
   const [dashboardPreviewData, setDashboardPreviewData] = useState(null);
   const [dashboardPreviewQuery, setDashboardPreviewQuery] = useState('');
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
+
+  // User persona state for personalized Quick Actions
+  const [userPersona, setUserPersona] = useState(null);
+
+  // Fetch user persona on mount
+  useEffect(() => {
+    const fetchUserPersona = async () => {
+      try {
+        const response = await apiService.getUserProfile('persona');
+        const profile = response.data || response;
+        if (profile && profile.role) {
+          setUserPersona(profile);
+        }
+      } catch (error) {
+        console.log('No persona found, using default Quick Actions');
+      }
+    };
+    fetchUserPersona();
+  }, []);
+
+  // Persona-based Quick Actions
+  const getQuickActions = useMemo(() => {
+    const defaultActions = [
+      { icon: <TrendingUpIcon />, title: "Revenue Trends", desc: "Show me monthly revenue trends", color: '#0176D3' },
+      { icon: <PeopleIcon />, title: "Top Customers", desc: "Who are our top 10 customers?", color: '#2E844A' },
+      { icon: <BarChartIcon />, title: "Order Analytics", desc: "What's the average order value?", color: '#FE9339' },
+      { icon: <MapIcon />, title: "Regional Sales", desc: "Compare sales by region", color: '#BA01FF' },
+    ];
+
+    const personaActions = {
+      cfo: [
+        { icon: <AccountBalanceIcon />, title: "Financial Overview", desc: "Show me the P&L summary for this quarter", color: '#0176D3' },
+        { icon: <TrendingUpIcon />, title: "Cash Flow", desc: "What's our current cash flow position?", color: '#2E844A' },
+        { icon: <BarChartIcon />, title: "Budget Variance", desc: "Compare actual vs budget by department", color: '#FE9339' },
+        { icon: <SpeedIcon />, title: "Financial KPIs", desc: "Show key financial ratios and metrics", color: '#BA01FF' },
+      ],
+      coo: [
+        { icon: <SpeedIcon />, title: "Operations KPIs", desc: "Show me key operational metrics", color: '#0176D3' },
+        { icon: <TimelineIcon />, title: "Process Efficiency", desc: "What's our order fulfillment time?", color: '#2E844A' },
+        { icon: <StorageIcon />, title: "Inventory Status", desc: "Show current inventory levels by category", color: '#FE9339' },
+        { icon: <TrendingUpIcon />, title: "Capacity Utilization", desc: "What's our production capacity utilization?", color: '#BA01FF' },
+      ],
+      sales_manager: [
+        { icon: <TrendingUpIcon />, title: "Sales Pipeline", desc: "Show me the current sales pipeline", color: '#0176D3' },
+        { icon: <PeopleIcon />, title: "Top Performers", desc: "Who are my top performing sales reps?", color: '#2E844A' },
+        { icon: <MapIcon />, title: "Regional Performance", desc: "Compare sales by region this quarter", color: '#FE9339' },
+        { icon: <BarChartIcon />, title: "Win Rate Analysis", desc: "What's our win rate by product category?", color: '#BA01FF' },
+      ],
+      supply_chain_manager: [
+        { icon: <StorageIcon />, title: "Inventory Health", desc: "Show me inventory turnover by product", color: '#0176D3' },
+        { icon: <TrendingUpIcon />, title: "Supplier Performance", desc: "Which suppliers have the best on-time delivery?", color: '#2E844A' },
+        { icon: <SpeedIcon />, title: "Lead Times", desc: "What's our average lead time by supplier?", color: '#FE9339' },
+        { icon: <BarChartIcon />, title: "Stock Levels", desc: "Show items below reorder point", color: '#BA01FF' },
+      ],
+      marketing_manager: [
+        { icon: <TrendingUpIcon />, title: "Campaign ROI", desc: "Show me marketing campaign performance", color: '#0176D3' },
+        { icon: <PeopleIcon />, title: "Customer Segments", desc: "Analyze customer segments by value", color: '#2E844A' },
+        { icon: <BarChartIcon />, title: "Channel Performance", desc: "Compare revenue by marketing channel", color: '#FE9339' },
+        { icon: <MapIcon />, title: "Market Analysis", desc: "Show sales trends by market segment", color: '#BA01FF' },
+      ],
+      analyst: [
+        { icon: <AnalyticsIcon />, title: "Data Overview", desc: "Show me the main data summary", color: '#0176D3' },
+        { icon: <TrendingUpIcon />, title: "Trend Analysis", desc: "Identify key trends in the data", color: '#2E844A' },
+        { icon: <BarChartIcon />, title: "Comparative Analysis", desc: "Compare this period vs last period", color: '#FE9339' },
+        { icon: <ScatterPlotIcon />, title: "Correlations", desc: "Find correlations in the data", color: '#BA01FF' },
+      ],
+    };
+
+    if (userPersona?.role && personaActions[userPersona.role]) {
+      return personaActions[userPersona.role];
+    }
+    return defaultActions;
+  }, [userPersona]);
 
   // Initialize store when user is loaded
   useEffect(() => {
@@ -344,10 +454,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       return;
     }
 
-    // Use store's sendQuery - handles everything:
+    // Use store's sendQueryStreaming - handles everything with live progress:
     // - Creating conversation if needed
     // - Adding user/assistant messages
-    // - API call
+    // - Streaming API call with progress updates
     // - Error handling
     // - Updating conversations list
     const question = inputMessage;
@@ -356,7 +466,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     // Scroll when user sends message
     setTimeout(scrollToBottom, 50);
 
-    const result = await sendQuery(question);
+    // Use streaming query for real-time progress feedback
+    const result = await sendQueryStreaming(question);
 
     // Scroll to show the response
     setTimeout(scrollToBottom, 100);
@@ -532,11 +643,16 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   };
 
   // Clear all conversations (uses store action)
-  const handleClearAllConversations = async () => {
-    if (!window.confirm('Are you sure you want to clear all conversations? This cannot be undone.')) {
-      return;
-    }
-    await clearAllConversations();
+  const handleClearAllConversations = () => {
+    setConfirmDialog({
+      open: true,
+      title: 'Clear All Conversations',
+      message: 'Are you sure you want to clear all conversations? This cannot be undone.',
+      onConfirm: async () => {
+        await clearAllConversations();
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   // Helper to parse formatted numbers (handles $, commas, etc.)
@@ -1076,265 +1192,52 @@ const SimpleChatInterface = forwardRef((props, ref) => {
   const renderMessage = (message) => {
     if (message.type === 'user') {
       return (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-          <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ maxWidth: '70%' }}>
-            <Paper
-              elevation={0}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+          <Box
+            sx={{
+              maxWidth: '70%',
+              p: 2,
+              px: 3,
+              bgcolor: '#f3f4f6',
+              borderRadius: '16px',
+            }}
+          >
+            <Typography
               sx={{
-                p: 2.5,
-                bgcolor: '#0A6ED1',
-                color: '#ffffff',
-                borderRadius: '6px',
-                boxShadow: '0 2px 8px rgba(10, 110, 209, 0.15)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  bgcolor: '#0854A0',
-                  boxShadow: '0 4px 12px rgba(10, 110, 209, 0.25)',
-                  transform: 'translateY(-1px)',
-                }
+                fontSize: '0.9375rem',
+                lineHeight: 1.6,
+                color: '#111827',
               }}
             >
-              <Typography
-                variant="body1"
-                sx={{
-                  fontWeight: 400,
-                  fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif',
-                  fontSize: '0.95rem',
-                  lineHeight: 1.6,
-                  letterSpacing: '0.01em',
-                  color: '#ffffff'
-                }}
-              >
-                {message.content}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  display: 'block',
-                  mt: 1.5,
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  fontFamily: '"SF Pro Display", "Inter", sans-serif',
-                  fontSize: '0.75rem',
-                  fontWeight: 300
-                }}
-              >
-                {message.timestamp.toLocaleTimeString()}
-              </Typography>
-            </Paper>
-            <Avatar sx={{ bgcolor: 'grey.500' }}>
-              <PersonIcon />
-            </Avatar>
-          </Stack>
+              {message.content}
+            </Typography>
+          </Box>
         </Box>
       );
     }
 
-    // Assistant message
+    // Assistant message - Simple plain text
     return (
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ flex: 1, maxWidth: '100%' }}>
-            {/* Main message - Enhanced Summary */}
-            <Card
-              elevation={2}
-              sx={{
-                mb: 2,
-                bgcolor: 'background.paper',
-              }}
-            >
-              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <img src={axisAiLogo} alt="Axis AI" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
-                  <Box sx={{ flex: 1 }}>
-                    <Box
-                      sx={{
-                        lineHeight: 1.8,
-                        color: 'text.primary',
-                        fontSize: '0.95rem',
-                      }}
-                    >
-                      {(() => {
-                        // Helper function to format text with markdown-style bold
-                        const formatText = (text) => {
-                          if (!text) return null;
+      <Box sx={{ mb: 3, maxWidth: '85%' }}>
+        {message.content && (
+          <Typography
+            sx={{
+              fontSize: '0.9375rem',
+              lineHeight: 1.7,
+              color: '#374151',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {message.content}
+          </Typography>
+        )}
 
-                          // Split by **bold** or *bold* patterns
-                          const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
-
-                          return parts.map((part, idx) => {
-                            // Check if this is bold text
-                            if (part.startsWith('**') && part.endsWith('**')) {
-                              return (
-                                <Box key={idx} component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                                  {part.slice(2, -2)}
-                                </Box>
-                              );
-                            } else if (part.startsWith('*') && part.endsWith('*')) {
-                              return (
-                                <Box key={idx} component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                                  {part.slice(1, -1)}
-                                </Box>
-                              );
-                            }
-                            return part;
-                          });
-                        };
-
-                        // Split content into sections: headings, paragraphs, and lists
-                        const lines = message.content.split('\n');
-                        const elements = [];
-                        let currentParagraph = '';
-                        let inList = false;
-
-                        lines.forEach((line, lineIdx) => {
-                          const trimmedLine = line.trim();
-
-                          // Check for markdown headings (#### H4, ### H3, ## H2, # H1)
-                          const h4Match = trimmedLine.match(/^####\s+(.+)$/);
-                          const h3Match = trimmedLine.match(/^###\s+(.+)$/);
-                          const h2Match = trimmedLine.match(/^##\s+(.+)$/);
-                          const h1Match = trimmedLine.match(/^#\s+(.+)$/);
-
-                          // Check if this is a list item (numbered, dashed, or bulleted)
-                          // Matches: "1. text", "1) text", "- text", "* text", "• text"
-                          const listMatch = trimmedLine.match(/^(?:\d+[\.\)]\s+|[-*•]\s+)(.+)$/);
-
-                          if (h4Match) {
-                            // Add accumulated paragraph before heading
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 4 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-                            inList = false;
-
-                            elements.push(
-                              <Typography key={`h4-${lineIdx}`} variant="subtitle1" component="h4" sx={{ fontWeight: 700, mt: 2.5, mb: 0.75, color: 'text.secondary', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.3px', pl: 3, borderLeft: '3px solid', borderColor: 'grey.300' }}>
-                                {formatText(h4Match[1])}
-                              </Typography>
-                            );
-                          } else if (h3Match) {
-                            // Add accumulated paragraph before heading
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7, pl: 2 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-                            inList = false;
-
-                            elements.push(
-                              <Typography key={`h3-${lineIdx}`} variant="h6" component="h3" sx={{ fontWeight: 700, mt: 3, mb: 1, color: 'text.primary', fontSize: '1rem', pl: 1.5, position: 'relative', '&:before': { content: '""', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '4px', height: '60%', bgcolor: 'primary.light', borderRadius: '2px' } }}>
-                                {formatText(h3Match[1])}
-                              </Typography>
-                            );
-                          } else if (h2Match) {
-                            // Add accumulated paragraph before heading
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-                            inList = false;
-
-                            elements.push(
-                              <Typography key={`h2-${lineIdx}`} variant="h5" component="h2" sx={{ fontWeight: 700, mt: 4, mb: 1.5, color: 'primary.main', fontSize: '1.125rem', borderBottom: '2px solid', borderColor: 'primary.main', pb: 0.75, display: 'inline-block', width: '100%' }}>
-                                {formatText(h2Match[1])}
-                              </Typography>
-                            );
-                          } else if (h1Match) {
-                            // Add accumulated paragraph before heading
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2.5, fontSize: '0.93rem', lineHeight: 1.7 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-                            inList = false;
-
-                            elements.push(
-                              <Typography key={`h1-${lineIdx}`} variant="h4" component="h1" sx={{ fontWeight: 800, mt: 3, mb: 2.5, color: 'primary.dark', fontSize: '1.35rem', letterSpacing: '-0.5px', pb: 1, borderBottom: '3px solid', borderColor: 'primary.dark' }}>
-                                {formatText(h1Match[1])}
-                              </Typography>
-                            );
-                          } else if (listMatch) {
-                            // Add accumulated paragraph before starting list
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-
-                            inList = true;
-                            // Extract text after the list marker (number, dash, asterisk, bullet)
-                            const listItemText = listMatch[1];
-
-                            elements.push(
-                              <Typography key={`list-${lineIdx}`} variant="body2" component="div" sx={{ mb: 1, fontSize: '0.93rem', pl: 2 }}>
-                                {formatText(listItemText)}
-                              </Typography>
-                            );
-                          } else if (trimmedLine === '') {
-                            // Empty line - end current paragraph
-                            if (currentParagraph.trim()) {
-                              elements.push(
-                                <Typography key={`para-${lineIdx}`} variant="body2" component="div" sx={{ mb: 2 }}>
-                                  {formatText(currentParagraph.trim())}
-                                </Typography>
-                              );
-                              currentParagraph = '';
-                            }
-                            inList = false;
-                          } else {
-                            // Regular text line
-                            if (inList) {
-                              // If we were in a list and now we have regular text, close the list
-                              inList = false;
-                            }
-                            currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
-                          }
-                        });
-
-                        // Add any remaining paragraph
-                        if (currentParagraph.trim()) {
-                          elements.push(
-                            <Typography key="para-final" variant="body2" component="div" sx={{ mb: 2 }}>
-                              {formatText(currentParagraph.trim())}
-                            </Typography>
-                          );
-                        }
-
-                        return elements.length > 0 ? elements : formatText(message.content);
-                      })()}
-                    </Box>
-                    {message.error && (
-                      <Alert severity="error" sx={{ mt: 2 }}>
-                        {message.error}
-                      </Alert>
-                    )}
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: 'block', mt: 1.5, fontStyle: 'italic' }}
-                    >
-                      {message.timestamp.toLocaleTimeString()}
-                    </Typography>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
+            {/* Error display */}
+            {message.error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {message.error}
+              </Alert>
+            )}
 
             {/* Cross-Database Query Indicator */}
             {message.isCrossConnector && (
@@ -1476,36 +1379,49 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               </Accordion>
             ) : null}
 
-            {/* Results Table */}
+            {/* Enhanced Results Card */}
             {message.results && message.results.length > 0 && (
-              <Paper elevation={1} sx={{ p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                  <Typography variant="h6">
-                    Results ({message.results.length} rows)
-                  </Typography>
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      size="small"
-                      startIcon={<DownloadIcon />}
-                      onClick={() => downloadCSV(message.results)}
-                    >
-                      Export CSV
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      startIcon={<InsightsIcon />}
-                      onClick={() => handleAnalyzeResults(message)}
-                    >
-                      View Detailed Results
-                    </Button>
+              <Box>
+                <EnhancedResultsCard
+                  message={message}
+                  onViewAnalysis={() => handleAnalyzeResults(message)}
+                  onViewDetailed={() => handleViewDetailedResults(message)}
+                  showChart={true}
+                  chartComponent={
+                    <PlotlyVisualization
+                      data={message.results}
+                      title={message.question || 'Query Results Visualization'}
+                    />
+                  }
+                />
+
+                {/* Follow-up Suggestions */}
+                {message.followUpSuggestions && message.followUpSuggestions.length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <FollowUpSuggestions
+                      suggestions={message.followUpSuggestions}
+                      onSuggestionClick={(suggestion) => {
+                        setInputMessage(suggestion);
+                        setTimeout(() => {
+                          const inputElement = document.querySelector('input[type="text"]');
+                          if (inputElement) {
+                            inputElement.focus();
+                          }
+                        }, 100);
+                      }}
+                    />
+                  </Box>
+                )}
+
+                {/* Agent Mode Button */}
+                {onOpenAgentMode && (
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
                     <Button
                       size="small"
                       variant="outlined"
                       color="primary"
                       startIcon={<SmartToyIcon />}
                       onClick={() => {
-                        // Find the user's question
                         const messageIndex = messages.findIndex(m => m.id === message.id);
                         let userQuestion = '';
                         for (let i = messageIndex - 1; i >= 0; i--) {
@@ -1514,210 +1430,110 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                             break;
                           }
                         }
-                        // Navigate to agent mode with the question
-                        if (onOpenAgentMode) {
-                          onOpenAgentMode(userQuestion);
-                        }
+                        onOpenAgentMode(userQuestion);
                       }}
+                      sx={{ textTransform: 'none' }}
                     >
-                      Agent Mode
-                    </Button>
-                  </Stack>
-                </Stack>
-
-                {/* Follow-up Suggestions */}
-                {message.followUpSuggestions && message.followUpSuggestions.length > 0 && (
-                  <FollowUpSuggestions
-                    suggestions={message.followUpSuggestions}
-                    onSuggestionClick={(suggestion) => {
-                      setInputMessage(suggestion);
-                      // Auto-focus input field
-                      setTimeout(() => {
-                        const inputElement = document.querySelector('input[type="text"]');
-                        if (inputElement) {
-                          inputElement.focus();
-                        }
-                      }, 100);
-                    }}
-                  />
-                )}
-
-                {/* Visualization Toggle - Single Button */}
-                {message.results && message.results.length > 0 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 3, mb: 2, gap: 2 }}>
-                    <Button
-                      variant={showVisualization[message.id] ? 'contained' : 'outlined'}
-                      startIcon={showVisualization[message.id] ? <TableChartIcon /> : <AutoGraphIcon />}
-                      onClick={() => setShowVisualization(prev => ({ ...prev, [message.id]: !prev[message.id] }))}
-                      size="medium"
-                      sx={{
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        px: 3,
-                        py: 1
-                      }}
-                    >
-                      {showVisualization[message.id] ? 'Show Table' : 'Visualize Data'}
+                      Continue in Agent Mode
                     </Button>
                   </Box>
                 )}
 
-                <Box sx={{ width: '100%' }}>
-                  {showVisualization[message.id] ? (
-                    <PlotlyVisualization
-                      data={message.results}
-                      title={message.question || 'Query Results Visualization'}
-                    />
-                  ) : (
-                    (() => {
-                      try {
-                        // Safety check - ensure we have data before creating columns
-                        if (!message.results || message.results.length === 0 || !message.results[0]) {
-                          return (
-                            <Typography variant="body2" sx={{ p: 2 }}>
-                              No data to display
-                            </Typography>
-                          );
-                        }
+                {/* Metadata Chips */}
+                {message.metadata && (message.metadata.cost || message.metadata.bytesProcessed) && (
+                  <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center' }}>
+                    {message.metadata.cost && (
+                      <Chip
+                        size="small"
+                        label={`Cost: $${message.metadata.cost.toFixed(6)}`}
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: '0.75rem' }}
+                      />
+                    )}
+                    {message.metadata.bytesProcessed && (
+                      <Chip
+                        size="small"
+                        label={`${(message.metadata.bytesProcessed / 1024 / 1024).toFixed(1)} MB`}
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: '0.75rem' }}
+                      />
+                    )}
+                  </Stack>
+                )}
+              </Box>
+            )}
 
-                      const safeRows = message.results.map((row, index) => ({ id: index, ...row }));
-                      const safeColumns = Object.keys(message.results[0]).map((key, index) => {
-                        // Find a sample value to determine type (check multiple rows if needed)
-                        let sampleValue = message.results[0][key];
-                        for (let i = 0; i < Math.min(5, message.results.length) && (sampleValue === null || sampleValue === undefined); i++) {
-                          sampleValue = message.results[i][key];
-                        }
-                        
-                        const isNumeric = typeof sampleValue === 'number';
-                        const keyLower = key.toLowerCase();
-                        // Only apply currency formatting to columns that are clearly monetary
-                        const isCurrency = keyLower.includes('amount') ||
-                                          keyLower.includes('revenue') ||
-                                          keyLower.includes('price') ||
-                                          keyLower.includes('cost') ||
-                                          keyLower.includes('margin') ||
-                                          keyLower.includes('profit') ||
-                                          keyLower.includes('cogs') ||
-                                          keyLower.includes('budget') ||
-                                          keyLower.includes('spend') ||
-                                          keyLower.includes('fee') ||
-                                          keyLower.includes('salary') ||
-                                          keyLower.includes('payment');
-                        const isFirstColumn = index === 0;
-                        
-                        return {
-                          field: key,
-                          headerName: key
-                            .split('_')
-                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                            .join(' '),
-                          flex: 1,
-                          minWidth: 150,
-                          type: isNumeric ? 'number' : 'string',
-                          align: isFirstColumn ? 'left' : (isNumeric ? 'right' : 'left'),
-                          headerAlign: isFirstColumn ? 'left' : (isNumeric ? 'right' : 'left'),
-                          renderCell: (params) => {
-                            try {
-                              // Handle null/undefined values
-                              if (params.value === null || params.value === undefined) {
-                                return <span style={{ color: '#999', fontStyle: 'italic' }}>null</span>;
-                              }
-                              
-                              if (isNumeric && isCurrency && typeof params.value === 'number') {
-                                return `$${params.value.toLocaleString('en-US', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2
-                                })}`;
-                              }
-                              if (isNumeric && typeof params.value === 'number') {
-                                return params.value.toLocaleString('en-US');
-                              }
-                              return String(params.value);
-                            } catch (err) {
-                              console.error('Error rendering cell:', err);
-                              return String(params.value || '');
-                            }
-                          }
-                        };
-                      });
 
-                      return (
-                        <DataGrid
-                          rows={safeRows}
-                          columns={safeColumns}
-                          initialState={{
-                            pagination: {
-                              paginationModel: { pageSize: 10, page: 0 },
-                            },
-                          }}
-                          pageSizeOptions={[10, 25, 50]}
-                          density="compact"
-                          disableRowSelectionOnClick
-                          sx={{
-                            '& .MuiDataGrid-cell': {
-                              fontSize: '0.875rem',
-                            },
-                            '& .MuiDataGrid-columnHeaders': {
-                              backgroundColor: 'action.hover',
-                              fontSize: '0.875rem',
-                              fontWeight: 600,
-                            },
-                          }}
-                        />
-                      );
-                    } catch (err) {
-                      console.error('Error rendering DataGrid:', err);
-                      return (
-                        <Alert severity="error" sx={{ m: 2 }}>
-                          Error displaying results: {err.message}
-                        </Alert>
-                      );
-                    }
-                  })()
-                  )}
+            {/* Empty Results - Enhanced UI */}
+            {message.results && message.results.length === 0 && message.sql && (
+              <Paper
+                elevation={0}
+                sx={{
+                  borderRadius: 2,
+                  border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Header */}
+                <Box
+                  sx={{
+                    px: 2.5,
+                    py: 1.5,
+                    bgcolor: alpha(theme.palette.warning.main, 0.08),
+                    borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                  }}
+                >
+                  <InfoIcon sx={{ color: theme.palette.warning.main, fontSize: 20 }} />
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    No Results Found
+                  </Typography>
                 </Box>
 
-                {/* Metadata and Actions - Compact */}
-                <Stack direction="row" spacing={1} sx={{ mt: 1, alignItems: 'center' }}>
-                  {message.metadata && (message.metadata.cost || message.metadata.bytesProcessed) && (
-                    <>
-                      {message.metadata.cost && (
-                        <Chip
-                          size="small"
-                          label={`Cost: $${message.metadata.cost.toFixed(6)}`}
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: '0.75rem' }}
-                        />
-                      )}
-                      {message.metadata.bytesProcessed && (
-                        <Chip
-                          size="small"
-                          label={`${(message.metadata.bytesProcessed / 1024 / 1024).toFixed(1)} MB`}
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: '0.75rem' }}
-                        />
-                      )}
-                    </>
-                  )}
-                </Stack>
-              </Paper>
-            )}
-
-
-            {/* No results message */}
-            {message.results && message.results.length === 0 && message.sql && (
-              <Paper elevation={1} sx={{ p: 2, bgcolor: 'warning.light' }}>
-                <Typography variant="body2" fontWeight="medium" gutterBottom>
-                  The query executed successfully but returned no results.
-                </Typography>
-                {message.emptyResultNote && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {message.emptyResultNote}
+                {/* Content */}
+                <Box sx={{ p: 2.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    The query executed successfully but didn't match any data.
                   </Typography>
-                )}
+
+                  {/* AI Explanation */}
+                  {message.emptyResultNote && (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 2,
+                        mb: 2,
+                        borderRadius: 1.5,
+                        bgcolor: alpha(theme.palette.info.main, 0.04),
+                        borderLeft: `3px solid ${theme.palette.info.main}`,
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                        {message.emptyResultNote}
+                      </Typography>
+                    </Paper>
+                  )}
+
+                  {/* Follow-up Suggestions - NOW SHOWN FOR EMPTY RESULTS */}
+                  {message.followUpSuggestions && message.followUpSuggestions.length > 0 && (
+                    <FollowUpSuggestions
+                      suggestions={message.followUpSuggestions}
+                      onSuggestionClick={(suggestion) => {
+                        setInputMessage(suggestion);
+                        setTimeout(() => {
+                          const inputElement = document.querySelector('input[type="text"]');
+                          if (inputElement) {
+                            inputElement.focus();
+                          }
+                        }, 100);
+                      }}
+                    />
+                  )}
+                </Box>
               </Paper>
             )}
-        </Box>
       </Box>
     );
   };
@@ -1740,10 +1556,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
 
 
   return (
-    <Box sx={{ 
-      height: '100vh', 
-      display: 'flex', 
-      position: 'relative', 
+    <Box sx={{
+      height: 'calc(100vh - 56px)',
+      display: 'flex',
+      position: 'relative',
       overflow: 'hidden'
     }}>
       {/* Main Content Area */}
@@ -1754,47 +1570,43 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         height: '100%',
         overflow: 'hidden',
       }}>
-        {/* Header */}
+        {/* Header - Clean Salesforce Style */}
         <Box sx={{
-          p: 2,
-          borderBottom: '1px solid #e0e0e0',
-          bgcolor: '#fff',
+          px: 3,
+          py: 2,
+          bgcolor: '#ffffff',
+          borderBottom: '1px solid #e5e5e5',
           flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
         }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            {/* Left section */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {onBackToSearch && (
-                <IconButton
-                  onClick={onBackToSearch}
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(106, 109, 112, 0.1)',
-                    '&:hover': { bgcolor: 'rgba(106, 109, 112, 0.2)' }
-                  }}
-                >
-                  <ArrowBackIcon />
-                </IconButton>
-              )}
-              <Box>
-                <Typography variant="h6" fontWeight={600} color="#1A2332">
-                  AXIS AI
-                </Typography>
-                <Typography variant="body2" color="#5A6677">
-                  {mode === 'chat'
-                    ? 'Ask Anything'
-                    : 'Conduct comprehensive analysis with AI'}
-                </Typography>
-              </Box>
-            </Box>
+          {onBackToSearch && (
+            <IconButton onClick={onBackToSearch} size="small" sx={{ color: '#706e6b' }}>
+              <ArrowBackIcon />
+            </IconButton>
+          )}
+          <Box sx={{
+            width: 36,
+            height: 36,
+            borderRadius: '8px',
+            bgcolor: '#032D60',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <AutoAwesomeIcon sx={{ color: '#1B96FF', fontSize: 20 }} />
           </Box>
+          <Typography sx={{ fontWeight: 600, color: '#032D60', fontSize: '1.1rem' }}>
+            AXIS AI
+          </Typography>
         </Box>
 
         {/* Conditional Content Based on Mode */}
         {mode === 'chat' ? (
           <>
-            {/* Sub-tabs for Chat Mode */}
-            <Box sx={{ px: 2, bgcolor: '#fff', borderBottom: '1px solid #e0e0e0' }}>
+            {/* Sub-tabs - Salesforce Style */}
+            <Box sx={{ px: 3, bgcolor: '#ffffff', borderBottom: '1px solid #dddbda' }}>
               <Tabs
                 value={viewMode}
                 onChange={(e, v) => setViewMode(v)}
@@ -1802,141 +1614,183 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                   '& .MuiTab-root': {
                     textTransform: 'none',
                     minHeight: '48px',
-                    fontSize: '0.9rem',
-                    fontWeight: 400,
-                    color: '#5A6677',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: '#706e6b',
+                    px: 2,
                     '&.Mui-selected': {
-                      color: '#0a6ed1',
-                      fontWeight: 500,
+                      color: '#0176D3',
                     }
                   },
                   '& .MuiTabs-indicator': {
-                    bgcolor: '#0a6ed1',
+                    bgcolor: '#0176D3',
                     height: 3,
                   }
                 }}
               >
-                <Tab
-                  value="chat"
-                  label="Chat"
-                  icon={<ChatIcon sx={{ fontSize: 18 }} />}
-                  iconPosition="start"
-                />
-                <Tab
-                  value="history"
-                  label="Execution History"
-                  icon={<HistoryIcon sx={{ fontSize: 18 }} />}
-                  iconPosition="start"
-                />
+                <Tab value="chat" label="Chat" />
+                <Tab value="history" label="History" />
               </Tabs>
             </Box>
 
             {/* Chat View */}
             {viewMode === 'chat' ? (
               <>
-                {/* Sample Queries Panel */}
+                {/* Welcome Section - Salesforce Style */}
                 {showSampleQueries && messages.length === 0 && (
-              <Accordion 
-            defaultExpanded 
-            sx={{ 
-              flexShrink: 0, 
-              mx: 2, 
-              mt: 1,
-              mb: 1,
-              '& .MuiAccordionSummary-root': {
-                minHeight: 40,
-                '& .MuiAccordionSummary-content': {
-                  margin: '8px 0',
-                }
-              },
-              '& .MuiAccordionDetails-root': {
-                pt: 1,
-                pb: 2,
-              }
-            }}
-          >
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="h6" sx={{ fontSize: '1rem' }}>
-                Sample Queries - Click to try
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Grid container spacing={2}>
-                {SAMPLE_QUERIES.map((section) => (
-                  <Grid item xs={12} sm={6} md={3} key={section.category}>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: 'text.secondary' }}>
-                        {section.category}
-                      </Typography>
-                      <Stack spacing={1}>
-                        {section.queries.map((query, idx) => (
-                          <Chip
-                            key={idx}
-                            label={query}
-                            size="small"
-                            onClick={() => setInputMessage(query)}
-                            sx={{ 
-                              cursor: 'pointer',
-                              justifyContent: 'flex-start',
-                              height: 'auto',
-                              '& .MuiChip-label': {
-                                whiteSpace: 'normal',
-                                padding: '8px 12px',
-                              },
-                              '&:hover': {
-                                bgcolor: 'primary.light',
-                                color: 'primary.contrastText',
-                              }
-                            }}
-                          />
-                        ))}
-                      </Stack>
+                  <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    p: 3,
+                    bgcolor: '#f3f3f3',
+                    minHeight: 'calc(100vh - 336px)',
+                    overflow: 'auto',
+                  }}>
+                    {/* Hero Section */}
+                    <Box sx={{
+                      bgcolor: '#ffffff',
+                      borderRadius: '8px',
+                      p: 4,
+                      mb: 3,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                      border: '1px solid #e5e5e5',
+                    }}>
+                      <Box sx={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: '12px',
+                        bgcolor: '#e8f4fd',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <AutoAwesomeIcon sx={{ fontSize: 32, color: '#0176D3' }} />
+                      </Box>
+                      <Box>
+                        <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', mb: 0.5, color: '#032D60' }}>
+                          Welcome to AXIS AI
+                        </Typography>
+                        <Typography sx={{ color: '#706e6b', fontSize: '0.95rem' }}>
+                          Your intelligent assistant for data insights. Ask questions in natural language and get instant answers.
+                        </Typography>
+                      </Box>
                     </Box>
-                  </Grid>
-                ))}
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-        )}
 
-        {/* Messages Area - With Scroll */}
-        <Box 
+                    {/* Quick Actions Grid */}
+                    <Typography sx={{ fontWeight: 700, color: '#032D60', fontSize: '1rem', mb: 2 }}>
+                      Quick Actions
+                    </Typography>
+                    <Box sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                      gap: 2,
+                      mb: 3,
+                    }}>
+                      {getQuickActions.map((item, idx) => (
+                        <Box
+                          key={idx}
+                          onClick={() => setInputMessage(item.desc)}
+                          sx={{
+                            p: 2.5,
+                            bgcolor: '#ffffff',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.15s ease',
+                            border: '1px solid transparent',
+                            '&:hover': {
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                              borderColor: item.color,
+                              transform: 'translateY(-2px)',
+                            },
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                            <Box sx={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: '8px',
+                              bgcolor: `${item.color}15`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: item.color,
+                              flexShrink: 0,
+                            }}>
+                              {item.icon}
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontWeight: 600, color: '#032D60', fontSize: '0.95rem', mb: 0.5 }}>
+                                {item.title}
+                              </Typography>
+                              <Typography sx={{ color: '#706e6b', fontSize: '0.8rem' }}>
+                                {item.desc}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
+
+                    {/* Getting Started Section */}
+                    <Typography sx={{ fontWeight: 700, color: '#032D60', fontSize: '1rem', mb: 2 }}>
+                      Getting Started
+                    </Typography>
+                    <Box sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: 2,
+                    }}>
+                      {[
+                        { icon: <ChatIcon />, title: "Ask Questions", desc: "Type natural language questions about your data" },
+                        { icon: <InsightsIcon />, title: "Get Insights", desc: "AI analyzes and visualizes your data automatically" },
+                        { icon: <DashboardIcon />, title: "Build Dashboards", desc: "Save queries and create interactive dashboards" },
+                      ].map((item, idx) => (
+                        <Box key={idx} sx={{ p: 2.5, bgcolor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                            <Box sx={{ color: '#0176D3' }}>{item.icon}</Box>
+                            <Typography sx={{ fontWeight: 600, color: '#032D60', fontSize: '0.9rem' }}>{item.title}</Typography>
+                          </Box>
+                          <Typography sx={{ color: '#706e6b', fontSize: '0.8rem' }}>{item.desc}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+
+        {/* Messages Area - Clean White */}
+        <Box
           data-messages-container="true"
-          sx={{ 
+          sx={{
             flexGrow: 1,
-            minHeight: 0, // Important for proper flex behavior
-            overflow: 'auto', // Changed from 'hidden' to 'auto' to enable scrolling
-            p: 2,
-            bgcolor: 'background.default',
+            minHeight: 0,
+            overflow: 'auto',
+            p: 3,
+            bgcolor: '#ffffff',
             display: 'flex',
             flexDirection: 'column',
-            // Set a max height to ensure input area is visible
-            maxHeight: 'calc(100vh - 280px)', // Adjust based on header + input area height
-            // Custom scrollbar styling
+            maxHeight: 'calc(100vh - 336px)',
+            // Minimal scrollbar
             '&::-webkit-scrollbar': {
-              width: '8px',
+              width: '6px',
             },
             '&::-webkit-scrollbar-track': {
-              backgroundColor: 'rgba(0, 0, 0, 0.05)',
-              borderRadius: '4px',
+              backgroundColor: 'transparent',
             },
             '&::-webkit-scrollbar-thumb': {
-              backgroundColor: 'rgba(0, 0, 0, 0.2)',
-              borderRadius: '4px',
+              backgroundColor: '#e5e7eb',
+              borderRadius: '10px',
               '&:hover': {
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: '#d1d5db',
               },
             },
           }}>
           <Box sx={{ maxWidth: 1200, mx: 'auto', width: '100%' }}>
-            {/* Empty state message - only show if truly empty (no welcome message) */}
-            {messages.length === 0 && (
-              <Box sx={{ textAlign: 'center', py: 4, opacity: 0.6 }}>
-                <Typography variant="h6" color="text.secondary">
-                  Start a conversation by typing below or selecting a sample query
-                </Typography>
-              </Box>
-            )}
+            {/* Empty state is now handled by the welcome cards above */}
             
             {/* Messages - Show all messages now that we have scroll */}
             {messages.map(message => (
@@ -1945,8 +1799,23 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               </div>
             ))}
             
-            {loading && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+            {/* Show streaming progress or simple loading indicator */}
+            {/* Show QueryProgress when streaming, loading, or briefly after completion */}
+            {(queryProgress.isStreaming || queryProgress.phase) && (
+              <Box sx={{ mt: 2 }}>
+                <QueryProgress
+                  currentPhase={queryProgress.phase}
+                  progress={queryProgress.progress}
+                  message={queryProgress.message}
+                  detail={queryProgress.detail}
+                  sql={queryProgress.sql}
+                  error={queryProgress.phase === 'error' ? queryProgress.message : null}
+                />
+              </Box>
+            )}
+            {/* Fallback loading indicator when not streaming */}
+            {loading && !queryProgress.isStreaming && !queryProgress.phase && (
+              <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <CircularProgress size={20} />
                 <Typography variant="body2" color="text.secondary">
                   Processing your query...
@@ -1956,42 +1825,61 @@ const SimpleChatInterface = forwardRef((props, ref) => {
           </Box>
         </Box>
 
-        <Divider sx={{ flexShrink: 0 }} />
-
-        {/* Input Area - Fixed */}
-        <Paper elevation={3} sx={{ p: 2, borderRadius: 0, flexShrink: 0 }}>
-          <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-            <Stack direction="row" spacing={2}>
+        {/* Input Area - Salesforce Style */}
+        <Box sx={{ p: 2, bgcolor: '#ffffff', borderTop: '1px solid #dddbda', flexShrink: 0 }}>
+          <Box sx={{ maxWidth: 900, mx: 'auto' }}>
+            <Box sx={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: 1.5,
+              p: 1.5,
+              pl: 2,
+              borderRadius: '8px',
+              border: '1px solid #dddbda',
+              bgcolor: '#ffffff',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+              '&:focus-within': {
+                borderColor: '#0176D3',
+                boxShadow: '0 0 0 1px #0176D3',
+              },
+            }}>
               <TextField
                 fullWidth
+                multiline
+                maxRows={4}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isInitializing ? "Initializing..." : "Ask a question about your data..."}
+                placeholder="Ask a question about your data..."
                 disabled={loading || isInitializing}
-                variant="outlined"
+                variant="standard"
+                InputProps={{ disableUnderline: true }}
                 sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                  }
+                  '& .MuiInputBase-root': { fontSize: '0.95rem', lineHeight: 1.5, py: 0.5 },
+                  '& .MuiInputBase-input': { '&::placeholder': { color: '#706e6b', opacity: 1 } },
                 }}
               />
-              <Button
-                variant="contained"
+              <IconButton
                 onClick={handleSendMessage}
                 disabled={!inputMessage.trim() || loading || isInitializing}
-                sx={{ 
-                  borderRadius: 2, 
-                  px: 3,
-                  minWidth: 100
+                sx={{
+                  width: 44,
+                  height: 44,
+                  bgcolor: inputMessage.trim() && !loading ? '#0176D3' : '#ecebea',
+                  color: 'white',
+                  borderRadius: '8px',
+                  '&:hover': { bgcolor: '#014486' },
+                  '&.Mui-disabled': { color: '#b0adab' },
                 }}
-                endIcon={<SendIcon />}
               >
-                Send
-              </Button>
-            </Stack>
+                {loading ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <SendIcon sx={{ fontSize: 20 }} />}
+              </IconButton>
+            </Box>
+            <Typography sx={{ mt: 1, textAlign: 'center', color: '#706e6b', fontSize: '0.75rem' }}>
+              Press Enter to send • Shift+Enter for new line
+            </Typography>
           </Box>
-        </Paper>
+        </Box>
               </>
             ) : (
               /* History View */
@@ -2013,25 +1901,9 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             p: 3
           }}>
             <Box sx={{ textAlign: 'center', maxWidth: 600 }}>
-              <ResearchIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, mb: 1 }}>
-                <Typography variant="h4">
-                  Deep Research
-                </Typography>
-                <Chip
-                  label="BETA"
-                  size="small"
-                  sx={{
-                    bgcolor: 'warning.light',
-                    color: 'warning.dark',
-                    fontWeight: 700,
-                    fontSize: '0.7rem',
-                    height: 22
-                  }}
-                />
-              </Box>
-              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mb: 2, fontStyle: 'italic' }}>
-                Undergoing Pilot - Your feedback helps us improve
+              <ResearchIcon sx={{ fontSize: 64, color: '#3b82f6', mb: 2 }} />
+              <Typography variant="h4" sx={{ mb: 2 }}>
+                Deep Research
               </Typography>
               <Typography variant="body1" color="text.secondary" paragraph>
                 Ask complex financial questions that require comprehensive analysis.
@@ -2108,27 +1980,22 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         onClose={() => setOpenAnalysisDialog(false)}
         maxWidth="lg"
         fullWidth
-        fullScreen={false}
         PaperProps={{
-          sx: { 
+          sx: {
             minHeight: { xs: '100vh', sm: '80vh' },
             maxHeight: { xs: '100vh', sm: '90vh' },
           }
         }}
       >
-        <DialogTitle sx={{ 
-          borderBottom: 1, 
-          borderColor: 'divider',
-          pb: 2,
-        }}>
+        <DialogTitle>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Stack direction="row" spacing={1} alignItems="center">
               <InsightsIcon color="primary" />
-              <Typography variant="h5" fontWeight="bold">
+              <Typography variant="h6" fontWeight="bold">
                 AI Analysis Results
               </Typography>
             </Stack>
-            <IconButton 
+            <IconButton
               onClick={() => setOpenAnalysisDialog(false)}
               size="small"
             >
@@ -2136,7 +2003,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
             </IconButton>
           </Stack>
         </DialogTitle>
-        <DialogContent sx={{ p: 3 }}>
+        <DialogContent>
           {activeAnalysis || analysisLoading ? (
             <ResultAnalysis
               analysis={activeAnalysis}
@@ -2154,7 +2021,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
         maxWidth="xl"
         fullWidth
         PaperProps={{
-          sx: { 
+          sx: {
             minHeight: '80vh',
             maxHeight: '90vh',
           }
@@ -2231,6 +2098,32 @@ const SimpleChatInterface = forwardRef((props, ref) => {
           }
         }}
       />
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}>
+          <WarningIcon />
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDialog.onConfirm} variant="contained" color="warning" autoFocus>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 });

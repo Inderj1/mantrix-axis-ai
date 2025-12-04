@@ -306,10 +306,17 @@ class BigQueryConnector(BaseDatabaseConnector):
             Query with qualified table names
         """
         # Extract CTE names from WITH clauses to avoid qualifying them
-        cte_pattern = r'\bWITH\s+(\w+)\s+AS\s*\(|,\s*(\w+)\s+AS\s*\('
+        # This pattern handles SQL comments (-- and /* */) between WITH/comma and CTE name
+        # Matches patterns like:
+        #   WITH cte_name AS (
+        #   WITH -- comment\n cte_name AS (
+        #   , cte_name AS (
+        #   , -- comment\n cte_name AS (
+        #   , /* comment */ cte_name AS (
+        cte_pattern = r'(?:\bWITH|,)\s*(?:--[^\n]*\n\s*)*(?:/\*.*?\*/\s*)*(\w+)\s+AS\s*\('
         cte_names = set()
-        for match in re.finditer(cte_pattern, query, re.IGNORECASE):
-            cte_name = match.group(1) or match.group(2)
+        for match in re.finditer(cte_pattern, query, re.IGNORECASE | re.DOTALL):
+            cte_name = match.group(1)
             if cte_name:
                 cte_names.add(cte_name.lower())
 

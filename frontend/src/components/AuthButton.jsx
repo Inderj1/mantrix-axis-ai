@@ -127,12 +127,12 @@ function AuthButton() {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center' }}>
       <Typography
-        variant="body1"
         sx={{
-          mr: 1,
+          mr: 1.5,
           display: { xs: 'none', sm: 'block' },
           fontWeight: 500,
-          color: 'text.primary',
+          color: '#032D60',
+          fontSize: '0.9rem',
         }}
       >
         {displayName}
@@ -143,9 +143,9 @@ function AuthButton() {
         aria-controls="menu-appbar"
         aria-haspopup="true"
         onClick={handleMenu}
-        sx={{ color: 'text.primary' }}
+        sx={{ p: 0.5 }}
       >
-        <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main' }}>
+        <Avatar sx={{ width: 36, height: 36, bgcolor: '#0176D3', fontSize: '1rem', fontWeight: 600 }}>
           {userInitial}
         </Avatar>
       </IconButton>

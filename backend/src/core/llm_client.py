@@ -166,7 +166,7 @@ ORDER BY current_inventory ASC"""
                         },
                         "explanation": {
                             "type": "string",
-                            "description": "Brief explanation of what the query does"
+                            "description": "A helpful, conversational explanation addressed to the user. Write like a friendly advisor: Start with what you found or analyzed (e.g., 'I analyzed your customer data...', 'Here are your top performers...', 'Based on your question...'). Explain key insights in plain language without mentioning technical details like table names, SQL, or database specifics. Focus on the business meaning and what the user should know."
                         },
                         "tables_used": {
                             "type": "array",

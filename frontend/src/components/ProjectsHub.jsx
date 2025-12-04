@@ -12,6 +12,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   Chip,
   Menu,
@@ -28,6 +29,7 @@ import {
   Delete as DeleteIcon,
   Archive as ArchiveIcon,
   Unarchive as UnarchiveIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
@@ -45,6 +47,12 @@ const ProjectsHub = () => {
     description: '',
     color: '#0a6ed1',
     icon: 'folder'
+  });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
   });
 
   // Load projects on component mount
@@ -93,18 +101,22 @@ const ProjectsHub = () => {
     }
   };
 
-  const handleDeleteProject = async (projectId) => {
-    if (!window.confirm('Are you sure you want to delete this project? Conversations will not be deleted.')) {
-      return;
-    }
-
-    try {
-      await apiService.delete(`/api/v1/projects/${projectId}`);
-      setProjects(projects.filter(p => p.project_id !== projectId));
-      handleCloseMenu();
-    } catch (error) {
-      console.error('Error deleting project:', error);
-    }
+  const handleDeleteProject = (projectId) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Project',
+      message: 'Are you sure you want to delete this project? Conversations will not be deleted.',
+      onConfirm: async () => {
+        try {
+          await apiService.delete(`/api/v1/projects/${projectId}`);
+          setProjects(projects.filter(p => p.project_id !== projectId));
+          handleCloseMenu();
+        } catch (error) {
+          console.error('Error deleting project:', error);
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   const handleArchiveProject = async (projectId, isArchived) => {
@@ -364,6 +376,37 @@ const ProjectsHub = () => {
             sx={{ bgcolor: '#0a6ed1', '&:hover': { bgcolor: '#0854a0' } }}
           >
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}>
+          <WarningIcon />
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}>
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            variant="contained"
+            color="warning"
+            autoFocus
+          >
+            Confirm
           </Button>
         </DialogActions>
       </Dialog>

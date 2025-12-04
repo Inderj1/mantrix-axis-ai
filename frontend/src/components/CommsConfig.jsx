@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   TextField,
   Select,
@@ -29,6 +30,7 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Settings as SettingsIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 
 const CommsConfig = () => {
@@ -42,6 +44,12 @@ const CommsConfig = () => {
   const [editingField, setEditingField] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
 
   // Form states for communication type
   const [typeForm, setTypeForm] = useState({
@@ -171,32 +179,44 @@ const CommsConfig = () => {
     }
   };
 
-  const handleDeleteType = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this communication type?')) return;
-
-    try {
-      const response = await fetch(`/api/v1/comms/config/types/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        setSuccess('Type deleted successfully');
-        fetchCommunicationTypes();
-      }
-    } catch (err) {
-      setError('Failed to delete communication type');
-    }
+  const handleDeleteType = (id) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Communication Type',
+      message: 'Are you sure you want to delete this communication type?',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/v1/comms/config/types/${id}`, { method: 'DELETE' });
+          if (response.ok) {
+            setSuccess('Type deleted successfully');
+            fetchCommunicationTypes();
+          }
+        } catch (err) {
+          setError('Failed to delete communication type');
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
-  const handleDeleteField = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this field?')) return;
-
-    try {
-      const response = await fetch(`/api/v1/comms/config/fields/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        setSuccess('Field deleted successfully');
-        fetchFields(selectedType.id);
-      }
-    } catch (err) {
-      setError('Failed to delete field');
-    }
+  const handleDeleteField = (id) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Field',
+      message: 'Are you sure you want to delete this field?',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/v1/comms/config/fields/${id}`, { method: 'DELETE' });
+          if (response.ok) {
+            setSuccess('Field deleted successfully');
+            fetchFields(selectedType.id);
+          }
+        } catch (err) {
+          setError('Failed to delete field');
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   const resetTypeForm = () => {
@@ -514,6 +534,30 @@ const CommsConfig = () => {
         <DialogActions>
           <Button onClick={() => setOpenFieldDialog(false)}>Cancel</Button>
           <Button onClick={handleSaveField} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" />
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>{confirmDialog.message}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDialog.onConfirm} variant="contained" color="error">
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

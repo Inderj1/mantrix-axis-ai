@@ -27,7 +27,7 @@ const EnterprisePulse = () => {
         maxWidth="md"
         fullWidth
       >
-        <DialogContent sx={{ p: 3 }}>
+        <DialogContent>
           <MonitorCreationWizard
             userId={userId}
             onClose={() => setShowWizard(false)}

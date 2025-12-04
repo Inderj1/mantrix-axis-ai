@@ -649,7 +649,18 @@ class SQLGenerator:
             })
 
             if not connector:
-                logger.warning(f"Connector {connector_id} not found or not enabled")
+                # Debug: check if connector exists with different status
+                debug_connector = collection.find_one({"_id": ObjectId(connector_id)})
+                if debug_connector:
+                    logger.warning(
+                        f"Connector {connector_id} found but filter mismatch",
+                        connector_org=debug_connector.get("organization_id"),
+                        expected_org=self.organization_id,
+                        enabled_for_chat=debug_connector.get("enabled_for_chat"),
+                        status=debug_connector.get("status")
+                    )
+                else:
+                    logger.warning(f"Connector {connector_id} not found in database")
                 return None
 
             # Build config including database_type
@@ -1572,9 +1583,14 @@ class SQLGenerator:
                             logger.debug(f"Test execution: {execution_time_ms:.0f}ms, {row_count} rows")
 
                         except Exception as exec_error:
-                            # Test execution failed
+                            # Test execution failed - update both local vars AND result["validation"]
                             error_details = str(exec_error)
                             validation_status = False
+                            # Fix: Update result["validation"] so error correction agent sees the failure
+                            if "validation" not in result:
+                                result["validation"] = {}
+                            result["validation"]["valid"] = False
+                            result["validation"]["error"] = error_details
                             logger.warning(f"Test execution failed: {error_details[:100]}...")
 
                     # Get confidence score from result (if available)

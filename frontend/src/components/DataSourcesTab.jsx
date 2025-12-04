@@ -12,6 +12,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   TextField,
   FormControl,
@@ -85,6 +86,12 @@ const DataSourcesTab = () => {
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
   
   // Form state
   const [formData, setFormData] = useState({
@@ -219,20 +226,26 @@ const DataSourcesTab = () => {
     setDialogOpen(true);
   };
 
-  const handleDeleteConnection = async (connectionId) => {
-    if (window.confirm('Are you sure you want to delete this connection?')) {
-      try {
-        const response = await fetch(`http://localhost:8000/api/v1/connections/${connectionId}`, {
-          method: 'DELETE',
-        });
-        if (response.ok) {
-          showSnackbar('Connection deleted successfully', 'success');
-          loadConnections();
+  const handleDeleteConnection = (connectionId) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Connection',
+      message: 'Are you sure you want to delete this connection? This action cannot be undone.',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`http://localhost:8000/api/v1/connections/${connectionId}`, {
+            method: 'DELETE',
+          });
+          if (response.ok) {
+            showSnackbar('Connection deleted successfully', 'success');
+            loadConnections();
+          }
+        } catch (error) {
+          showSnackbar('Failed to delete connection', 'error');
         }
-      } catch (error) {
-        showSnackbar('Failed to delete connection', 'error');
-      }
-    }
+        setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+      },
+    });
   };
 
   const handleTestConnection = async () => {
@@ -989,6 +1002,42 @@ const DataSourcesTab = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-description"
+      >
+        <DialogTitle id="confirm-dialog-title">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <WarningIcon color="warning" />
+            {confirmDialog.title}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="confirm-dialog-description">
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            color="error"
+            variant="contained"
+            autoFocus
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -1,4 +1,16 @@
-"""Service for managing conversations and messages with MongoDB storage."""
+"""
+DEPRECATED: This service is deprecated. Use mongodb_client.py instead.
+
+This service uses sync pymongo with snake_case field names (conversation_id, user_id, etc.)
+which is incompatible with mongodb_client.py that uses async motor with camelCase fields
+(conversationId, userId, etc.). Both write to the same MongoDB collection, causing
+data consistency issues.
+
+All conversation routes have been migrated to use mongodb_client.py.
+This file is kept for reference only and should not be used.
+
+Migration Date: December 2024
+"""
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any

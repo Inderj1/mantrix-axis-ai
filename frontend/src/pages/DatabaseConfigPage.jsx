@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  DialogContentText,
   TextField,
   Select,
   MenuItem,
@@ -36,6 +37,8 @@ import {
   Badge,
   Tabs,
   Tab,
+  Snackbar,
+  Avatar,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -61,6 +64,21 @@ import {
   CloudSync as SyncingIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
+
+// Salesforce-style colors
+const sfColors = {
+  bgPage: '#f3f3f3',
+  bgCard: '#ffffff',
+  textPrimary: '#032D60',
+  textSecondary: '#706e6b',
+  accent: '#0176D3',
+  accentHover: '#014486',
+  border: '#e5e5e5',
+  success: '#2E844A',
+  warning: '#FE9339',
+  error: '#C23934',
+  iconBg: '#e8f4fd',
+};
 
 const DATABASE_TYPES = {
   bigquery: {
@@ -220,6 +238,22 @@ const DatabaseConfigPage = () => {
   const [testResults, setTestResults] = useState({});
   const [showPasswords, setShowPasswords] = useState({});
 
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    severity: 'warning', // 'warning' | 'error' | 'info'
+    onConfirm: null,
+  });
+
+  // Snackbar state for notifications
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success', // 'success' | 'error' | 'info' | 'warning'
+  });
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
@@ -306,38 +340,77 @@ const DatabaseConfigPage = () => {
     setDialogOpen(true);
   };
 
-  const handleDeleteConnector = async (connectorId) => {
-    if (window.confirm('Are you sure you want to delete this connector?')) {
-      try {
-        await apiService.deleteConnector(connectorId);
-        loadConnectors();
-      } catch (error) {
-        console.error('Error deleting connector:', error);
-      }
-    }
+  const handleDeleteConnector = (connectorId) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Connector',
+      message: 'Are you sure you want to delete this connector? This action cannot be undone.',
+      severity: 'error',
+      onConfirm: async () => {
+        try {
+          await apiService.deleteConnector(connectorId);
+          setSnackbar({
+            open: true,
+            message: 'Connector deleted successfully',
+            severity: 'success',
+          });
+          loadConnectors();
+        } catch (error) {
+          console.error('Error deleting connector:', error);
+          setSnackbar({
+            open: true,
+            message: `Failed to delete connector: ${error.response?.data?.detail || error.message}`,
+            severity: 'error',
+          });
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   const handleSyncConnector = async (connectorId) => {
     try {
       await apiService.syncConnector(connectorId);
-      alert('Schema sync initiated. Check the connector status for progress.');
+      setSnackbar({
+        open: true,
+        message: 'Schema sync initiated. Check the connector status for progress.',
+        severity: 'info',
+      });
       // Reload connectors to show updated status
       setTimeout(() => loadConnectors(), 1000);
     } catch (error) {
-      alert(`Failed to sync: ${error.response?.data?.detail || error.message}`);
+      setSnackbar({
+        open: true,
+        message: `Failed to sync: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
     }
   };
 
-  const handleClearSchemaCache = async () => {
-    if (!window.confirm('This will clear all cached schema data (Jena, Weaviate, Redis). You will need to re-sync connectors after this. Continue?')) {
-      return;
-    }
-    try {
-      const response = await apiService.clearSchemaCache();
-      alert(`Schema cache cleared successfully!\n\nJena: ${response.data.jena_cleared}\nWeaviate: ${response.data.weaviate_cleared}\nRedis: ${response.data.redis_cleared}`);
-    } catch (error) {
-      alert(`Failed to clear cache: ${error.response?.data?.detail || error.message}`);
-    }
+  const handleClearSchemaCache = () => {
+    setConfirmDialog({
+      open: true,
+      title: 'Clear Schema Cache',
+      message: 'This will clear all cached schema data (Jena, Weaviate, Redis). You will need to re-sync connectors after this. Continue?',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          const response = await apiService.clearSchemaCache();
+          setSnackbar({
+            open: true,
+            message: `Schema cache cleared! Jena: ${response.data.jena_cleared}, Weaviate: ${response.data.weaviate_cleared}, Redis: ${response.data.redis_cleared}`,
+            severity: 'success',
+          });
+        } catch (error) {
+          setSnackbar({
+            open: true,
+            message: `Failed to clear cache: ${error.response?.data?.detail || error.message}`,
+            severity: 'error',
+          });
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   // Check if a field should be shown based on showWhen condition
@@ -452,12 +525,24 @@ const DatabaseConfigPage = () => {
         config: formData.config,
       });
       if (response.data.success) {
-        alert('Connection successful!');
+        setSnackbar({
+          open: true,
+          message: 'Connection successful!',
+          severity: 'success',
+        });
       } else {
-        alert(`Connection failed: ${response.data.error}`);
+        setSnackbar({
+          open: true,
+          message: `Connection failed: ${response.data.error}`,
+          severity: 'error',
+        });
       }
     } catch (error) {
-      alert(`Connection failed: ${error.response?.data?.detail || error.message}`);
+      setSnackbar({
+        open: true,
+        message: `Connection failed: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
     }
   };
 
@@ -510,7 +595,11 @@ const DatabaseConfigPage = () => {
             window.removeEventListener('message', handleMessage);
             const storedState = sessionStorage.getItem('oauth_state');
             if (event.data.state !== storedState) {
-              alert('OAuth state mismatch. Please try again.');
+              setSnackbar({
+                open: true,
+                message: 'OAuth state mismatch. Please try again.',
+                severity: 'error',
+              });
               return;
             }
             // Complete the OAuth flow
@@ -524,22 +613,38 @@ const DatabaseConfigPage = () => {
                 location: formData.config.location || 'US',
               });
               if (completeResponse.data) {
-                alert('BigQuery connection created successfully!');
+                setSnackbar({
+                  open: true,
+                  message: 'BigQuery connection created successfully!',
+                  severity: 'success',
+                });
                 setDialogOpen(false);
                 loadConnectors();
               }
             } catch (error) {
-              alert(`Failed to complete OAuth: ${error.response?.data?.detail || error.message}`);
+              setSnackbar({
+                open: true,
+                message: `Failed to complete OAuth: ${error.response?.data?.detail || error.message}`,
+                severity: 'error',
+              });
             }
           } else if (event.data.type === 'oauth_error') {
             window.removeEventListener('message', handleMessage);
-            alert(`OAuth failed: ${event.data.error}`);
+            setSnackbar({
+              open: true,
+              message: `OAuth failed: ${event.data.error}`,
+              severity: 'error',
+            });
           }
         };
         window.addEventListener('message', handleMessage);
       }
     } catch (error) {
-      alert(`Failed to initiate OAuth: ${error.response?.data?.detail || error.message}`);
+      setSnackbar({
+        open: true,
+        message: `Failed to initiate OAuth: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
     }
   };
 
@@ -733,56 +838,76 @@ const DatabaseConfigPage = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Database Connections
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Manage your database connections and configure data sources
-        </Typography>
+    <Box sx={{ bgcolor: sfColors.bgPage, minHeight: '100%', p: 3 }}>
+      {/* Hero Header */}
+      <Box sx={{
+        bgcolor: sfColors.bgCard,
+        borderRadius: '8px',
+        p: 3,
+        mb: 3,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+      }}>
+        <Avatar sx={{
+          width: 64,
+          height: 64,
+          bgcolor: sfColors.iconBg,
+        }}>
+          <DatabaseIcon sx={{ fontSize: 32, color: sfColors.accent }} />
+        </Avatar>
+        <Box>
+          <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', color: sfColors.textPrimary }}>
+            Database Connections
+          </Typography>
+          <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.95rem' }}>
+            Manage your database connections and configure data sources
+          </Typography>
+        </Box>
       </Box>
 
       {/* Statistics */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <DatabaseIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
-            <Typography variant="h4">{connectors.length}</Typography>
-            <Typography variant="body2" color="text.secondary">
+          <Paper sx={{ p: 3, textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+            <DatabaseIcon sx={{ fontSize: 40, color: sfColors.accent, mb: 1 }} />
+            <Typography sx={{ fontSize: '2rem', fontWeight: 700, color: sfColors.textPrimary }}>{connectors.length}</Typography>
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem' }}>
               Total Connections
             </Typography>
           </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <CheckCircleIcon sx={{ fontSize: 40, color: 'success.main', mb: 1 }} />
-            <Typography variant="h4">
+          <Paper sx={{ p: 3, textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+            <CheckCircleIcon sx={{ fontSize: 40, color: sfColors.success, mb: 1 }} />
+            <Typography sx={{ fontSize: '2rem', fontWeight: 700, color: sfColors.textPrimary }}>
               {Object.values(testResults).filter(r => r === 'connected').length}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem' }}>
               Active
             </Typography>
           </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <ErrorIcon sx={{ fontSize: 40, color: 'error.main', mb: 1 }} />
-            <Typography variant="h4">
+          <Paper sx={{ p: 3, textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+            <ErrorIcon sx={{ fontSize: 40, color: sfColors.error, mb: 1 }} />
+            <Typography sx={{ fontSize: '2rem', fontWeight: 700, color: sfColors.textPrimary }}>
               {Object.values(testResults).filter(r => r === 'error').length}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem' }}>
               Failed
             </Typography>
           </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <CloudIcon sx={{ fontSize: 40, color: 'info.main', mb: 1 }} />
-            <Typography variant="h4">
+          <Paper sx={{ p: 3, textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+            <CloudIcon sx={{ fontSize: 40, color: sfColors.accent, mb: 1 }} />
+            <Typography sx={{ fontSize: '2rem', fontWeight: 700, color: sfColors.textPrimary }}>
               {connectors.filter(c => ['bigquery', 'snowflake', 'redshift', 'databricks'].includes(c.type)).length}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem' }}>
               Cloud
             </Typography>
           </Paper>
@@ -796,6 +921,13 @@ const DatabaseConfigPage = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={handleAddConnector}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+            }}
           >
             Add Connection
           </Button>
@@ -804,15 +936,30 @@ const DatabaseConfigPage = () => {
             startIcon={<RefreshIcon />}
             onClick={loadConnectors}
             disabled={loading}
+            sx={{
+              borderColor: sfColors.border,
+              color: sfColors.textPrimary,
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+              '&:hover': { borderColor: sfColors.accent, bgcolor: sfColors.iconBg },
+            }}
           >
             Refresh
           </Button>
         </Stack>
         <Button
           variant="outlined"
-          color="warning"
           startIcon={<DeleteIcon />}
           onClick={handleClearSchemaCache}
+          sx={{
+            borderColor: sfColors.warning,
+            color: sfColors.warning,
+            textTransform: 'none',
+            fontWeight: 600,
+            borderRadius: '6px',
+            '&:hover': { borderColor: sfColors.warning, bgcolor: 'rgba(254, 147, 57, 0.08)' },
+          }}
         >
           Clear Schema Cache
         </Button>
@@ -837,7 +984,7 @@ const DatabaseConfigPage = () => {
             const dbType = DATABASE_TYPES[connector.connector_type] || DATABASE_TYPES[connector.type] || {};
             return (
               <Grid item xs={12} sm={6} md={4} key={connector.id}>
-                <Card>
+                <Card sx={{ boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                       <Typography variant="h5" sx={{ mr: 1 }}>
@@ -999,7 +1146,62 @@ const DatabaseConfigPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          color: confirmDialog.severity === 'error' ? 'error.main' : 'warning.main'
+        }}>
+          {confirmDialog.severity === 'error' ? <ErrorIcon /> : <WarningIcon />}
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            variant="contained"
+            color={confirmDialog.severity === 'error' ? 'error' : 'warning'}
+            autoFocus
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 };
 

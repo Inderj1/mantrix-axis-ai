@@ -19,6 +19,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   Divider,
   Tooltip,
@@ -211,6 +212,12 @@ const DocumentVisionIntelligence = ({ onNavigateToConfig }) => {
   const [stats, setStats] = useState({});
   const [imageDialog, setImageDialog] = useState({ open: false, imageUrl: '', data: null });
   const [searchQuery, setSearchQuery] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
 
   // Custom types management
   const { customTypes, addType, updateType, deleteType } = useCustomTypes('vision-studio-custom-types');
@@ -340,12 +347,18 @@ const DocumentVisionIntelligence = ({ onNavigateToConfig }) => {
   };
 
   const handleDeleteCustomType = (typeId) => {
-    if (window.confirm('Are you sure you want to delete this custom type?')) {
-      deleteType(typeId);
-      if (selectedType?.id === typeId) {
-        setSelectedType(null);
-      }
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Custom Type',
+      message: 'Are you sure you want to delete this custom type?',
+      onConfirm: () => {
+        deleteType(typeId);
+        if (selectedType?.id === typeId) {
+          setSelectedType(null);
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   const loadDataForType = (typeName) => {
@@ -830,6 +843,40 @@ const DocumentVisionIntelligence = ({ onNavigateToConfig }) => {
         editType={editingType}
         moduleType="vision"
       />
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" />
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            color="error"
+            variant="contained"
+            autoFocus
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

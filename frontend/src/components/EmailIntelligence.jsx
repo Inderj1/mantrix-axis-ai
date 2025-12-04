@@ -20,6 +20,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   Divider,
   Tooltip,
@@ -297,6 +298,14 @@ const EmailIntelligence = ({ onNavigateToConfig }) => {
     title: '',
     content: '',
     data: null,
+  });
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
   });
 
   // Sample configuration data
@@ -760,12 +769,18 @@ const EmailIntelligence = ({ onNavigateToConfig }) => {
   };
 
   const handleDeleteCustomType = (typeId) => {
-    if (window.confirm('Are you sure you want to delete this custom type?')) {
-      deleteType(typeId);
-      if (selectedType?.id === typeId) {
-        setSelectedType(null);
-      }
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Custom Type',
+      message: 'Are you sure you want to delete this custom type?',
+      onConfirm: () => {
+        deleteType(typeId);
+        if (selectedType?.id === typeId) {
+          setSelectedType(null);
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   // Tile Landing View
@@ -1258,6 +1273,40 @@ const EmailIntelligence = ({ onNavigateToConfig }) => {
         editType={editingType}
         moduleType="email"
       />
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" />
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            color="error"
+            variant="contained"
+            autoFocus
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

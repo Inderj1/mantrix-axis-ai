@@ -27,6 +27,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   CircularProgress,
   InputAdornment,
@@ -34,7 +35,14 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Avatar,
+  Stack,
 } from '@mui/material';
+import {
+  Warning as WarningIcon,
+  Error as ErrorIcon,
+  AdminPanelSettings as AdminIcon,
+} from '@mui/icons-material';
 import {
   Delete as DeleteIcon,
   Add as AddIcon,
@@ -48,6 +56,21 @@ import {
 import authConfig from '../auth_config.json';
 import { apiService } from '../services/api';
 
+// Salesforce-style colors
+const sfColors = {
+  bgPage: '#f3f3f3',
+  bgCard: '#ffffff',
+  textPrimary: '#032D60',
+  textSecondary: '#706e6b',
+  accent: '#0176D3',
+  accentHover: '#014486',
+  border: '#e5e5e5',
+  success: '#2E844A',
+  warning: '#FE9339',
+  error: '#C23934',
+  iconBg: '#e8f4fd',
+};
+
 function TabPanel({ children, value, index, ...other }) {
   return (
     <div
@@ -57,7 +80,7 @@ function TabPanel({ children, value, index, ...other }) {
       aria-labelledby={`settings-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ p: 3, bgcolor: '#ffffff' }}>{children}</Box>}
     </div>
   );
 }
@@ -68,6 +91,13 @@ function AdminSettings() {
   const [newEmail, setNewEmail] = useState('');
   const [newDomain, setNewDomain] = useState('');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    severity: 'warning',
+    onConfirm: null,
+  });
 
   // User Management state
   const [users, setUsers] = useState([]);
@@ -234,21 +264,27 @@ function AdminSettings() {
     }
   };
 
-  const handleDeleteUser = async (username) => {
-    if (!window.confirm(`Are you sure you want to delete user: ${username}?`)) {
-      return;
-    }
-    try {
-      await apiService.delete(`/api/v1/admin/cognito/users/${username}`);
-      setSnackbar({ open: true, message: 'User deleted successfully', severity: 'success' });
-      loadUsers();
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: error.response?.data?.detail || 'Failed to delete user',
-        severity: 'error'
-      });
-    }
+  const handleDeleteUser = (username) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete User',
+      message: `Are you sure you want to delete user: ${username}? This action cannot be undone.`,
+      severity: 'error',
+      onConfirm: async () => {
+        try {
+          await apiService.delete(`/api/v1/admin/cognito/users/${username}`);
+          setSnackbar({ open: true, message: 'User deleted successfully', severity: 'success' });
+          loadUsers();
+        } catch (error) {
+          setSnackbar({
+            open: true,
+            message: error.response?.data?.detail || 'Failed to delete user',
+            severity: 'error'
+          });
+        }
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+      },
+    });
   };
 
   useEffect(() => {
@@ -258,23 +294,72 @@ function AdminSettings() {
   }, [tabValue]);
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Admin Settings
-      </Typography>
-      
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={tabValue} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
-          <Tab label="Authentication" />
-          <Tab label="Access Control" />
-          <Tab label="Protected Routes" />
-          <Tab label="SSO Settings" />
-          <Tab label="User Management" />
-        </Tabs>
+    <Box sx={{ bgcolor: sfColors.bgPage, minHeight: '100%', p: 3 }}>
+      {/* Hero Header */}
+      <Box sx={{
+        bgcolor: sfColors.bgCard,
+        borderRadius: '8px',
+        p: 3,
+        mb: 3,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+      }}>
+        <Avatar sx={{
+          width: 64,
+          height: 64,
+          bgcolor: sfColors.iconBg,
+        }}>
+          <AdminIcon sx={{ fontSize: 32, color: sfColors.accent }} />
+        </Avatar>
+        <Box>
+          <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', color: sfColors.textPrimary }}>
+            Admin Settings
+          </Typography>
+          <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.95rem' }}>
+            Manage authentication, access control, and user management
+          </Typography>
+        </Box>
       </Box>
 
+      {/* Main Content Card */}
+      <Paper sx={{
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+        borderRadius: '8px',
+        overflow: 'hidden',
+      }}>
+        <Box sx={{ borderBottom: `1px solid ${sfColors.border}` }}>
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{
+              '& .MuiTab-root': {
+                textTransform: 'none',
+                fontWeight: 600,
+                color: sfColors.textSecondary,
+                '&.Mui-selected': { color: sfColors.accent },
+              },
+              '& .MuiTabs-indicator': {
+                bgcolor: sfColors.accent,
+                height: 3,
+              },
+            }}
+          >
+            <Tab label="Authentication" />
+            <Tab label="Access Control" />
+            <Tab label="Protected Routes" />
+            <Tab label="SSO Settings" />
+            <Tab label="User Management" />
+          </Tabs>
+        </Box>
+
       <TabPanel value={tabValue} index={0}>
-        <Typography variant="h6" gutterBottom>
+        <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
           Authentication Settings
         </Typography>
         <FormControlLabel
@@ -282,17 +367,21 @@ function AdminSettings() {
             <Switch
               checked={config.authentication.enabled}
               onChange={() => handleAuthToggle('enabled')}
+              sx={{
+                '& .MuiSwitch-switchBase.Mui-checked': { color: sfColors.accent },
+                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: sfColors.accent },
+              }}
             />
           }
           label="Enable Authentication"
         />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3 }}>
+        <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem', mt: 1 }}>
           When disabled, all users can access the application without signing in.
         </Typography>
       </TabPanel>
 
       <TabPanel value={tabValue} index={1}>
-        <Typography variant="h6" gutterBottom>
+        <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
           Authorized Emails
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -302,11 +391,20 @@ function AdminSettings() {
             value={newEmail}
             onChange={(e) => setNewEmail(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleAddEmail()}
+            size="small"
           />
           <Button
             variant="contained"
             onClick={handleAddEmail}
             startIcon={<AddIcon />}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+              whiteSpace: 'nowrap',
+            }}
           >
             Add
           </Button>
@@ -329,7 +427,7 @@ function AdminSettings() {
 
         <Divider sx={{ my: 3 }} />
 
-        <Typography variant="h6" gutterBottom>
+        <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
           Authorized Domains
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -339,11 +437,20 @@ function AdminSettings() {
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleAddDomain()}
+            size="small"
           />
           <Button
             variant="contained"
             onClick={handleAddDomain}
             startIcon={<AddIcon />}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+              whiteSpace: 'nowrap',
+            }}
           >
             Add
           </Button>
@@ -363,10 +470,10 @@ function AdminSettings() {
       </TabPanel>
 
       <TabPanel value={tabValue} index={2}>
-        <Typography variant="h6" gutterBottom>
+        <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 1 }}>
           Protected Routes
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem', mb: 2 }}>
           Select which routes require authentication.
         </Typography>
         <List>
@@ -388,7 +495,7 @@ function AdminSettings() {
       </TabPanel>
 
       <TabPanel value={tabValue} index={3}>
-        <Typography variant="h6" gutterBottom>
+        <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
           SSO Configuration
         </Typography>
         <FormControlLabel
@@ -409,11 +516,11 @@ function AdminSettings() {
           }
           label="Enable SSO"
         />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3 }}>
+        <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem', mt: 1, mb: 3 }}>
           Allow users to sign in using their organization's SSO provider.
         </Typography>
-        
-        <Typography variant="subtitle1" gutterBottom>
+
+        <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', color: sfColors.textPrimary, mb: 1 }}>
           Enabled Providers:
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -429,7 +536,7 @@ function AdminSettings() {
 
       <TabPanel value={tabValue} index={4}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6">
+          <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary }}>
             Cognito User Management
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -438,6 +545,14 @@ function AdminSettings() {
               startIcon={<RefreshIcon />}
               onClick={loadUsers}
               disabled={loadingUsers}
+              sx={{
+                borderColor: sfColors.border,
+                color: sfColors.textPrimary,
+                textTransform: 'none',
+                fontWeight: 600,
+                borderRadius: '6px',
+                '&:hover': { borderColor: sfColors.accent, bgcolor: sfColors.iconBg },
+              }}
             >
               Refresh
             </Button>
@@ -445,6 +560,13 @@ function AdminSettings() {
               variant="contained"
               startIcon={<PersonAddIcon />}
               onClick={() => setShowCreateUser(true)}
+              sx={{
+                bgcolor: sfColors.accent,
+                '&:hover': { bgcolor: sfColors.accentHover },
+                textTransform: 'none',
+                fontWeight: 600,
+                borderRadius: '6px',
+              }}
             >
               Create User
             </Button>
@@ -516,11 +638,23 @@ function AdminSettings() {
         )}
       </TabPanel>
 
+      </Paper>
+
+      {/* Save Button - Outside Paper */}
       <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
         <Button
           variant="contained"
           onClick={handleSave}
           startIcon={<SaveIcon />}
+          sx={{
+            bgcolor: sfColors.accent,
+            '&:hover': { bgcolor: sfColors.accentHover },
+            textTransform: 'none',
+            fontWeight: 600,
+            borderRadius: '6px',
+            px: 3,
+            py: 1,
+          }}
         >
           Save Settings
         </Button>
@@ -644,7 +778,43 @@ function AdminSettings() {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Paper>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          color: confirmDialog.severity === 'error' ? 'error.main' : 'warning.main'
+        }}>
+          {confirmDialog.severity === 'error' ? <ErrorIcon /> : <WarningIcon />}
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}>
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            variant="contained"
+            color={confirmDialog.severity === 'error' ? 'error' : 'warning'}
+            autoFocus
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }
 

@@ -37,8 +37,7 @@ import { useFilterBus } from '../../stores/filterEventBus';
 import api from '../../services/api';
 
 // Import visualization components
-// We'll use dynamic imports or conditionally render based on widget type
-const PlotlyVisualization = React.lazy(() => import('../PlotlyVisualization'));
+import EChartsVisualization from '../EChartsVisualization';
 
 // Import filter components
 import { DateRangeFilter, MultiSelectFilter } from './filters';
@@ -142,47 +141,78 @@ const DashboardWidget = ({
     return () => unsub();
   }, [widget.id, widget.type, widget.query, subscribe, executeQuery]);
 
-  // Handle chart click (cross-filtering)
-  const handleChartClick = useCallback((event) => {
-    if (!event.points || event.points.length === 0) return;
+  // Handle chart click (cross-filtering + drill-down) - ECharts event format
+  const handleChartClick = useCallback((params) => {
+    if (!params) return;
 
-    const point = event.points[0];
-    const dimension = chartMetadata?.dimensions?.[0] || 'value';
-    const value = point.x || point.label || point.y;
+    const dimension = chartMetadata?.dimensions?.[0] || params.seriesName || 'value';
+    // ECharts provides name for category axis values, value for numeric
+    const value = params.name || params.value;
 
     if (dimension && value) {
+      // Publish filter for cross-filtering
       publishFilter(dimension, value);
+
+      // Always try drill-down - API will auto-detect hierarchy
+      // This enables drill-down even without pre-configured paths
+      handleDrillDown(dimension, value);
     }
-  }, [chartMetadata, publishFilter]);
+  }, [chartMetadata, publishFilter, handleDrillDown]);
 
-  // Handle drill-down
+  // Available hierarchies from API
+  const [availableHierarchies, setAvailableHierarchies] = useState([]);
+
+  // Handle drill-down with auto-hierarchy detection
   const handleDrillDown = useCallback(async (dimension, value) => {
-    if (!chartMetadata?.drill_paths?.length) return;
-
-    const drillPath = chartMetadata.drill_paths[0];
-    const currentIndex = drillPath.indexOf(dimension);
-
-    if (currentIndex === -1 || currentIndex >= drillPath.length - 1) return;
-
-    const nextDimension = drillPath[currentIndex + 1];
-
     // Add to breadcrumbs
     setDrillBreadcrumbs(prev => [...prev, { dimension, value }]);
+    setIsLoading(true);
 
-    // Generate drill-down query
     try {
+      // Call enhanced drill-down API with auto-detection
       const response = await api.post('/api/v1/dashboards/drill-down', {
         base_query: widget.query,
         drill_dimension: dimension,
         filter_value: value,
-        next_dimension: nextDimension
+        // Let API auto-detect next dimension if not in metadata
+        next_dimension: null,
+        connector_id: widget.connector_id || chartMetadata?.connector_id,
+        table: widget.table || chartMetadata?.table,
+        measure_column: widget.measure || chartMetadata?.measures?.[0]
       });
 
-      setData(response.data.data);
+      // Update data with drill results
+      setData(response.data.data || response.data.results || []);
+
+      // Store available hierarchies for UI hints
+      if (response.data.available_hierarchies) {
+        setAvailableHierarchies(response.data.available_hierarchies);
+      }
+
+      // Update chart metadata with drill info
+      setChartMetadata(prev => ({
+        ...prev,
+        drill_paths: response.data.available_hierarchies?.map(h => h.path) || prev?.drill_paths,
+        current_drill_level: response.data.next_dimension
+      }));
+
+      // Save drill state for restoration
+      try {
+        const { useDashboardStore } = await import('../../stores/dashboardStore');
+        useDashboardStore.getState().setDrillPath(widget.id, [
+          ...drillBreadcrumbs,
+          { dimension, value }
+        ]);
+      } catch (e) {
+        console.warn('Could not save drill state:', e);
+      }
+
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.detail || err.message);
+    } finally {
+      setIsLoading(false);
     }
-  }, [widget.query, chartMetadata]);
+  }, [widget.query, widget.id, widget.connector_id, widget.table, widget.measure, chartMetadata, drillBreadcrumbs]);
 
   // Handle breadcrumb navigation
   const handleBreadcrumbClick = useCallback((index) => {
@@ -238,39 +268,43 @@ const DashboardWidget = ({
     // Render based on widget type
     switch (widget.type) {
       case 'chart':
+        // Map chart types for ECharts
+        const chartTypeMap = {
+          'bar': 'bar',
+          'line': 'line',
+          'pie': 'pie',
+          'donut': 'donut',
+          'area': 'area',
+          'scatter': 'scatter',
+          'horizontal_bar': 'horizontalBar',
+          'heatmap': 'heatmap',
+          'treemap': 'treemap',
+          'funnel': 'funnel'
+        };
+        const chartType = widget.chart_type || chartMetadata?.chart_recommendations?.[0] || 'auto';
+        const echartsType = chartTypeMap[chartType] || chartType;
+
         return (
-          <React.Suspense fallback={<CircularProgress />}>
-            <PlotlyVisualization
-              data={data}
-              title={widget.title}
-              chartType={widget.chart_type || chartMetadata?.chart_recommendations?.[0] || 'bar'}
-              enableCrossFilter={true}
-              onClick={handleChartClick}
-              dimensions={chartMetadata?.dimensions}
-              measures={chartMetadata?.measures}
-              drillPaths={chartMetadata?.drill_paths}
-              onDrillDown={handleDrillDown}
-            />
-          </React.Suspense>
+          <EChartsVisualization
+            data={data}
+            chartType={echartsType}
+            height="100%"
+            showToolbox={true}
+            showDataZoom={data?.length > 15}
+            onChartClick={handleChartClick}
+          />
         );
 
       case 'metric':
-        const value = data[0]?.[Object.keys(data[0])[0]];
-        const formattedValue = typeof value === 'number'
-          ? value.toLocaleString()
-          : value;
+        // Use ECharts metric visualization for single values
         return (
-          <Box sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100%'
-          }}>
-            <Typography variant="h3" sx={{ fontWeight: 'bold' }}>
-              {formattedValue}
-            </Typography>
-          </Box>
+          <EChartsVisualization
+            data={data}
+            chartType="metric"
+            height="100%"
+            showToolbox={false}
+            showDataZoom={false}
+          />
         );
 
       case 'table':

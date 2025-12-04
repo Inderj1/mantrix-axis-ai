@@ -238,6 +238,77 @@ export const useFilterBus = create((set, get) => ({
     return parts.length > 0 ? `Filter: ${parts.join(', ')}` : '';
   },
 
+  // Restore filters from saved state (Redis or localStorage)
+  restoreFilters: (filters) => {
+    if (!filters || typeof filters !== 'object') return;
+
+    set(state => ({
+      activeFilters: { ...filters },
+      filterHistory: [filters],
+      historyIndex: 0
+    }));
+
+    // Notify all subscribers
+    get().notifySubscribers();
+  },
+
+  // Persist current filters to localStorage (fallback when Redis unavailable)
+  persistToLocalStorage: (dashboardId) => {
+    const { activeFilters } = get();
+    if (dashboardId) {
+      localStorage.setItem(`dashboard_filters_${dashboardId}`, JSON.stringify(activeFilters));
+    }
+  },
+
+  // Restore filters from localStorage
+  restoreFromLocalStorage: (dashboardId) => {
+    if (!dashboardId) return false;
+
+    const saved = localStorage.getItem(`dashboard_filters_${dashboardId}`);
+    if (saved) {
+      try {
+        const filters = JSON.parse(saved);
+        get().restoreFilters(filters);
+        return true;
+      } catch (e) {
+        console.warn('Failed to parse saved filters:', e);
+      }
+    }
+    return false;
+  },
+
+  // Clear localStorage filters
+  clearLocalStorage: (dashboardId) => {
+    if (dashboardId) {
+      localStorage.removeItem(`dashboard_filters_${dashboardId}`);
+    }
+  },
+
+  // Set filters for a specific dimension (replace, not add)
+  setFilter: (dimension, value) => {
+    set(state => {
+      const newFilters = {
+        ...state.activeFilters,
+        [dimension]: value
+      };
+
+      return { activeFilters: newFilters };
+    });
+
+    get().notifySubscribers();
+  },
+
+  // Batch set multiple filters without triggering multiple updates
+  setFilters: (filters) => {
+    if (!filters || typeof filters !== 'object') return;
+
+    set(state => ({
+      activeFilters: { ...state.activeFilters, ...filters }
+    }));
+
+    get().notifySubscribers();
+  },
+
   // Reset all state
   reset: () => {
     set({

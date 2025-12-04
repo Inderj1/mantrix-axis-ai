@@ -29,7 +29,8 @@ import {
   CircularProgress,
   Alert,
   Fab,
-  Tooltip
+  Tooltip,
+  Avatar,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -41,6 +42,21 @@ import {
   ContentCopy as CopyIcon,
   ViewModule as TemplateIcon
 } from '@mui/icons-material';
+
+// Salesforce-style colors
+const sfColors = {
+  bgPage: '#f3f3f3',
+  bgCard: '#ffffff',
+  textPrimary: '#032D60',
+  textSecondary: '#706e6b',
+  accent: '#0176D3',
+  accentHover: '#014486',
+  border: '#e5e5e5',
+  success: '#2E844A',
+  warning: '#FE9339',
+  error: '#C23934',
+  iconBg: '#e8f4fd',
+};
 
 import { useDashboardStore } from '../stores/dashboardStore';
 import { DashboardBuilder } from '../components/dashboard';
@@ -124,24 +140,56 @@ const DashboardList = () => {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-        <CircularProgress />
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', bgcolor: sfColors.bgPage }}>
+        <CircularProgress sx={{ color: sfColors.accent }} />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-          Dashboards
-        </Typography>
+    <Box sx={{ p: 3, bgcolor: sfColors.bgPage, minHeight: '100%' }}>
+      {/* Hero Header */}
+      <Box sx={{
+        bgcolor: sfColors.bgCard,
+        borderRadius: '8px',
+        p: 3,
+        mb: 3,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <Avatar sx={{
+            width: 64,
+            height: 64,
+            bgcolor: sfColors.iconBg,
+          }}>
+            <DashboardIcon sx={{ fontSize: 32, color: sfColors.accent }} />
+          </Avatar>
+          <Box>
+            <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', color: sfColors.textPrimary }}>
+              Dashboards
+            </Typography>
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.95rem' }}>
+              Create and manage your data visualizations
+            </Typography>
+          </Box>
+        </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
             startIcon={<TemplateIcon />}
             onClick={() => setTemplateDialogOpen(true)}
+            sx={{
+              borderColor: sfColors.border,
+              color: sfColors.textPrimary,
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+              '&:hover': { borderColor: sfColors.accent, bgcolor: sfColors.iconBg },
+            }}
           >
             From Template
           </Button>
@@ -149,6 +197,13 @@ const DashboardList = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+            }}
           >
             New Dashboard
           </Button>
@@ -162,15 +217,32 @@ const DashboardList = () => {
 
       {/* Dashboard Grid */}
       {dashboards.length === 0 ? (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <DashboardIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-          <Typography variant="h6" color="text.secondary" gutterBottom>
+        <Box sx={{
+          textAlign: 'center',
+          py: 8,
+          bgcolor: sfColors.bgCard,
+          borderRadius: '8px',
+          border: `1px solid ${sfColors.border}`,
+        }}>
+          <DashboardIcon sx={{ fontSize: 64, color: sfColors.textSecondary, mb: 2, opacity: 0.5 }} />
+          <Typography sx={{ fontWeight: 600, color: sfColors.textPrimary, mb: 1 }}>
             No dashboards yet
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          <Typography sx={{ color: sfColors.textSecondary, mb: 3, fontSize: '0.95rem' }}>
             Create your first dashboard to visualize your data
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateDialogOpen(true)}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+            }}
+          >
             Create Dashboard
           </Button>
         </Box>
@@ -182,9 +254,13 @@ const DashboardList = () => {
                 sx={{
                   cursor: 'pointer',
                   transition: 'transform 0.2s, box-shadow 0.2s',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                  border: `1px solid ${sfColors.border}`,
+                  borderRadius: '8px',
                   '&:hover': {
                     transform: 'translateY(-4px)',
-                    boxShadow: 4
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                    borderColor: sfColors.accent,
                   }
                 }}
                 onClick={() => navigate(`/dashboards/${dashboard.id}`)}
@@ -192,10 +268,10 @@ const DashboardList = () => {
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                     <Box sx={{ flex: 1 }}>
-                      <Typography variant="h6" noWrap>
+                      <Typography sx={{ fontWeight: 600, color: sfColors.textPrimary, fontSize: '1rem' }} noWrap>
                         {dashboard.name}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.875rem', mt: 0.5 }}>
                         {dashboard.widgets?.length || 0} widgets
                       </Typography>
                     </Box>
@@ -218,7 +294,7 @@ const DashboardList = () => {
                     />
                   )}
 
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                  <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.75rem', mt: 1 }} display="block">
                     Updated {new Date(dashboard.updated_at).toLocaleDateString()}
                   </Typography>
                 </CardContent>

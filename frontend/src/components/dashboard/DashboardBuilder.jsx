@@ -71,7 +71,9 @@ const DashboardBuilder = ({ dashboardId, readonly = false }) => {
     removeWidget,
     saveDashboard,
     generateShareLink,
-    clearError
+    clearError,
+    restoreState,
+    saveState
   } = useDashboardStore();
 
   const { activeFilters, clearAllFilters } = useFilterBus();
@@ -82,6 +84,7 @@ const DashboardBuilder = ({ dashboardId, readonly = false }) => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [exportMenuAnchor, setExportMenuAnchor] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [stateRestored, setStateRestored] = useState(false);
 
   // Load dashboard on mount
   useEffect(() => {
@@ -89,6 +92,42 @@ const DashboardBuilder = ({ dashboardId, readonly = false }) => {
       fetchDashboard(dashboardId);
     }
   }, [dashboardId, fetchDashboard]);
+
+  // Restore state from Redis after dashboard loads
+  useEffect(() => {
+    const restoreFromRedis = async () => {
+      if (currentDashboard?.id && !stateRestored) {
+        try {
+          const restored = await restoreState(currentDashboard.id);
+          if (restored) {
+            console.log('Dashboard state restored from Redis');
+            setSnackbar({
+              open: true,
+              message: 'Filters restored from previous session',
+              severity: 'info'
+            });
+          }
+          setStateRestored(true);
+        } catch (e) {
+          console.warn('Could not restore state:', e);
+          setStateRestored(true);
+        }
+      }
+    };
+
+    restoreFromRedis();
+  }, [currentDashboard?.id, stateRestored, restoreState]);
+
+  // Auto-save state to Redis when filters change
+  useEffect(() => {
+    if (currentDashboard?.id && stateRestored && Object.keys(activeFilters).length > 0) {
+      // Debounce the save
+      const timer = setTimeout(() => {
+        saveState(currentDashboard.id);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeFilters, currentDashboard?.id, stateRestored, saveState]);
 
   // Convert widgets to grid layout format
   const layout = currentDashboard?.widgets?.map(widget => ({

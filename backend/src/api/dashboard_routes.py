@@ -82,7 +82,10 @@ class DrillDownRequest(BaseModel):
     base_query: str = Field(..., description="Original NLP query")
     drill_dimension: str = Field(..., description="Dimension being drilled into")
     filter_value: str = Field(..., description="Value selected for drill-down")
-    next_dimension: str = Field(..., description="Next dimension to group by")
+    next_dimension: Optional[str] = Field(default=None, description="Next dimension to group by (auto-detected if not provided)")
+    connector_id: Optional[str] = Field(default=None, description="Connector ID for schema lookup")
+    table: Optional[str] = Field(default=None, description="Table name for hierarchy detection")
+    measure_column: Optional[str] = Field(default=None, description="Measure column to aggregate")
 
 
 class ShareLinkResponse(BaseModel):
@@ -506,28 +509,83 @@ async def generate_drill_down_query(
     """
     Generate a drill-down query from a parent query.
 
+    Features:
+    - Auto-detects next dimension from hierarchy if not provided
+    - Builds optimized SQL with proper filtering
+    - Returns available drill paths for UI
+
     Example:
     - Base: "Show revenue by country"
-    - Drill: country="USA", next=region
+    - Drill: country="USA", next=region (auto-detected)
     - Result: "Show revenue by region WHERE country = 'USA'"
     """
     try:
         from src.core.llm_client import LLMClient
         from src.api.routes import get_sql_generator
+        from src.core.drill_path_detector import get_drill_path_detector
 
-        # Use LLM to generate modified query
+        # Auto-detect next dimension if not provided
+        next_dimension = request.next_dimension
+        available_hierarchies = []
+
+        if request.connector_id and request.table:
+            try:
+                from src.db.connector_factory import get_connector
+
+                connector = get_connector(request.connector_id)
+                if connector:
+                    schema = connector.get_table_schema(request.table)
+                    columns = schema.get("columns", [])
+
+                    detector = get_drill_path_detector()
+                    available_hierarchies = detector.detect_hierarchies(columns, request.table)
+
+                    # Find next dimension if not provided
+                    if not next_dimension:
+                        for hierarchy in available_hierarchies:
+                            next_level = detector.get_next_drill_level(
+                                hierarchy,
+                                request.drill_dimension
+                            )
+                            if next_level:
+                                # Get actual column name
+                                next_dimension = detector.get_drill_column(hierarchy, next_level)
+                                if not next_dimension:
+                                    next_dimension = next_level
+                                break
+
+            except Exception as e:
+                logger.warning(f"Could not auto-detect hierarchy: {e}")
+
+        # Fall back to LLM if no next dimension found
+        if not next_dimension:
+            llm = LLMClient()
+            detect_prompt = f"""
+Given a drill-down from "{request.drill_dimension}", what is the logical next level to drill into?
+
+Common patterns:
+- year → quarter → month → day
+- country → region → state → city
+- category → subcategory → product
+- department → team → employee
+
+Return ONLY the next dimension name (one word), nothing else.
+"""
+            next_dimension = await llm.generate_text(detect_prompt)
+            next_dimension = next_dimension.strip().lower().replace(" ", "_")
+
+        # Use LLM to generate the drill-down query
         llm = LLMClient()
-
         drill_prompt = f"""
 You are helping generate a drill-down query for a business intelligence dashboard.
 
 Original query: {request.base_query}
 
-The user clicked on {request.drill_dimension} = "{request.filter_value}" and wants to drill down to see details by {request.next_dimension}.
+The user clicked on {request.drill_dimension} = "{request.filter_value}" and wants to drill down to see details by {next_dimension}.
 
 Generate a new natural language query that:
 1. Filters to only {request.drill_dimension} = "{request.filter_value}"
-2. Groups by {request.next_dimension} instead of {request.drill_dimension}
+2. Groups by {next_dimension} instead of {request.drill_dimension}
 3. Maintains the same metrics/aggregations from the original query
 
 Return ONLY the new query text, nothing else.
@@ -545,7 +603,8 @@ Return ONLY the new query text, nothing else.
         logger.info("Drill-down query generated",
                    original_query=request.base_query,
                    drill_dimension=request.drill_dimension,
-                   filter_value=request.filter_value)
+                   filter_value=request.filter_value,
+                   next_dimension=next_dimension)
 
         return {
             "query": new_query,
@@ -554,12 +613,130 @@ Return ONLY the new query text, nothing else.
             "columns": result.get("columns"),
             "drill_level": request.drill_dimension,
             "filter_applied": request.filter_value,
-            "next_dimension": request.next_dimension
+            "next_dimension": next_dimension,
+            "available_hierarchies": available_hierarchies,
+            "breadcrumb": {
+                "dimension": request.drill_dimension,
+                "value": request.filter_value
+            }
         }
 
     except Exception as e:
         logger.error("Error generating drill-down query", error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to generate drill-down query: {str(e)}")
+
+
+class HierarchyDetectionRequest(BaseModel):
+    """Request model for hierarchy detection"""
+    connector_id: str
+    table: str
+    measures: Optional[List[str]] = Field(default=None, description="Measure columns for suggestions")
+
+
+@router.post("/detect-hierarchies")
+async def detect_hierarchies(
+    request: HierarchyDetectionRequest,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Detect available drill-down hierarchies for a table.
+
+    Analyzes column names to find common patterns:
+    - Time: year → quarter → month → day
+    - Geography: country → region → state → city
+    - Product: category → subcategory → product
+    - Organization: department → team → employee
+    """
+    try:
+        from src.db.connector_factory import get_connector
+        from src.core.drill_path_detector import get_drill_path_detector
+
+        connector = get_connector(request.connector_id)
+        if not connector:
+            raise HTTPException(status_code=404, detail=f"Connector not found: {request.connector_id}")
+
+        schema = connector.get_table_schema(request.table)
+        columns = schema.get("columns", [])
+
+        detector = get_drill_path_detector()
+        hierarchies = detector.detect_hierarchies(columns, request.table)
+
+        # Get suggestions if measures provided
+        suggestions = []
+        if request.measures:
+            suggestions = detector.suggest_drill_paths(columns, request.measures)
+
+        return {
+            "hierarchies": hierarchies,
+            "suggestions": suggestions,
+            "column_count": len(columns)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error detecting hierarchies", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to detect hierarchies: {str(e)}")
+
+
+@router.get("/hierarchies/{connector_id}/{table}")
+async def get_table_hierarchies(
+    connector_id: str,
+    table: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Quick endpoint to get hierarchies for a table.
+
+    Cached for performance - use this for UI initialization.
+    """
+    try:
+        from src.db.connector_factory import get_connector
+        from src.core.drill_path_detector import get_drill_path_detector
+
+        # Check cache first
+        cache_key = f"hierarchies:{connector_id}:{table}"
+        try:
+            import redis
+            from src.config import settings
+            r = redis.Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+            cached = r.get(cache_key)
+            if cached:
+                import json
+                return json.loads(cached)
+        except Exception:
+            pass
+
+        connector = get_connector(connector_id)
+        if not connector:
+            raise HTTPException(status_code=404, detail=f"Connector not found: {connector_id}")
+
+        schema = connector.get_table_schema(table)
+        columns = schema.get("columns", [])
+
+        detector = get_drill_path_detector()
+        hierarchies = detector.detect_hierarchies(columns, table)
+
+        result = {
+            "connector_id": connector_id,
+            "table": table,
+            "hierarchies": hierarchies
+        }
+
+        # Cache for 1 hour
+        try:
+            import json
+            r.setex(cache_key, 3600, json.dumps(result))
+        except Exception:
+            pass
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error getting hierarchies", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get hierarchies: {str(e)}")
 
 
 # Dashboard templates
@@ -651,3 +828,255 @@ async def create_from_template(
     except Exception as e:
         logger.error("Error creating from template", error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to create from template: {str(e)}")
+
+
+# ============================================================================
+# Visualization State Management (Redis-backed)
+# ============================================================================
+
+class DashboardStateRequest(BaseModel):
+    """Request model for saving dashboard state"""
+    filters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    drill_paths: Optional[Dict[str, List]] = Field(default_factory=dict)
+    widget_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    layout: Optional[List[Dict]] = Field(default_factory=list)
+    view_settings: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+@router.post("/{dashboard_id}/state")
+async def save_dashboard_state(
+    dashboard_id: str,
+    state: DashboardStateRequest,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Save dashboard state for instant restore.
+
+    Stores filters, drill-down paths, and widget data in Redis
+    for instant restoration when the user returns to the dashboard.
+    """
+    try:
+        from src.core.viz_state_manager import get_viz_state_manager
+
+        user_id = current_user.get("id", current_user.get("sub", "unknown"))
+        viz_state = get_viz_state_manager()
+
+        success = viz_state.save_dashboard_state(
+            user_id=user_id,
+            dashboard_id=dashboard_id,
+            state=state.model_dump()
+        )
+
+        if success:
+            logger.info("Dashboard state saved",
+                       dashboard_id=dashboard_id,
+                       user_id=user_id)
+            return {"success": True, "message": "Dashboard state saved"}
+        else:
+            return {"success": False, "message": "State persistence not available"}
+
+    except Exception as e:
+        logger.error("Error saving dashboard state", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to save state: {str(e)}")
+
+
+@router.get("/{dashboard_id}/state")
+async def get_dashboard_state(
+    dashboard_id: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Get saved dashboard state for instant restore.
+
+    Returns previously saved filters, drill-down paths, and cached widget data.
+    """
+    try:
+        from src.core.viz_state_manager import get_viz_state_manager
+
+        user_id = current_user.get("id", current_user.get("sub", "unknown"))
+        viz_state = get_viz_state_manager()
+
+        state = viz_state.get_dashboard_state(
+            user_id=user_id,
+            dashboard_id=dashboard_id
+        )
+
+        if state:
+            logger.info("Dashboard state restored",
+                       dashboard_id=dashboard_id,
+                       user_id=user_id)
+            return {"success": True, "state": state}
+        else:
+            return {"success": True, "state": None, "message": "No saved state found"}
+
+    except Exception as e:
+        logger.error("Error getting dashboard state", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get state: {str(e)}")
+
+
+@router.delete("/{dashboard_id}/state")
+async def clear_dashboard_state(
+    dashboard_id: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """Clear saved dashboard state."""
+    try:
+        from src.core.viz_state_manager import get_viz_state_manager
+
+        user_id = current_user.get("id", current_user.get("sub", "unknown"))
+        viz_state = get_viz_state_manager()
+
+        success = viz_state.clear_dashboard_state(
+            user_id=user_id,
+            dashboard_id=dashboard_id
+        )
+
+        return {"success": success, "message": "Dashboard state cleared" if success else "Failed to clear state"}
+
+    except Exception as e:
+        logger.error("Error clearing dashboard state", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to clear state: {str(e)}")
+
+
+# ============================================================================
+# Pre-Aggregation API (Redis-cached)
+# ============================================================================
+
+class AggregationRequest(BaseModel):
+    """Request model for aggregation query"""
+    connector_id: str
+    table: str
+    dimension: str
+    measure: str
+    agg_func: str = Field(default="SUM", description="SUM, AVG, COUNT, MIN, MAX, COUNT_DISTINCT")
+    filters: Optional[Dict[str, Any]] = None
+    limit: Optional[int] = Field(default=100, le=1000)
+    force_refresh: bool = False
+
+
+class TimeSeriesRequest(BaseModel):
+    """Request model for time series query"""
+    connector_id: str
+    table: str
+    time_column: str
+    measure: str
+    agg_func: str = Field(default="SUM")
+    granularity: str = Field(default="day", description="day, week, month, quarter, year")
+    filters: Optional[Dict[str, Any]] = None
+    limit: int = Field(default=365, le=1000)
+
+
+@router.post("/aggregations/query")
+async def get_aggregation(
+    request: AggregationRequest,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Get pre-aggregated data for a dimension.
+
+    Returns cached aggregation if available, otherwise computes and caches.
+    Use force_refresh=true to bypass cache.
+    """
+    try:
+        from src.core.aggregation_manager import get_aggregation_manager
+
+        agg_manager = get_aggregation_manager()
+
+        result = await agg_manager.get_or_compute_aggregation(
+            connector_id=request.connector_id,
+            table=request.table,
+            dimension=request.dimension,
+            measure=request.measure,
+            agg_func=request.agg_func,
+            filters=request.filters,
+            force_refresh=request.force_refresh,
+            limit=request.limit
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error("Error getting aggregation", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get aggregation: {str(e)}")
+
+
+@router.post("/aggregations/time-series")
+async def get_time_series(
+    request: TimeSeriesRequest,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Get time series aggregation with automatic date truncation.
+
+    Automatically truncates dates to the specified granularity and caches results.
+    """
+    try:
+        from src.core.aggregation_manager import get_aggregation_manager
+
+        agg_manager = get_aggregation_manager()
+
+        result = await agg_manager.get_time_series(
+            connector_id=request.connector_id,
+            table=request.table,
+            time_column=request.time_column,
+            measure=request.measure,
+            agg_func=request.agg_func,
+            granularity=request.granularity,
+            filters=request.filters,
+            limit=request.limit
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error("Error getting time series", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get time series: {str(e)}")
+
+
+@router.delete("/aggregations/cache/{connector_id}/{table}")
+async def invalidate_table_cache(
+    connector_id: str,
+    table: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Invalidate all cached aggregations for a table.
+
+    Call this when underlying data changes to ensure fresh results.
+    """
+    try:
+        from src.core.aggregation_manager import get_aggregation_manager
+
+        agg_manager = get_aggregation_manager()
+        count = agg_manager.invalidate_table(connector_id, table)
+
+        return {
+            "success": True,
+            "message": f"Invalidated {count} cache entries for {connector_id}/{table}"
+        }
+
+    except Exception as e:
+        logger.error("Error invalidating cache", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to invalidate cache: {str(e)}")
+
+
+@router.get("/aggregations/stats")
+async def get_aggregation_stats(
+    current_user: Dict = Depends(get_current_user)
+):
+    """Get statistics about cached aggregations."""
+    try:
+        from src.core.aggregation_manager import get_aggregation_manager
+        from src.core.viz_state_manager import get_viz_state_manager
+
+        agg_manager = get_aggregation_manager()
+        viz_state = get_viz_state_manager()
+
+        return {
+            "aggregation_cache": agg_manager.get_cache_stats(),
+            "viz_state_cache": viz_state.get_state_stats()
+        }
+
+    except Exception as e:
+        logger.error("Error getting cache stats", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")

@@ -32,6 +32,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   CircularProgress,
   Avatar,
@@ -184,6 +185,14 @@ const CoreAIDashboard = () => {
   const [tablePagination, setTablePagination] = useState({ page: 0, rowsPerPage: 100 });
   const [tableFilters, setTableFilters] = useState({});
   const [tableLoading, setTableLoading] = useState(false);
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
 
   // Fetch all dashboard data
   const fetchDashboardData = async () => {
@@ -725,10 +734,16 @@ const CoreAIDashboard = () => {
 
   const handleInsightAction = (insight) => {
     // Show confirmation dialog for all actions
-    if (window.confirm(`Execute action: ${insight.action}?`)) {
-      console.log('Executing action:', insight);
-      // TODO: Implement actual action execution
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Confirm Action',
+      message: `Execute action: ${insight.action}?`,
+      onConfirm: () => {
+        console.log('Executing action:', insight);
+        // TODO: Implement actual action execution
+        setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+      },
+    });
   };
 
   if (loading && !dashboardData) {
@@ -3719,6 +3734,42 @@ const CoreAIDashboard = () => {
           )}
         </Box>
       </Paper>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-description"
+      >
+        <DialogTitle id="confirm-dialog-title">
+          <Box display="flex" alignItems="center" gap={1}>
+            <WarningIcon color="warning" />
+            {confirmDialog.title}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="confirm-dialog-description">
+            {confirmDialog.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            variant="contained"
+            color="primary"
+            autoFocus
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

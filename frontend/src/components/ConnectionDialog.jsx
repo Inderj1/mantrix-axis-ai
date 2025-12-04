@@ -609,28 +609,17 @@ const ConnectionDialog = ({ open, connector, onClose, onSave, availableConnector
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{
-        sx: { borderRadius: 3 }
-      }}
     >
-      <DialogTitle
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h6">
           {connector ? 'Edit Connection' : 'Add New Connection'}
         </Typography>
-        <IconButton onClick={onClose}>
+        <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>
 
-      <DialogContent sx={{ p: 3 }}>
+      <DialogContent>
         <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
           {steps.map((label) => (
             <Step key={label}>
@@ -642,7 +631,7 @@ const ConnectionDialog = ({ open, connector, onClose, onSave, availableConnector
         {renderStepContent()}
       </DialogContent>
 
-      <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+      <DialogActions>
         <Button onClick={onClose}>
           Cancel
         </Button>

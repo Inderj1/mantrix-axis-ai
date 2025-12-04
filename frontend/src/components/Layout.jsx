@@ -18,6 +18,8 @@ import {
   Button,
   Tooltip,
   CircularProgress,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -34,6 +36,8 @@ import {
   Star as StarIcon,
   StarBorder as StarBorderIcon,
   Delete as DeleteIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
 } from '@mui/icons-material';
 import AuthButton from './AuthButton';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,6 +67,7 @@ function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredConvId, setHoveredConvId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const { token } = useAuth();
 
   // Get conversation store
@@ -70,14 +75,22 @@ function Layout({ children }) {
     conversations,
     conversationId: currentConversationId,
     loadingConversations,
+    isInitializing,
     loadConversation,
     createNewConversation,
     toggleStar,
     deleteConversation,
   } = useConversationStore();
 
-  // Derive starred conversations
-  const starredConversations = conversations.filter(c => c.metadata?.starred);
+  // Filter conversations by search query
+  const filteredConversations = searchQuery.trim()
+    ? conversations.filter(c =>
+        (c.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : conversations;
+
+  // Derive starred conversations (from filtered)
+  const starredConversations = filteredConversations.filter(c => c.metadata?.starred);
 
   // Check if user is admin using Cognito groups from JWT token
   const isAdmin = React.useMemo(() => {
@@ -135,8 +148,25 @@ function Layout({ children }) {
     return 'Older';
   };
 
-  // Filter out starred and group remaining by date
-  const nonStarredConversations = conversations.filter(c => !c.metadata?.starred);
+  // Format relative time for conversation previews
+  const formatRelativeTime = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays < 7) return `${diffDays}d`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Filter out starred and group remaining by date (from filtered conversations)
+  const nonStarredConversations = filteredConversations.filter(c => !c.metadata?.starred);
 
   const groupedConversations = nonStarredConversations.reduce((groups, conv) => {
     const group = getDateGroup(conv.updated_at || conv.updatedAt);
@@ -147,30 +177,46 @@ function Layout({ children }) {
 
   const dateOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older'];
 
+  // Light sidebar colors
+  const sidebarColors = {
+    bg: '#ffffff',
+    bgHover: '#f4f6f9',
+    bgActive: '#e8f4fd',
+    textPrimary: '#032D60',
+    textSecondary: '#706e6b',
+    accent: '#0176D3',
+    divider: '#e5e5e5',
+  };
+
   const drawer = (
     <Box sx={{
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      bgcolor: '#fff',
+      bgcolor: sidebarColors.bg,
+      borderRight: `1px solid ${sidebarColors.divider}`,
       transition: 'width 0.3s ease',
     }}>
-      {/* Logo Section with Hamburger */}
+      {/* Logo Section */}
       <Box sx={{
-        p: collapsed ? 1 : 2,
+        p: collapsed ? 1.5 : 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'flex-start',
         gap: collapsed ? 0 : 1.5,
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: `1px solid ${sidebarColors.divider}`,
         minHeight: 64,
       }}>
         <IconButton
           onClick={handleCollapsedToggle}
           size="small"
           sx={{
-            color: '#6a6d70',
+            color: sidebarColors.textSecondary,
             p: 0.5,
+            '&:hover': {
+              color: sidebarColors.accent,
+              bgcolor: sidebarColors.bgHover,
+            },
           }}
         >
           {collapsed ? <MenuIcon /> : <MenuOpenIcon />}
@@ -195,118 +241,176 @@ function Layout({ children }) {
           <Button
             fullWidth
             variant="contained"
-            startIcon={<AddIcon />}
+            startIcon={isInitializing ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
             onClick={handleNewChat}
+            disabled={isInitializing}
             sx={{
-              bgcolor: '#0a6ed1',
+              bgcolor: sidebarColors.accent,
               color: 'white',
               textTransform: 'none',
-              borderRadius: 1.5,
-              py: 1.2,
-              fontSize: '0.9rem',
-              fontWeight: 500,
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              borderRadius: '8px',
+              py: 1,
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
               '&:hover': {
-                bgcolor: '#0854a0',
-                boxShadow: '0 3px 6px rgba(0,0,0,0.15)',
+                bgcolor: '#014486',
+              },
+              '&.Mui-disabled': {
+                bgcolor: '#e5e5e5',
+                color: '#9ca3af',
               },
             }}
           >
-            New chat
+            {isInitializing ? 'Loading...' : 'New Chat'}
           </Button>
         </Box>
       ) : (
-        <Box sx={{ p: 1, display: 'flex', justifyContent: 'center' }}>
-          <Tooltip title="New chat" placement="right" arrow>
-            <IconButton
-              onClick={handleNewChat}
-              sx={{
-                bgcolor: '#0a6ed1',
-                color: 'white',
-                '&:hover': {
-                  bgcolor: '#0854a0',
-                },
-              }}
-            >
-              <AddIcon />
-            </IconButton>
+        <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'center' }}>
+          <Tooltip title={isInitializing ? 'Loading...' : 'New Chat'} placement="right" arrow>
+            <span>
+              <IconButton
+                onClick={handleNewChat}
+                disabled={isInitializing}
+                sx={{
+                  bgcolor: sidebarColors.accent,
+                  color: 'white',
+                  '&:hover': { bgcolor: '#014486' },
+                  '&.Mui-disabled': { bgcolor: '#e5e5e5', color: '#9ca3af' },
+                }}
+              >
+                {isInitializing ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       )}
 
       {/* Main Menu Items */}
-      <List sx={{ px: collapsed ? 0.5 : 1.5, py: 0 }}>
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-            <Tooltip title={collapsed ? item.text : ''} placement="right" arrow>
-              <ListItemButton
-                selected={location.pathname === item.path}
-                onClick={() => {
-                  navigate(item.path);
-                  if (isMobile) {
-                    setMobileOpen(false);
-                  }
-                }}
-                sx={{
-                  borderRadius: 1,
-                  py: 1,
-                  px: collapsed ? 1 : 1.5,
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  '&.Mui-selected': {
-                    bgcolor: 'rgba(10, 110, 209, 0.08)',
-                    '&:hover': {
-                      bgcolor: 'rgba(10, 110, 209, 0.12)',
+      <List sx={{ px: collapsed ? 0.5 : 1, py: 1 }}>
+        {menuItems.map((item, index) => {
+          const iconColors = ['#0176D3', '#2E844A']; // Blue, Green
+          return (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+              <Tooltip title={collapsed ? item.text : ''} placement="right" arrow>
+                <ListItemButton
+                  selected={location.pathname === item.path}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (isMobile) setMobileOpen(false);
+                  }}
+                  sx={{
+                    borderRadius: '8px',
+                    py: 1,
+                    px: collapsed ? 1 : 1.5,
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    '&.Mui-selected': {
+                      bgcolor: sidebarColors.bgActive,
+                      '&:hover': { bgcolor: sidebarColors.bgActive },
                     },
-                  },
-                  '&:hover': {
-                    bgcolor: 'rgba(0, 0, 0, 0.04)',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{
-                  minWidth: collapsed ? 0 : 36,
-                  color: location.pathname === item.path ? '#0a6ed1' : '#6a6d70',
-                }}>
-                  {item.icon}
-                </ListItemIcon>
-                {!collapsed && (
-                  <ListItemText
-                    primary={item.text}
-                    primaryTypographyProps={{
-                      fontSize: '0.9rem',
-                      fontWeight: location.pathname === item.path ? 500 : 400,
-                      color: location.pathname === item.path ? '#0a6ed1' : '#1A2332',
-                    }}
-                  />
-                )}
-              </ListItemButton>
-            </Tooltip>
-          </ListItem>
-        ))}
+                    '&:hover': {
+                      bgcolor: sidebarColors.bgHover,
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{
+                    minWidth: collapsed ? 0 : 36,
+                    color: iconColors[index % iconColors.length],
+                  }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  {!collapsed && (
+                    <ListItemText
+                      primary={item.text}
+                      primaryTypographyProps={{
+                        fontSize: '0.875rem',
+                        fontWeight: location.pathname === item.path ? 600 : 400,
+                        color: sidebarColors.textPrimary,
+                      }}
+                    />
+                  )}
+                </ListItemButton>
+              </Tooltip>
+            </ListItem>
+          );
+        })}
       </List>
+
+      {/* Search Conversations */}
+      {!collapsed && (
+        <Box sx={{ px: 1.5, py: 1 }}>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Search chats..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: sidebarColors.textSecondary }} />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={() => setSearchQuery('')}
+                    sx={{ p: 0.25, color: sidebarColors.textSecondary }}
+                  >
+                    <ClearIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '8px',
+                bgcolor: sidebarColors.bgHover,
+                fontSize: '0.85rem',
+                '& fieldset': { borderColor: 'transparent' },
+                '&:hover fieldset': { borderColor: sidebarColors.divider },
+                '&.Mui-focused fieldset': { borderColor: sidebarColors.accent, borderWidth: 1 },
+                '&.Mui-focused': { bgcolor: '#fff' },
+              },
+              '& .MuiInputBase-input': {
+                py: 0.75,
+                color: sidebarColors.textPrimary,
+                '&::placeholder': { color: sidebarColors.textSecondary, opacity: 1 },
+              },
+            }}
+          />
+          {searchQuery && (
+            <Typography variant="caption" sx={{ color: sidebarColors.textSecondary, mt: 0.5, display: 'block', px: 0.5 }}>
+              {filteredConversations.length} result{filteredConversations.length !== 1 ? 's' : ''}
+            </Typography>
+          )}
+        </Box>
+      )}
 
       {/* Starred Chats Section */}
       {!collapsed && starredConversations.length > 0 && (
         <>
-          <Box sx={{ px: 2.5, pt: 2, pb: 0.5 }}>
+          <Box sx={{ px: 2, pt: 2, pb: 0.5 }}>
             <Typography sx={{
               textTransform: 'uppercase',
-              color: '#df6e0c',
-              fontWeight: 600,
-              fontSize: '0.7rem',
-              letterSpacing: '0.5px',
+              color: '#FE9339',
+              fontWeight: 700,
+              fontSize: '0.65rem',
+              letterSpacing: '1px',
               display: 'flex',
               alignItems: 'center',
               gap: 0.5,
             }}>
-              <StarIcon sx={{ fontSize: 14 }} /> Starred
+              <StarIcon sx={{ fontSize: 12, color: '#FE9339' }} /> Starred
             </Typography>
           </Box>
-          <List sx={{ px: 1.5, py: 0, maxHeight: 150, overflowY: 'auto' }}>
+          <List sx={{ px: 1, py: 0, maxHeight: 180, overflowY: 'auto' }}>
             {starredConversations.map((conv) => {
               const convId = conv.conversation_id || conv.conversationId;
               const isActive = currentConversationId === convId;
               const isHovered = hoveredConvId === convId;
+              const relativeTime = formatRelativeTime(conv.updated_at || conv.updatedAt);
               return (
                 <ListItem
                   key={convId}
@@ -319,37 +423,41 @@ function Layout({ children }) {
                     selected={isActive}
                     onClick={() => handleLoadConversation(convId)}
                     sx={{
-                      borderRadius: 1,
-                      py: 0.5,
+                      borderRadius: '8px',
+                      py: 0.75,
                       px: 1,
-                      minHeight: 32,
-                      '&.Mui-selected': {
-                        bgcolor: 'rgba(223, 110, 12, 0.08)',
-                      },
+                      minHeight: 40,
+                      borderLeft: '3px solid #FE9339',
+                      '&.Mui-selected': { bgcolor: sidebarColors.bgActive },
+                      '&:hover': { bgcolor: sidebarColors.bgHover },
                     }}
                   >
-                    <ListItemText
-                      primary={conv.title || 'Untitled'}
-                      primaryTypographyProps={{
-                        fontSize: '0.8rem',
-                        noWrap: true,
-                        color: isActive ? '#df6e0c' : '#1A2332',
-                      }}
-                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography sx={{
+                          fontSize: '0.8rem',
+                          fontWeight: isActive ? 600 : 400,
+                          color: sidebarColors.textPrimary,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                        }}>
+                          {conv.title || 'Untitled'}
+                        </Typography>
+                        {!isHovered && relativeTime && (
+                          <Typography sx={{ fontSize: '0.65rem', color: sidebarColors.textSecondary, ml: 1, flexShrink: 0 }}>
+                            {relativeTime}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
                     {isHovered && (
                       <Box sx={{ display: 'flex', ml: 0.5 }}>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => handleToggleStar(e, convId)}
-                          sx={{ p: 0.25, color: '#df6e0c' }}
-                        >
+                        <IconButton size="small" onClick={(e) => handleToggleStar(e, convId)} sx={{ p: 0.25, color: '#FE9339' }}>
                           <StarIcon sx={{ fontSize: 16 }} />
                         </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => handleDeleteConversation(e, convId)}
-                          sx={{ p: 0.25, color: '#999' }}
-                        >
+                        <IconButton size="small" onClick={(e) => handleDeleteConversation(e, convId)} sx={{ p: 0.25, color: sidebarColors.textSecondary, '&:hover': { color: '#ef4444' } }}>
                           <DeleteIcon sx={{ fontSize: 16 }} />
                         </IconButton>
                       </Box>
@@ -367,11 +475,11 @@ function Layout({ children }) {
         <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           {loadingConversations ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-              <CircularProgress size={20} />
+              <CircularProgress size={20} sx={{ color: sidebarColors.accent }} />
             </Box>
           ) : nonStarredConversations.length === 0 ? (
-            <Box sx={{ px: 2.5, py: 2 }}>
-              <Typography sx={{ fontSize: '0.85rem', color: '#5A6677' }}>
+            <Box sx={{ px: 2, py: 2 }}>
+              <Typography sx={{ fontSize: '0.85rem', color: sidebarColors.textSecondary }}>
                 No conversations yet
               </Typography>
             </Box>
@@ -381,22 +489,23 @@ function Layout({ children }) {
               if (!convs || convs.length === 0) return null;
               return (
                 <Box key={group}>
-                  <Box sx={{ px: 2.5, pt: 1.5, pb: 0.5 }}>
+                  <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
                     <Typography sx={{
                       textTransform: 'uppercase',
-                      color: '#7A8699',
-                      fontWeight: 600,
+                      color: sidebarColors.textSecondary,
+                      fontWeight: 700,
                       fontSize: '0.65rem',
-                      letterSpacing: '0.5px',
+                      letterSpacing: '1px',
                     }}>
                       {group}
                     </Typography>
                   </Box>
-                  <List sx={{ px: 1.5, py: 0 }}>
+                  <List sx={{ px: 1, py: 0 }}>
                     {convs.map((conv) => {
                       const convId = conv.conversation_id || conv.conversationId;
                       const isActive = currentConversationId === convId;
                       const isHovered = hoveredConvId === convId;
+                      const relativeTime = formatRelativeTime(conv.updated_at || conv.updatedAt);
                       return (
                         <ListItem
                           key={convId}
@@ -409,37 +518,40 @@ function Layout({ children }) {
                             selected={isActive}
                             onClick={() => handleLoadConversation(convId)}
                             sx={{
-                              borderRadius: 1,
-                              py: 0.5,
+                              borderRadius: '8px',
+                              py: 0.75,
                               px: 1,
-                              minHeight: 32,
-                              '&.Mui-selected': {
-                                bgcolor: 'rgba(10, 110, 209, 0.08)',
-                              },
+                              minHeight: 40,
+                              '&.Mui-selected': { bgcolor: sidebarColors.bgActive },
+                              '&:hover': { bgcolor: sidebarColors.bgHover },
                             }}
                           >
-                            <ListItemText
-                              primary={conv.title || 'Untitled'}
-                              primaryTypographyProps={{
-                                fontSize: '0.8rem',
-                                noWrap: true,
-                                color: isActive ? '#0a6ed1' : '#1A2332',
-                              }}
-                            />
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Typography sx={{
+                                  fontSize: '0.8rem',
+                                  fontWeight: isActive ? 600 : 400,
+                                  color: sidebarColors.textPrimary,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  flex: 1,
+                                }}>
+                                  {conv.title || 'Untitled'}
+                                </Typography>
+                                {!isHovered && relativeTime && (
+                                  <Typography sx={{ fontSize: '0.65rem', color: sidebarColors.textSecondary, ml: 1, flexShrink: 0 }}>
+                                    {relativeTime}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
                             {isHovered && (
                               <Box sx={{ display: 'flex', ml: 0.5 }}>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => handleToggleStar(e, convId)}
-                                  sx={{ p: 0.25, color: '#999' }}
-                                >
+                                <IconButton size="small" onClick={(e) => handleToggleStar(e, convId)} sx={{ p: 0.25, color: sidebarColors.textSecondary, '&:hover': { color: '#FE9339' } }}>
                                   <StarBorderIcon sx={{ fontSize: 16 }} />
                                 </IconButton>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => handleDeleteConversation(e, convId)}
-                                  sx={{ p: 0.25, color: '#999' }}
-                                >
+                                <IconButton size="small" onClick={(e) => handleDeleteConversation(e, convId)} sx={{ p: 0.25, color: sidebarColors.textSecondary, '&:hover': { color: '#ef4444' } }}>
                                   <DeleteIcon sx={{ fontSize: 16 }} />
                                 </IconButton>
                               </Box>
@@ -456,102 +568,64 @@ function Layout({ children }) {
         </Box>
       )}
 
-      {/* Spacer to push bottom items down */}
-      <Box sx={{ flexGrow: 1 }} />
+      {/* Spacer to push bottom items down - only when sidebar is collapsed */}
+      {collapsed && <Box sx={{ flexGrow: 1 }} />}
 
       {/* Bottom Menu Items */}
-      <Divider sx={{ borderColor: '#e0e0e0' }} />
-      <List sx={{ px: collapsed ? 0.5 : 1.5, py: 1 }}>
-        {bottomMenuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-            <Tooltip title={collapsed ? item.text : ''} placement="right" arrow>
-              <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => {
-                navigate(item.path);
-                if (isMobile) {
-                  setMobileOpen(false);
-                }
-              }}
-              sx={{
-                borderRadius: 1,
-                py: 1,
-                px: collapsed ? 1 : 1.5,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                '&.Mui-selected': {
-                  bgcolor: 'rgba(10, 110, 209, 0.08)',
-                  '&:hover': {
-                    bgcolor: 'rgba(10, 110, 209, 0.12)',
-                  },
-                },
-                '&:hover': {
-                  bgcolor: 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              <ListItemIcon sx={{
-                minWidth: collapsed ? 0 : 36,
-                color: location.pathname === item.path ? '#0a6ed1' : '#6a6d70',
-              }}>
-                {item.icon}
-              </ListItemIcon>
-              {!collapsed && (
-                <ListItemText
-                  primary={item.text}
-                  primaryTypographyProps={{
-                    fontSize: '0.9rem',
-                    fontWeight: location.pathname === item.path ? 500 : 400,
-                    color: location.pathname === item.path ? '#0a6ed1' : '#1A2332',
+      <Divider sx={{ borderColor: sidebarColors.divider }} />
+      <List sx={{ px: collapsed ? 0.5 : 1, py: 1 }}>
+        {bottomMenuItems.map((item, index) => {
+          const iconColors = ['#BA01FF', '#FF5D2D']; // Purple, Red-orange
+          return (
+            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+              <Tooltip title={collapsed ? item.text : ''} placement="right" arrow>
+                <ListItemButton
+                  selected={location.pathname === item.path}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (isMobile) setMobileOpen(false);
                   }}
-                />
-              )}
-            </ListItemButton>
-            </Tooltip>
-          </ListItem>
-        ))}
+                  sx={{
+                    borderRadius: '8px',
+                    py: 1,
+                    px: collapsed ? 1 : 1.5,
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    '&.Mui-selected': { bgcolor: sidebarColors.bgActive, '&:hover': { bgcolor: sidebarColors.bgActive } },
+                    '&:hover': { bgcolor: sidebarColors.bgHover },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: collapsed ? 0 : 36, color: iconColors[index % iconColors.length] }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  {!collapsed && (
+                    <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: location.pathname === item.path ? 600 : 400, color: sidebarColors.textPrimary }} />
+                  )}
+                </ListItemButton>
+              </Tooltip>
+            </ListItem>
+          );
+        })}
         {isAdmin && (
           <>
             <ListItem disablePadding sx={{ mb: 0.5 }}>
               <Tooltip title={collapsed ? 'Database Connectors' : ''} placement="right" arrow>
                 <ListItemButton
                   selected={location.pathname === '/database-config'}
-                  onClick={() => {
-                    navigate('/database-config');
-                    if (isMobile) {
-                      setMobileOpen(false);
-                    }
-                  }}
+                  onClick={() => { navigate('/database-config'); if (isMobile) setMobileOpen(false); }}
                   sx={{
-                    borderRadius: 1,
+                    borderRadius: '8px',
                     py: 1,
                     px: collapsed ? 1 : 1.5,
                     justifyContent: collapsed ? 'center' : 'flex-start',
-                    '&.Mui-selected': {
-                      bgcolor: 'rgba(10, 110, 209, 0.08)',
-                      '&:hover': {
-                        bgcolor: 'rgba(10, 110, 209, 0.12)',
-                      },
-                    },
-                    '&:hover': {
-                      bgcolor: 'rgba(0, 0, 0, 0.04)',
-                    },
+                    '&.Mui-selected': { bgcolor: sidebarColors.bgActive, '&:hover': { bgcolor: sidebarColors.bgActive } },
+                    '&:hover': { bgcolor: sidebarColors.bgHover },
                   }}
                 >
-                  <ListItemIcon sx={{
-                    minWidth: collapsed ? 0 : 36,
-                    color: location.pathname === '/database-config' ? '#0a6ed1' : '#6a6d70',
-                  }}>
+                  <ListItemIcon sx={{ minWidth: collapsed ? 0 : 36, color: '#00A1E0' }}>
                     <DatabaseIcon />
                   </ListItemIcon>
                   {!collapsed && (
-                    <ListItemText
-                      primary="Database Connectors"
-                      primaryTypographyProps={{
-                        fontSize: '0.9rem',
-                        fontWeight: location.pathname === '/database-config' ? 500 : 400,
-                        color: location.pathname === '/database-config' ? '#0a6ed1' : '#1A2332',
-                      }}
-                    />
+                    <ListItemText primary="Database Connectors" primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: location.pathname === '/database-config' ? 600 : 400, color: sidebarColors.textPrimary }} />
                   )}
                 </ListItemButton>
               </Tooltip>
@@ -560,43 +634,21 @@ function Layout({ children }) {
               <Tooltip title={collapsed ? 'Admin Settings' : ''} placement="right" arrow>
                 <ListItemButton
                   selected={location.pathname === '/admin/settings'}
-                  onClick={() => {
-                    navigate('/admin/settings');
-                    if (isMobile) {
-                      setMobileOpen(false);
-                    }
-                  }}
+                  onClick={() => { navigate('/admin/settings'); if (isMobile) setMobileOpen(false); }}
                   sx={{
-                    borderRadius: 1,
+                    borderRadius: '8px',
                     py: 1,
                     px: collapsed ? 1 : 1.5,
                     justifyContent: collapsed ? 'center' : 'flex-start',
-                    '&.Mui-selected': {
-                      bgcolor: 'rgba(10, 110, 209, 0.08)',
-                      '&:hover': {
-                        bgcolor: 'rgba(10, 110, 209, 0.12)',
-                      },
-                    },
-                    '&:hover': {
-                      bgcolor: 'rgba(0, 0, 0, 0.04)',
-                    },
+                    '&.Mui-selected': { bgcolor: sidebarColors.bgActive, '&:hover': { bgcolor: sidebarColors.bgActive } },
+                    '&:hover': { bgcolor: sidebarColors.bgHover },
                   }}
                 >
-                  <ListItemIcon sx={{
-                    minWidth: collapsed ? 0 : 36,
-                    color: location.pathname === '/admin/settings' ? '#0a6ed1' : '#6a6d70',
-                  }}>
+                  <ListItemIcon sx={{ minWidth: collapsed ? 0 : 36, color: '#FF538A' }}>
                     <AdminIcon />
                   </ListItemIcon>
                   {!collapsed && (
-                    <ListItemText
-                      primary="Admin Settings"
-                      primaryTypographyProps={{
-                        fontSize: '0.9rem',
-                        fontWeight: location.pathname === '/admin/settings' ? 500 : 400,
-                        color: location.pathname === '/admin/settings' ? '#0a6ed1' : '#1A2332',
-                      }}
-                    />
+                    <ListItemText primary="Admin Settings" primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: location.pathname === '/admin/settings' ? 600 : 400, color: sidebarColors.textPrimary }} />
                   )}
                 </ListItemButton>
               </Tooltip>
@@ -609,19 +661,19 @@ function Layout({ children }) {
 
   return (
     <>
-      {/* Transparent/invisible header for mobile menu button and auth */}
+      {/* Top Header Bar with user profile */}
       <AppBar
         position="fixed"
         elevation={0}
         sx={{
           width: { sm: `calc(100% - ${collapsed ? drawerWidthCollapsed : drawerWidth}px)` },
           ml: { sm: `${collapsed ? drawerWidthCollapsed : drawerWidth}px` },
-          bgcolor: 'transparent',
-          boxShadow: 'none',
+          bgcolor: '#ffffff',
+          borderBottom: '1px solid #e5e5e5',
           transition: 'width 0.3s ease, margin-left 0.3s ease',
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ minHeight: '56px !important' }}>
           <IconButton
             color="inherit"
             aria-label="open drawer"
@@ -630,7 +682,7 @@ function Layout({ children }) {
             sx={{
               mr: 2,
               display: { sm: 'none' },
-              color: 'text.primary',
+              color: '#032D60',
             }}
           >
             <MenuIcon />
@@ -658,9 +710,9 @@ function Layout({ children }) {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: isMobile ? drawerWidth : (collapsed ? drawerWidthCollapsed : drawerWidth),
-              bgcolor: '#fff',
-              borderRight: '1px solid #e0e0e0',
-              boxShadow: '2px 0 4px rgba(0,0,0,0.05)',
+              bgcolor: '#ffffff',
+              borderRight: '1px solid #e5e5e5',
+              boxShadow: 'none',
               transition: 'width 0.3s ease',
             },
           }}
@@ -672,11 +724,11 @@ function Layout({ children }) {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          p: 0,
           width: { sm: `calc(100% - ${collapsed ? drawerWidthCollapsed : drawerWidth}px)` },
-          mt: 8,
-          bgcolor: '#f7f7f7',
-          minHeight: '100vh',
+          mt: '56px',
+          bgcolor: '#f3f3f3',
+          minHeight: 'calc(100vh - 56px)',
           transition: 'width 0.3s ease, margin-left 0.3s ease',
         }}
       >

@@ -1,11 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
-from typing import Dict, Any, List, Optional
+from fastapi.responses import StreamingResponse
+from typing import Dict, Any, List, Optional, AsyncGenerator
+import asyncio
 import structlog
 import os
 import json
 import uuid
 from datetime import datetime, date, time, timezone
 from src.config import settings
+from src.core.query_status_manager import get_query_status_manager, QueryStatusManager
 
 # Import authentication and permission modules
 from src.api.middleware.cognito_auth import get_current_user, require_auth, require_admin
@@ -366,17 +369,507 @@ async def health_check():
     return HealthResponse(**health_status)
 
 
-@router.post("/query", response_model=QueryResponse)
+async def _execute_query_logic(
+    request: "QueryRequest",
+    execution_id: str,
+    generator: "SQLGenerator",
+    mongodb: "MongoDBClient",
+    user: Optional[Dict],
+    status_manager: Optional["QueryStatusManager"] = None,
+    start_time: Optional[datetime] = None
+) -> Dict[str, Any]:
+    """
+    Core query processing logic extracted for reuse.
+
+    Used by both sync mode (returns directly) and async mode (background task).
+    Updates status_manager at key points when provided.
+    Returns the response_data dict (not QueryResponse).
+    """
+    from src.models.conversation import Message
+
+    if start_time is None:
+        start_time = datetime.utcnow()
+
+    def update_status(progress: int, message: str, phase: str, **extra):
+        """Helper to update status if manager is available."""
+        if status_manager:
+            status_manager.update_status(
+                execution_id=execution_id,
+                status="processing",
+                progress=progress,
+                message=message,
+                phase=phase,
+                **extra
+            )
+
+    # CONNECTOR REQUIREMENT CHECK
+    org_id = user.get('organization_id') if user else None
+    connectors_collection = mongodb.db["database_connectors"]
+    chat_enabled_connector = await connectors_collection.find_one({
+        "enabled_for_chat": True,
+        "status": {"$in": ["connected", "active", "success"]},
+        "$or": [
+            {"organization_id": org_id},
+            {"organization_id": {"$exists": False}},
+        ]
+    })
+
+    if not chat_enabled_connector:
+        raise HTTPException(
+            status_code=400,
+            detail="No database connector is configured for chat queries. "
+                   "Please go to Database Settings, add a connector, sync its schema, "
+                   "and enable it for chat."
+        )
+
+    # Determine database type
+    enabled_connector_type = chat_enabled_connector.get('connector_type')
+    if request.database_type and request.database_type != enabled_connector_type:
+        requested_type_connector = await connectors_collection.find_one({
+            "connector_type": request.database_type,
+            "enabled_for_chat": True,
+            "status": {"$in": ["connected", "active", "success"]},
+            "$or": [
+                {"organization_id": org_id},
+                {"organization_id": {"$exists": False}},
+            ]
+        })
+        if requested_type_connector:
+            database_type = request.database_type
+        else:
+            database_type = enabled_connector_type
+    else:
+        database_type = enabled_connector_type or 'bigquery'
+
+    update_status(10, "Loading conversation context...", "context")
+
+    # Get options
+    options = request.options or {}
+    use_vector_search = options.get("use_vector_search", True)
+    max_tables = options.get("max_tables", 5)
+    execute = options.get("execute", True)
+
+    # Retrieve conversation context
+    conversation_context = None
+    if request.conversationId:
+        try:
+            from src.core.conversation_context import ConversationContextManager
+            conversation_data = await mongodb.get_conversation(request.conversationId)
+            if conversation_data:
+                messages = [Message(**msg) for msg in conversation_data.get("messages", [])]
+                from src.models.conversation import Conversation
+                conversation = Conversation(
+                    conversation_id=conversation_data["conversationId"],
+                    user_id=conversation_data["userId"],
+                    title=conversation_data["title"],
+                    messages=messages,
+                    created_at=conversation_data["createdAt"],
+                    updated_at=conversation_data["updatedAt"],
+                    metadata=conversation_data.get("metadata", {})
+                )
+                context_manager = ConversationContextManager()
+                if context_manager.is_follow_up(request.question):
+                    conversation_context = context_manager.get_context_from_conversation(conversation)
+                    if conversation_context:
+                        follow_up_type = context_manager.classify_follow_up_type(request.question)
+                        conversation_context["follow_up_type"] = follow_up_type
+                        conversation_context["is_follow_up"] = True
+        except Exception as e:
+            logger.warning(f"Failed to retrieve conversation context: {e}")
+
+    # Save user message
+    if request.conversationId:
+        user_message = Message(
+            id=f"msg-{int(datetime.now(timezone.utc).timestamp())}-user",
+            type="user",
+            content=request.question,
+            timestamp=datetime.now(timezone.utc)
+        )
+        await mongodb.add_message(request.conversationId, user_message.model_dump())
+
+    # Get persona context
+    persona_context = None
+    if user:
+        user_id = user.get('sub') or user.get('cognito:username') or user.get('id')
+        if user_id:
+            persona_context = user_profile_manager.get_personalization_context(user_id)
+
+    update_status(20, "Searching relevant tables & columns...", "schema")
+
+    if execute:
+        update_status(40, "AI is writing your SQL query...", "generating")
+
+        # Generate SQL - run in thread pool to avoid blocking event loop
+        # This allows the status endpoint to respond while LLM call is in progress
+        sql_result = await asyncio.to_thread(
+            generator.generate_sql,
+            request.question,
+            use_vector_search,
+            max_tables,
+            conversation_context,
+            persona_context
+        )
+
+        # Handle cross-connector queries
+        if sql_result.get("requires_cross_connector"):
+            update_status(60, "Executing cross-database query...", "executing")
+            multi_conn_info = sql_result.get("_multi_connector_info", {})
+            connector_metadata = multi_conn_info.get("connector_metadata", {})
+            try:
+                cross_result = await generator._execute_cross_connector_query(
+                    llm_result=sql_result,
+                    connector_metadata=connector_metadata,
+                    user_id=user.get('id', 'unknown') if user else 'unknown'
+                )
+                if cross_result.get("success"):
+                    result = {
+                        "sql": None,
+                        "is_cross_connector": True,
+                        "connector_queries": sql_result.get("connector_queries", {}),
+                        "join_specification": sql_result.get("join_specification"),
+                        "explanation": sql_result.get("explanation", ""),
+                        "execution": {
+                            "results": cross_result.get("rows", []),
+                            "row_count": cross_result.get("row_count", 0),
+                            "execution_time_seconds": cross_result.get("execution_time_seconds"),
+                            "connectors_used": cross_result.get("connectors_used", []),
+                            "database_types_used": cross_result.get("database_types_used", []),
+                            "warnings": cross_result.get("warnings", [])
+                        },
+                        "from_cache": False
+                    }
+                else:
+                    result = {
+                        "error": cross_result.get("error", "Cross-connector execution failed"),
+                        "is_cross_connector": True,
+                        "connector_queries": sql_result.get("connector_queries", {}),
+                        "from_cache": False
+                    }
+            except Exception as e:
+                result = {
+                    "error": f"Cross-connector execution error: {str(e)}",
+                    "is_cross_connector": True,
+                    "from_cache": False
+                }
+
+        elif sql_result.get("error") or not sql_result.get("sql"):
+            result = sql_result
+
+        else:
+            # Single connector execution with error correction
+            update_status(60, "Validating query syntax...", "validating")
+
+            correction_info = None
+            error_analysis = None
+            connector_id = str(chat_enabled_connector.get('_id')) if chat_enabled_connector else None
+
+            # Helper for error correction
+            def get_table_schemas_for_correction():
+                table_schemas = []
+                for table_name in sql_result.get("tables_used", []):
+                    try:
+                        weaviate = WeaviateClient()
+                        schemas = weaviate.search_tables(table_name, limit=1, connector_id=connector_id)
+                        if schemas:
+                            table_schemas.append({
+                                "table_name": schemas[0].get("table_name"),
+                                "columns": schemas[0].get("columns", [])
+                            })
+                    except Exception:
+                        pass
+                return table_schemas
+
+            def attempt_error_correction(error_msg, current_sql, error_source="validation"):
+                nonlocal correction_info, error_analysis
+                update_status(65, "Auto-correcting SQL error...", "correcting")
+                try:
+                    from src.core.error_correction_agent import ErrorCorrectionAgent
+                    agent = ErrorCorrectionAgent(llm_client=generator.llm_client)
+                    table_schemas = get_table_schemas_for_correction()
+                    correction = agent.analyze_and_correct(
+                        original_question=request.question,
+                        failed_sql=current_sql,
+                        error_message=error_msg,
+                        table_schemas=table_schemas,
+                        database_type=database_type,
+                        connector_id=connector_id
+                    )
+                    if correction.get("should_retry") and correction.get("confidence", 0) >= 0.5:
+                        corrected_sql = correction.get("corrected_sql")
+                        if corrected_sql and corrected_sql != current_sql:
+                            return corrected_sql, correction
+                    elif correction.get("requires_user_action"):
+                        error_analysis = {
+                            "category": correction.get("error_category"),
+                            "analysis": correction.get("analysis"),
+                            "user_message": correction.get("user_message")
+                        }
+                    else:
+                        error_analysis = {
+                            "category": correction.get("error_category"),
+                            "analysis": correction.get("analysis"),
+                            "confidence": correction.get("confidence"),
+                            "reason": "Low confidence or error type not auto-fixable"
+                        }
+                except Exception as correction_error:
+                    logger.error(f"Error correction agent failed: {correction_error}")
+                return None, None
+
+            # Check validation before execution
+            validation = sql_result.get("validation", {})
+            current_sql = sql_result["sql"]
+            original_sql = current_sql
+
+            if not validation.get("valid", True) and not sql_result.get("from_cache"):
+                validation_error = validation.get("error", "")
+                # Run error correction in thread pool to avoid blocking event loop
+                corrected_sql, correction = await asyncio.to_thread(
+                    attempt_error_correction, validation_error, current_sql, "validation"
+                )
+                if corrected_sql:
+                    current_sql = corrected_sql
+                    sql_result["sql"] = corrected_sql
+                    correction_info = {
+                        "auto_corrected": True,
+                        "correction_phase": "pre-execution",
+                        "original_sql": original_sql,
+                        "original_error": validation_error,
+                        "error_category": correction.get("error_category"),
+                        "analysis": correction.get("analysis"),
+                        "changes_made": correction.get("changes_made", []),
+                        "confidence": correction.get("confidence")
+                    }
+
+            # Execute the query - run in thread pool to avoid blocking event loop
+            update_status(75, "Running query on your database...", "executing")
+            execution_result = await asyncio.to_thread(generator.execute_query, current_sql)
+
+            # Post-execution error correction
+            if execution_result.get("error") and not correction_info and not sql_result.get("from_cache"):
+                execution_error = execution_result.get("error", "")
+                # Run error correction in thread pool to avoid blocking event loop
+                corrected_sql, correction = await asyncio.to_thread(
+                    attempt_error_correction, execution_error, current_sql, "execution"
+                )
+                if corrected_sql:
+                    retry_result = await asyncio.to_thread(generator.execute_query, corrected_sql)
+                    if not retry_result.get("error"):
+                        correction_info = {
+                            "auto_corrected": True,
+                            "correction_phase": "post-execution",
+                            "original_sql": current_sql,
+                            "original_error": execution_error,
+                            "error_category": correction.get("error_category"),
+                            "analysis": correction.get("analysis"),
+                            "changes_made": correction.get("changes_made", []),
+                            "confidence": correction.get("confidence")
+                        }
+                        sql_result["sql"] = corrected_sql
+                        execution_result = retry_result
+
+            result = {**sql_result, "execution": execution_result}
+            if correction_info:
+                result["correction_info"] = correction_info
+            if error_analysis:
+                result["error_analysis"] = error_analysis
+
+    else:
+        # Just generate SQL without execution - run in thread pool
+        result = await asyncio.to_thread(
+            generator.generate_sql,
+            request.question,
+            use_vector_search,
+            max_tables,
+            conversation_context
+        )
+
+    update_status(90, "Processing results...", "processing")
+
+    # Build response data
+    response_data = result.copy()
+
+    # Generate follow-up suggestions for async path
+    suggestions = []
+    has_execution = "execution" in result
+    has_results = bool(result.get("execution", {}).get("results"))
+    row_count = result.get("execution", {}).get("row_count", 0)
+
+    if execute and has_execution:
+        logger.info(f"[Async] Generating AI suggestions for query: {request.question[:50]}... (rows: {row_count})")
+
+        try:
+            # Get user's role/persona for personalized suggestions
+            user_role = None
+            if user and user.get('id'):
+                user_profile = user_profile_manager.get_profile(user['id'])
+                if user_profile:
+                    user_role = user_profile.role
+                    logger.info(f"[Async] Using persona for suggestions: {user_role.value}")
+                else:
+                    # Try to infer role from user groups or default
+                    user_groups = user.get('groups', [])
+                    if 'Admins' in user_groups or 'Finance' in user_groups:
+                        user_role = UserRole.FINANCE_ANALYST
+                    elif 'Operations' in user_groups:
+                        user_role = UserRole.COO
+                    elif 'Sales' in user_groups:
+                        user_role = UserRole.SALES_DIRECTOR
+
+            # Build sql_context for empty results to enable diagnostic suggestions
+            sql_context = None
+            execution_results = result.get("execution", {}).get("results", [])
+            if not execution_results:
+                # Get available tables for the connector to help diagnose empty results
+                available_tables = []
+                try:
+                    weaviate = WeaviateClient()
+                    schemas = weaviate.search_similar_tables(
+                        query_embedding=[0] * 1536,
+                        limit=20,
+                        database_type=database_type if database_type else None,
+                        organization_id=user.get('organization_id') if user else None
+                    )
+                    available_tables = [s.get("table_name") for s in schemas if s.get("table_name")]
+                except Exception as e:
+                    logger.debug(f"[Async] Could not fetch available tables for diagnostic suggestions: {e}")
+
+                sql_context = {
+                    "sql": result.get("sql", ""),
+                    "tables_used": result.get("tables_used", []),
+                    "explanation": result.get("explanation", ""),
+                    "available_tables": available_tables
+                }
+                logger.info(f"[Async] Built SQL context for diagnostic suggestions (tables_used: {len(result.get('tables_used', []))}, available: {len(available_tables)})")
+
+            # Use AI-powered suggestion service
+            ai_service = get_ai_suggestion_service()
+            suggestions = await ai_service.generate_suggestions(
+                query=request.question,
+                results=execution_results,
+                role=user_role,
+                num_suggestions=5,
+                timeout_seconds=settings.ai_suggestion_timeout_seconds,
+                sql_context=sql_context
+            )
+            logger.info(f"[Async] Generated {len(suggestions)} AI suggestions (role: {user_role.value if user_role else 'default'})")
+        except Exception as e:
+            logger.error(f"[Async] AI suggestions failed, falling back to pattern-based: {e}", exc_info=True)
+            # Fallback to pattern-based suggestions
+            try:
+                suggestion_engine = get_suggestion_engine()
+                suggestions = suggestion_engine.generate_suggestions(
+                    query=request.question,
+                    sql=result.get("sql", ""),
+                    results=result.get("execution", {}).get("results", []),
+                    max_suggestions=5
+                )
+            except Exception as fallback_e:
+                logger.error(f"[Async] Pattern-based fallback also failed: {fallback_e}")
+                suggestions = []
+
+    response_data["follow_up_suggestions"] = suggestions if suggestions else []
+
+    # Log execution
+    log_query_execution(
+        query=request.question,
+        sql=result.get("sql", ""),
+        mode="chat",
+        execution_id=execution_id,
+        status="completed",
+        tables_used=result.get("tables_used", []),
+        start_time=start_time,
+        end_time=datetime.utcnow(),
+        result_summary=f"{result.get('execution', {}).get('row_count', 0)} rows returned" if execute else "SQL generated"
+    )
+
+    # Save assistant response
+    if request.conversationId:
+        assistant_message = Message(
+            id=f"msg-{int(datetime.now(timezone.utc).timestamp())}-assistant",
+            type="assistant",
+            content=result.get("explanation", "Query processed successfully."),
+            sql=result.get("sql"),
+            results=result.get("execution", {}).get("results") if execute else None,
+            result_count=result.get("execution", {}).get("row_count", 0) if execute else None,
+            error=result.get("error"),
+            timestamp=datetime.now(timezone.utc)
+        )
+        message_data = convert_dates_to_datetime(assistant_message.model_dump())
+        await mongodb.add_message(request.conversationId, message_data)
+
+    return response_data
+
+
+@router.post("/query", response_model=None)  # response_model=None to support both sync and async responses
 async def process_query(
     request: QueryRequest,
+    async_mode: bool = Query(default=False, description="If true, returns execution_id immediately and processes in background"),
     generator: SQLGenerator = Depends(get_org_sql_generator),
     mongodb: MongoDBClient = Depends(get_mongodb_client),
     user: Optional[Dict] = Depends(get_current_user)  # Add authentication
 ):
-    """Process a natural language query and return results with permission checks."""
+    """
+    Process a natural language query and return results with permission checks.
+
+    When async_mode=false (default): Waits and returns QueryResponse
+    When async_mode=true: Returns execution_id immediately, poll /query/status/{id} for progress
+    """
     start_time = datetime.utcnow()
     execution_id = str(uuid.uuid4())
+    status_manager = get_query_status_manager()
 
+    # For async mode: start background task and return immediately
+    if async_mode:
+        logger.info(f"Async mode: Starting background query processing for {execution_id}")
+        status_manager.update_status(
+            execution_id=execution_id,
+            status="processing",
+            progress=5,
+            message="Analyzing your question...",
+            phase="understanding"
+        )
+
+        async def process_in_background():
+            """Background task that processes the query and updates status."""
+            try:
+                # Process synchronously (call the main logic)
+                result = await _execute_query_logic(
+                    request=request,
+                    execution_id=execution_id,
+                    generator=generator,
+                    mongodb=mongodb,
+                    user=user,
+                    status_manager=status_manager,
+                    start_time=start_time
+                )
+
+                # Store final result
+                status_manager.update_status(
+                    execution_id=execution_id,
+                    status="complete",
+                    progress=100,
+                    message="Done!",
+                    phase="complete",
+                    result=result
+                )
+            except Exception as e:
+                logger.error(f"Background query processing failed: {e}", exc_info=True)
+                status_manager.update_status(
+                    execution_id=execution_id,
+                    status="error",
+                    progress=0,
+                    message="Query processing failed",
+                    error=str(e)
+                )
+
+        # Start background task
+        asyncio.create_task(process_in_background())
+
+        # Return immediately with execution_id
+        logger.info(f"Async mode: Returning immediately for {execution_id}")
+        return {"execution_id": execution_id, "status": "processing"}
+
+    # Sync mode: process directly and return result
     try:
         # CONNECTOR REQUIREMENT CHECK: Ensure at least one connector is configured for chat
         org_id = user.get('organization_id') if user else None
@@ -788,6 +1281,13 @@ async def process_query(
                 current_sql = sql_result["sql"]
                 original_sql = current_sql
 
+                # DEBUG: Log validation status for error correction debugging
+                logger.info(
+                    f"Error correction DEBUG: validation.valid={validation.get('valid')}, "
+                    f"from_cache={sql_result.get('from_cache')}, "
+                    f"validation.error={validation.get('error', 'None')[:100] if validation.get('error') else 'None'}"
+                )
+
                 if not validation.get("valid", True) and not sql_result.get("from_cache"):
                     validation_error = validation.get("error", "")
                     logger.info(f"Pre-execution: Validation failed, attempting correction before execution")
@@ -812,6 +1312,12 @@ async def process_query(
 
                 # PHASE 2: Execute the (possibly corrected) SQL
                 execution_result = generator.execute_query(current_sql)
+
+                # DEBUG: Log execution result for error correction debugging
+                logger.info(
+                    f"Error correction DEBUG: execution_result.error={execution_result.get('error', 'None')[:100] if execution_result.get('error') else 'None'}, "
+                    f"correction_info={correction_info is not None}"
+                )
 
                 # PHASE 3: If execution STILL fails (and we haven't already corrected), try again
                 if execution_result.get("error") and not correction_info and not sql_result.get("from_cache"):
@@ -1071,13 +1577,21 @@ async def process_query(
                 logger.warning(f"Failed to add chart intelligence: {e}")
                 # Continue without chart intelligence on error
 
-        # Handle empty results - provide AI-powered diagnostic context
+        # Handle execution errors - promote to top level for frontend error handling
         if execute and response_data.get("execution"):
             execution = response_data["execution"]
+            execution_error = execution.get("error")
+
+            # If there's an execution error, promote it to top level
+            if execution_error and not response_data.get("error"):
+                response_data["error"] = execution_error
+                logger.info(f"Promoted execution error to top level: {execution_error[:100]}...")
+
             row_count = execution.get("row_count", 0)
             results = execution.get("results", [])
 
-            if row_count == 0 or not results:
+            # Only treat as "empty results" if there's NO error
+            if (row_count == 0 or not results) and not execution_error:
                 tables_used = response_data.get("tables_used", [])
                 sql = response_data.get("sql", "")
                 explanation = response_data.get("explanation", "")
@@ -1132,6 +1646,44 @@ async def process_query(
             await mongodb.add_message(request.conversationId, error_message.model_dump())
         
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ASYNC QUERY STATUS ENDPOINT - Polling-based progress updates
+# ============================================================================
+
+@router.get("/query/status/{execution_id}")
+async def get_query_status(
+    execution_id: str,
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Get the status of an async query execution.
+
+    Returns current progress, phase, message, and result (when complete).
+
+    Response format:
+    - Processing: {status: "processing", progress: 40, message: "...", phase: "generating", sql: "..."}
+    - Complete: {status: "complete", progress: 100, message: "Done!", result: {...}}
+    - Error: {status: "error", progress: 0, message: "...", error: "..."}
+    """
+    status_manager = get_query_status_manager()
+
+    if not status_manager.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Query status tracking is not available (Redis unavailable)"
+        )
+
+    status = status_manager.get_status(execution_id)
+
+    if not status:
+        raise HTTPException(
+            status_code=404,
+            detail="Query not found or expired. Queries expire after 1 hour."
+        )
+
+    return status
 
 
 @router.post("/generate", response_model=QueryResponse)

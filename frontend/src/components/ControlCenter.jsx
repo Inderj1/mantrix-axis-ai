@@ -23,7 +23,23 @@ import {
   Refresh as RefreshIcon,
   CloudSync as CloudSyncIcon,
   Hub as HubIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
+
+// Salesforce-style colors
+const sfColors = {
+  bgPage: '#f3f3f3',
+  bgCard: '#ffffff',
+  textPrimary: '#032D60',
+  textSecondary: '#706e6b',
+  accent: '#0176D3',
+  accentHover: '#014486',
+  border: '#e5e5e5',
+  success: '#2E844A',
+  warning: '#FE9339',
+  error: '#C23934',
+  iconBg: '#e8f4fd',
+};
 
 // Import the components
 import SystemHealthMonitoring from './controlcenter/SystemHealthMonitoring';
@@ -96,72 +112,92 @@ const ControlCenter = ({ apiHealth, onRefreshStatus }) => {
   };
 
   return (
-    <Box>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Avatar
-              sx={{
-                width: 64,
-                height: 64,
-                bgcolor: alpha('#1976d2', 0.1),
-              }}
-            >
-              <SettingsIcon sx={{ fontSize: 36, color: '#1976d2' }} />
-            </Avatar>
-            <Box>
-              <Typography variant="h4" fontWeight={900}>
-                Control Center
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                Centralized platform management and monitoring dashboard
-              </Typography>
-            </Box>
+    <Box sx={{ bgcolor: sfColors.bgPage, minHeight: '100%', p: 3 }}>
+      {/* Hero Header */}
+      <Box sx={{
+        bgcolor: sfColors.bgCard,
+        borderRadius: '8px',
+        p: 3,
+        mb: 3,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <Avatar
+            sx={{
+              width: 64,
+              height: 64,
+              bgcolor: sfColors.iconBg,
+            }}
+          >
+            <TuneIcon sx={{ fontSize: 32, color: sfColors.accent }} />
+          </Avatar>
+          <Box>
+            <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', color: sfColors.textPrimary }}>
+              Control Center
+            </Typography>
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.95rem' }}>
+              Centralized platform management and monitoring dashboard
+            </Typography>
           </Box>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-              size="small"
-              icon={apiHealth?.status === 'healthy' ? <CheckCircleIcon /> : <ErrorIcon />}
-              label={`API: ${apiHealth?.status || 'Unknown'}`}
-              color="default"
-              variant="outlined"
-              disabled
-              sx={{ opacity: 0.5 }}
-            />
-            <Chip
-              size="small"
-              icon={<CheckCircleIcon />}
-              label="DB: Connected"
-              color="default"
-              variant="outlined"
-              disabled
-              sx={{ opacity: 0.5 }}
-            />
-            <IconButton color="default" onClick={onRefreshStatus} size="small" disabled sx={{ opacity: 0.5 }}>
-              <RefreshIcon />
-            </IconButton>
-          </Stack>
+        </Box>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip
+            size="small"
+            icon={apiHealth?.status === 'healthy' ? <CheckCircleIcon sx={{ color: sfColors.success }} /> : <ErrorIcon sx={{ color: sfColors.error }} />}
+            label={`API: ${apiHealth?.status || 'Unknown'}`}
+            variant="outlined"
+            sx={{ borderColor: sfColors.border }}
+          />
+          <Chip
+            size="small"
+            icon={<CheckCircleIcon sx={{ color: sfColors.success }} />}
+            label="DB: Connected"
+            variant="outlined"
+            sx={{ borderColor: sfColors.border }}
+          />
+          <IconButton
+            onClick={onRefreshStatus}
+            size="small"
+            sx={{ color: sfColors.textSecondary, '&:hover': { bgcolor: sfColors.iconBg } }}
+          >
+            <RefreshIcon />
+          </IconButton>
         </Stack>
       </Box>
 
       {/* Tab Navigation */}
-      <Paper sx={{ mb: 3 }}>
+      <Paper sx={{
+        mb: 3,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+        border: `1px solid ${sfColors.border}`,
+        borderRadius: '8px',
+        overflow: 'hidden',
+      }}>
         <Tabs
           value={activeTab}
           onChange={(e, v) => setActiveTab(v)}
           variant="scrollable"
           scrollButtons="auto"
           sx={{
+            bgcolor: sfColors.bgCard,
             '& .MuiTab-root': {
               minHeight: 72,
               textTransform: 'none',
               fontSize: '0.875rem',
               fontWeight: 600,
               px: 3,
+              color: sfColors.textSecondary,
+              '&.Mui-selected': {
+                color: sfColors.accent,
+              },
             },
             '& .MuiTabs-indicator': {
               height: 3,
+              bgcolor: sfColors.accent,
             },
           }}
         >

@@ -375,7 +375,7 @@ function HomePage() {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
+        <DialogTitle sx={{ textAlign: 'center' }}>
           <Typography variant="h6" fontWeight="bold" color="primary">
             Reset Password
           </Typography>
@@ -490,11 +490,10 @@ function HomePage() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        <DialogActions>
           <Button
             onClick={handleForgotPasswordClose}
             size="small"
-            sx={{ fontSize: '0.75rem' }}
           >
             Cancel
           </Button>

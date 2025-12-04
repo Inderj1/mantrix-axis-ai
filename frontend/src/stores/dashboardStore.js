@@ -275,6 +275,152 @@ export const useDashboardStore = create(
         });
       },
 
+      // ============================================================
+      // Redis State Persistence (instant restore)
+      // ============================================================
+
+      // Drill paths per widget for restoration
+      drillPaths: {},
+
+      setDrillPath: (widgetId, path) => {
+        set(state => ({
+          drillPaths: {
+            ...state.drillPaths,
+            [widgetId]: path
+          }
+        }));
+      },
+
+      clearDrillPath: (widgetId) => {
+        set(state => {
+          const { [widgetId]: _, ...rest } = state.drillPaths;
+          return { drillPaths: rest };
+        });
+      },
+
+      /**
+       * Save dashboard state to Redis for instant restore.
+       * Called automatically on filter/drill changes.
+       */
+      saveState: async (dashboardId) => {
+        const { widgetData, drillPaths, currentDashboard } = get();
+
+        // Get filters from filterEventBus
+        let activeFilters = {};
+        try {
+          const { useFilterBus } = await import('./filterEventBus');
+          activeFilters = useFilterBus.getState().activeFilters || {};
+        } catch (e) {
+          console.warn('Could not get filter state:', e);
+        }
+
+        const targetId = dashboardId || currentDashboard?.id;
+        if (!targetId) {
+          console.warn('No dashboard ID for state save');
+          return false;
+        }
+
+        try {
+          const response = await api.post(`/api/v1/dashboards/${targetId}/state`, {
+            filters: activeFilters,
+            drill_paths: drillPaths,
+            widget_data: widgetData,
+            layout: currentDashboard?.widgets?.map(w => ({
+              id: w.id,
+              layout: w.layout
+            })) || [],
+            view_settings: {}
+          });
+
+          console.log('Dashboard state saved to Redis');
+          return response.data.success;
+        } catch (error) {
+          console.error('Failed to save dashboard state:', error);
+          return false;
+        }
+      },
+
+      /**
+       * Restore dashboard state from Redis for instant load.
+       * Called when dashboard is loaded.
+       */
+      restoreState: async (dashboardId) => {
+        const { currentDashboard } = get();
+        const targetId = dashboardId || currentDashboard?.id;
+
+        if (!targetId) {
+          console.warn('No dashboard ID for state restore');
+          return null;
+        }
+
+        try {
+          const response = await api.get(`/api/v1/dashboards/${targetId}/state`);
+
+          if (!response.data.success || !response.data.state) {
+            console.log('No saved state found for dashboard');
+            return null;
+          }
+
+          const state = response.data.state;
+
+          // Restore filters via filterEventBus
+          if (state.filters && Object.keys(state.filters).length > 0) {
+            try {
+              const { useFilterBus } = await import('./filterEventBus');
+              useFilterBus.getState().restoreFilters(state.filters);
+            } catch (e) {
+              console.warn('Could not restore filter state:', e);
+            }
+          }
+
+          // Restore drill paths and widget data
+          set({
+            drillPaths: state.drill_paths || {},
+            widgetData: state.widget_data || {}
+          });
+
+          console.log('Dashboard state restored from Redis', {
+            filters: Object.keys(state.filters || {}).length,
+            drillPaths: Object.keys(state.drill_paths || {}).length,
+            widgets: Object.keys(state.widget_data || {}).length
+          });
+
+          return state;
+        } catch (error) {
+          console.error('Failed to restore dashboard state:', error);
+          return null;
+        }
+      },
+
+      /**
+       * Clear saved dashboard state from Redis.
+       */
+      clearSavedState: async (dashboardId) => {
+        const { currentDashboard } = get();
+        const targetId = dashboardId || currentDashboard?.id;
+
+        if (!targetId) return false;
+
+        try {
+          await api.delete(`/api/v1/dashboards/${targetId}/state`);
+          set({ drillPaths: {}, widgetData: {} });
+
+          // Clear filters too
+          try {
+            const { useFilterBus } = await import('./filterEventBus');
+            useFilterBus.getState().clearAllFilters();
+          } catch (e) {
+            console.warn('Could not clear filter state:', e);
+          }
+
+          console.log('Dashboard state cleared');
+          return true;
+        } catch (error) {
+          console.error('Failed to clear dashboard state:', error);
+          return false;
+        }
+      },
+
       // Clear error
       clearError: () => {
         set({ error: null });
@@ -288,7 +434,8 @@ export const useDashboardStore = create(
           isLoading: false,
           error: null,
           editMode: false,
-          widgetData: {}
+          widgetData: {},
+          drillPaths: {}
         });
       }
     }),

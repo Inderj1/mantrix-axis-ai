@@ -73,7 +73,26 @@ Impact: [Calculate using the actual numbers - show your arithmetic]
 Action: [Based on the actual data patterns - cite specific items by their real names]
 
 ⚠️ CRITICAL: Use ONLY the actual item names, customer names, product names from the data rows.
-DO NOT use placeholder names. DO NOT make up examples. CITE THE ACTUAL DATA."""
+DO NOT use placeholder names. DO NOT make up examples. CITE THE ACTUAL DATA.
+
+📊 CHART SELECTION (DO NOT default to bar - analyze the data first!):
+REQUIRED: Before choosing a chart type, analyze these data characteristics:
+1. Row count: 1 row = metric/gauge, 2-6 rows = pie/donut, 7+ rows = bar/line
+2. Column types: Has date/time column? → USE line or area (NOT bar)
+3. Value range: Single aggregated value? → USE metric (NOT bar)
+4. Categories: ≤6 distinct values? → USE pie or donut (NOT bar)
+5. Hierarchy: Parent-child relationship? → USE treemap or sunburst
+
+CHART PRIORITY (check in this order):
+- 1 row, 1 numeric value → metric (NEVER bar for single values!)
+- Has date/month/year/quarter column → line or area (time series)
+- 2-6 categories with values → pie or donut (proportions)
+- Parent-child/nested data → treemap or sunburst
+- Two numeric columns → scatter (correlation)
+- Row × column matrix → heatmap
+- Stage/funnel data → funnel
+- Long category names (>15 chars) → horizontalBar
+- ONLY use bar for 7+ categorical comparisons with no time dimension"""
 
         if user_context:
             return base_prompt + "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n" + user_context
@@ -155,7 +174,20 @@ DO NOT use placeholder names. DO NOT make up examples. CITE THE ACTUAL DATA."""
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "type": {"type": "string", "enum": ["bar", "line", "pie", "area", "scatter", "heatmap"]},
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "bar", "horizontalBar", "pictorialBar",
+                                    "line", "area", "themeRiver", "calendar",
+                                    "pie", "donut", "treemap", "sunburst",
+                                    "scatter", "heatmap", "boxplot",
+                                    "funnel", "sankey", "graph",
+                                    "gauge", "metric",
+                                    "radar", "parallel",
+                                    "candlestick"
+                                ],
+                                "description": "Chart type - bar/horizontalBar for comparisons, line/area for time series, pie/donut/treemap/sunburst for part-to-whole, scatter/heatmap/boxplot for distributions, funnel/sankey/graph for flows, gauge/metric for KPIs, radar/parallel for multi-dimensional, candlestick for financial"
+                            },
                             "title": {"type": "string"},
                             "data": {"type": "string", "description": "JSON string of the data array"},
                             "xAxis": {

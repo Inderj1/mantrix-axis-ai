@@ -16,12 +16,27 @@ import {
   Paper,
   Divider,
   Stack,
-  Autocomplete
+  Autocomplete,
+  Avatar,
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import SaveIcon from '@mui/icons-material/Save';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
+
+// Salesforce-style colors
+const sfColors = {
+  bgPage: '#f3f3f3',
+  bgCard: '#ffffff',
+  textPrimary: '#032D60',
+  textSecondary: '#706e6b',
+  accent: '#0176D3',
+  accentHover: '#014486',
+  border: '#e5e5e5',
+  success: '#2E844A',
+  iconBg: '#e8f4fd',
+};
 
 const UserProfileManager = () => {
   const { user } = useAuth();
@@ -190,17 +205,34 @@ const UserProfileManager = () => {
   const currentTemplate = getRoleTemplate(selectedRole);
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, bgcolor: sfColors.bgPage, minHeight: '100%' }}>
       <Stack spacing={3}>
-        {/* Header */}
-        <Box>
-          <Typography variant="h4" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-            <PersonIcon sx={{ mr: 1, fontSize: 32 }} />
-            AI Persona
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Select your business role to get personalized AI insights tailored to your perspective
-          </Typography>
+        {/* Hero Header */}
+        <Box sx={{
+          bgcolor: sfColors.bgCard,
+          borderRadius: '8px',
+          p: 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+          border: `1px solid ${sfColors.border}`,
+        }}>
+          <Avatar sx={{
+            width: 64,
+            height: 64,
+            bgcolor: sfColors.iconBg,
+          }}>
+            <AutoAwesomeIcon sx={{ fontSize: 32, color: sfColors.accent }} />
+          </Avatar>
+          <Box>
+            <Typography sx={{ fontWeight: 700, fontSize: '1.5rem', color: sfColors.textPrimary }}>
+              AI Persona
+            </Typography>
+            <Typography sx={{ color: sfColors.textSecondary, fontSize: '0.95rem' }}>
+              Select your business role to get personalized AI insights tailored to your perspective
+            </Typography>
+          </Box>
         </Box>
 
         {/* Save Status Alert */}
@@ -211,9 +243,9 @@ const UserProfileManager = () => {
         )}
 
         {/* Basic Information */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2 }}>
+        <Card sx={{ boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
               Basic Information
             </Typography>
             <Grid container spacing={2}>
@@ -247,9 +279,9 @@ const UserProfileManager = () => {
         </Card>
 
         {/* Role Selection */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2 }}>
+        <Card sx={{ boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
               Role & Expertise
             </Typography>
             <FormControl fullWidth>
@@ -279,9 +311,9 @@ const UserProfileManager = () => {
         </Card>
 
         {/* Preferences */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2 }}>
+        <Card sx={{ boxShadow: '0 2px 4px rgba(0,0,0,0.08)', border: `1px solid ${sfColors.border}`, borderRadius: '8px' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: sfColors.textPrimary, mb: 2 }}>
               Insight Preferences
             </Typography>
             <Stack spacing={3}>
@@ -359,6 +391,15 @@ const UserProfileManager = () => {
             startIcon={<SaveIcon />}
             onClick={handleSaveProfile}
             disabled={loading || !hasUnsavedChanges}
+            sx={{
+              bgcolor: sfColors.accent,
+              '&:hover': { bgcolor: sfColors.accentHover },
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 3,
+              py: 1,
+              borderRadius: '6px',
+            }}
           >
             {loading ? 'Saving...' : hasUnsavedChanges ? 'Save Persona' : 'Saved'}
           </Button>

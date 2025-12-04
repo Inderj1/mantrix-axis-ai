@@ -11,7 +11,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiService } from '../services/api';
+import { apiService, getAuthToken, getApiBaseUrl } from '../services/api';
 
 // Welcome message shown at start of new conversations
 const WELCOME_MESSAGE = {
@@ -55,6 +55,18 @@ export const useConversationStore = create(
       // Error state
       error: null,
 
+      // Streaming query progress state
+      queryProgress: {
+        isStreaming: false,
+        phase: null,
+        progress: 0,
+        message: '',
+        detail: '',
+        sql: null,
+        streamingResults: [],
+        totalRows: 0,
+      },
+
       // ============ Initialization ============
 
       /**
@@ -71,8 +83,37 @@ export const useConversationStore = create(
           return;
         }
 
+        // IMPORTANT: Capture temp conversation BEFORE any async operations
+        // This prevents race conditions when user clicks "New chat" and navigates
+        const preExistingConvId = state.conversationId;
+        const hasTempConversation = preExistingConvId && preExistingConvId.startsWith('temp-');
+
         console.log('[ConversationStore] === INITIALIZING ===');
         console.log('[ConversationStore] userId:', userId);
+        console.log('[ConversationStore] preExistingConvId:', preExistingConvId);
+        console.log('[ConversationStore] hasTempConversation:', hasTempConversation);
+
+        // If user just created a new chat (temp conversation), skip full initialization
+        // Just mark as initialized and load conversations in background
+        if (hasTempConversation) {
+          console.log('[ConversationStore] Preserving temp conversation, skipping full init:', preExistingConvId);
+          set({ isInitializing: false, isInitialized: true, userId });
+
+          // Load conversations list in background (don't block, don't change current conversation)
+          apiService.listConversations(userId, 50, 0).then(response => {
+            const loadedConversations = response.data.conversations || [];
+            const sortedConversations = loadedConversations.sort((a, b) => {
+              const dateA = new Date(a.updated_at || a.updatedAt || 0);
+              const dateB = new Date(b.updated_at || b.updatedAt || 0);
+              return dateB - dateA;
+            });
+            set({ conversations: sortedConversations });
+            console.log('[ConversationStore] Background loaded', sortedConversations.length, 'conversations');
+          }).catch(err => console.error('[ConversationStore] Background load failed:', err));
+
+          return;
+        }
+
         console.log('[ConversationStore] Setting isInitializing=true');
         set({ isInitializing: true, userId, error: null });
 
@@ -96,7 +137,11 @@ export const useConversationStore = create(
           const savedConversationId = localStorage.getItem(`currentConversationId_${userId}`);
           console.log('[ConversationStore] localStorage savedConversationId:', savedConversationId);
 
-          if (savedConversationId && sortedConversations.some(c =>
+          // Check again if a temp conversation was created during the API call
+          const currentConvId = get().conversationId;
+          if (currentConvId && currentConvId.startsWith('temp-')) {
+            console.log('[ConversationStore] Temp conversation created during init, preserving:', currentConvId);
+          } else if (savedConversationId && sortedConversations.some(c =>
             (c.conversation_id || c.conversationId) === savedConversationId
           )) {
             // Load the saved conversation
@@ -151,14 +196,7 @@ export const useConversationStore = create(
             timestamp: new Date(msg.timestamp),
           }));
 
-          // Add welcome message if no messages
-          if (formattedMessages.length === 0) {
-            formattedMessages.push({
-              id: generateMessageId(),
-              ...WELCOME_MESSAGE,
-              timestamp: new Date(),
-            });
-          }
+          // Skip automatic welcome message - let UI show minimal welcome section instead
 
           set({
             conversationId,
@@ -189,15 +227,10 @@ export const useConversationStore = create(
         console.log('[ConversationStore] === CREATE NEW CONVERSATION ===');
         console.log('[ConversationStore] Generated temp ID:', tempConvId);
 
-        const welcomeMessage = {
-          id: generateMessageId(),
-          ...WELCOME_MESSAGE,
-          timestamp: new Date(),
-        };
-
+        // Start with empty messages - UI will show minimal welcome section
         set({
           conversationId: tempConvId,
-          messages: [welcomeMessage],
+          messages: [],
           error: null,
         });
 
@@ -504,6 +537,288 @@ export const useConversationStore = create(
         }
       },
 
+      /**
+       * Send a query with progress updates via polling.
+       * Replaces SSE streaming with simpler async polling pattern.
+       */
+      sendQueryStreaming: async (question, options = {}) => {
+        const { selectedDatabase, multiDatabases } = get();
+        console.log('[ConversationStore] === SEND QUERY WITH POLLING ===');
+        console.log('[ConversationStore] Question:', question.substring(0, 50));
+
+        // Reset progress state
+        set({
+          isLoading: true,
+          error: null,
+          queryProgress: {
+            isStreaming: true,
+            phase: 'understanding',
+            progress: 0,
+            message: 'Understanding your question...',
+            sql: null,
+            streamingResults: [],
+            totalRows: 0,
+          },
+        });
+
+        try {
+          // Ensure conversation exists on backend
+          const actualConversationId = await get().ensureConversationExists(
+            question.substring(0, 50) + (question.length > 50 ? '...' : '')
+          );
+          console.log('[ConversationStore] Using conversation ID:', actualConversationId);
+
+          // Add user message
+          const userMessage = get().addMessage({
+            type: 'user',
+            content: question,
+          });
+
+          // Build request payload
+          const resolvedDatabaseType = options.databaseType || selectedDatabase;
+          const payload = {
+            question,
+            conversationId: actualConversationId,
+          };
+
+          if (resolvedDatabaseType) {
+            payload.database_type = resolvedDatabaseType;
+          }
+          if (multiDatabases && multiDatabases.length > 0) {
+            payload.multi_databases = multiDatabases;
+          }
+
+          // Get auth token
+          const token = await getAuthToken();
+          const baseUrl = getApiBaseUrl();
+
+          // Start async query processing
+          const postStartTime = Date.now();
+          console.log('[ConversationStore] Starting POST request at:', new Date().toISOString());
+          const startResponse = await fetch(`${baseUrl}/api/v1/query?async_mode=true`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!startResponse.ok) {
+            const errorData = await startResponse.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP error! status: ${startResponse.status}`);
+          }
+
+          const { execution_id } = await startResponse.json();
+          const postDuration = Date.now() - postStartTime;
+          console.log('[ConversationStore] POST completed in', postDuration, 'ms at:', new Date().toISOString());
+          console.log('[ConversationStore] Query started with execution_id:', execution_id);
+          console.log('[ConversationStore] About to enter polling loop at:', new Date().toISOString());
+
+          // Poll for status
+          const POLL_INTERVAL = 2000; // 2 seconds
+          const MAX_POLL_TIME = 600000; // 10 minutes timeout
+          const startTime = Date.now();
+          let finalData = null;
+          let isFirstPoll = true;
+          let pollCount = 0;
+
+          while (Date.now() - startTime < MAX_POLL_TIME) {
+            pollCount++;
+            // First poll is immediate, then every 2 seconds
+            if (!isFirstPoll) {
+              console.log('[ConversationStore] Waiting 2 seconds before poll #', pollCount);
+              await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            }
+            isFirstPoll = false;
+
+            console.log('[ConversationStore] Poll #', pollCount, 'starting at:', new Date().toISOString());
+
+            const pollStart = Date.now();
+            const statusResponse = await fetch(`${baseUrl}/api/v1/query/status/${execution_id}`, {
+              headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+              },
+            });
+
+            if (!statusResponse.ok) {
+              if (statusResponse.status === 404) {
+                throw new Error('Query expired or not found');
+              }
+              throw new Error(`Status check failed: ${statusResponse.status}`);
+            }
+
+            const status = await statusResponse.json();
+            const pollDuration = Date.now() - pollStart;
+            console.log('[ConversationStore] Poll status:', status.status, status.progress, '% (fetch took', pollDuration, 'ms)');
+
+            // Update progress UI
+            set(state => ({
+              queryProgress: {
+                ...state.queryProgress,
+                phase: status.phase || status.status,
+                progress: status.progress,
+                message: status.message,
+                sql: status.sql || state.queryProgress.sql,
+              },
+            }));
+
+            // Check if complete
+            if (status.status === 'complete') {
+              finalData = status.result;
+              set(state => ({
+                queryProgress: {
+                  ...state.queryProgress,
+                  phase: 'complete',
+                  progress: 100,
+                  message: 'Done!',
+                  isStreaming: false,
+                },
+              }));
+              break;
+            }
+
+            // Check if error
+            if (status.status === 'error') {
+              throw new Error(status.error || status.message || 'Query failed');
+            }
+          }
+
+          // Timeout check
+          if (!finalData) {
+            throw new Error('Query timed out after 10 minutes');
+          }
+
+          // Add assistant response with final data
+          const assistantMessage = get().addMessage({
+            type: 'assistant',
+            content: finalData.explanation || 'Query executed successfully.',
+            sql: finalData.sql,
+            results: finalData.results || finalData.execution?.results || [],
+            resultCount: finalData.row_count || finalData.execution?.row_count || 0,
+            followUpSuggestions: finalData.follow_up_suggestions || [],
+            autoCorrected: finalData.auto_corrected,
+            correctionInfo: finalData.correction_info,
+            emptyResultNote: finalData.empty_result_note,
+            isCrossConnector: finalData.is_cross_connector || false,
+            connectorQueries: finalData.connector_queries || null,
+            joinSpec: finalData.join_specification || null,
+            metadata: {
+              cost: finalData.validation?.estimated_cost_usd,
+              bytesProcessed: finalData.validation?.total_bytes_processed,
+              tablesUsed: finalData.tables_used,
+              connectorsUsed: finalData.execution?.connectors_used,
+              databaseTypesUsed: finalData.execution?.database_types_used,
+            },
+          });
+
+          // Update conversation in list
+          set(state => ({
+            conversations: state.conversations.map(c => {
+              const cId = c.conversation_id || c.conversationId;
+              if (cId === actualConversationId) {
+                return {
+                  ...c,
+                  updated_at: new Date().toISOString(),
+                  metadata: {
+                    ...c.metadata,
+                    message_count: (c.metadata?.message_count || 0) + 2,
+                  },
+                };
+              }
+              return c;
+            }).sort((a, b) => {
+              const dateA = new Date(a.updated_at || a.updatedAt || 0);
+              const dateB = new Date(b.updated_at || b.updatedAt || 0);
+              return dateB - dateA;
+            }),
+            isLoading: false,
+            queryProgress: {
+              ...state.queryProgress,
+              isStreaming: false,
+            },
+          }));
+
+          // Clear progress after a short delay so user can see completion
+          setTimeout(() => {
+            set({
+              queryProgress: {
+                isStreaming: false,
+                phase: null,
+                progress: 0,
+                message: '',
+                detail: '',
+                sql: null,
+                streamingResults: [],
+                totalRows: 0,
+              },
+            });
+          }, 1500);
+
+          return { success: true, data: finalData, message: assistantMessage };
+
+        } catch (error) {
+          console.error('[ConversationStore] Polling query failed:', error);
+
+          const errorMessage = get().addMessage({
+            type: 'assistant',
+            content: 'Sorry, I encountered an error processing your query. Please try again.',
+            error: error.message,
+          });
+
+          set({
+            isLoading: false,
+            error: error.message,
+            queryProgress: {
+              isStreaming: false,
+              phase: 'error',
+              progress: 0,
+              message: error.message,
+              detail: '',
+              sql: null,
+              streamingResults: [],
+              totalRows: 0,
+            },
+          });
+
+          // Clear error progress after longer delay so user can read the error
+          setTimeout(() => {
+            set({
+              queryProgress: {
+                isStreaming: false,
+                phase: null,
+                progress: 0,
+                message: '',
+                detail: '',
+                sql: null,
+                streamingResults: [],
+                totalRows: 0,
+              },
+            });
+          }, 5000);
+
+          return { success: false, error: error.message, message: errorMessage };
+        }
+      },
+
+      /**
+       * Reset query progress state (e.g., when cancelling)
+       */
+      resetQueryProgress: () => {
+        set({
+          queryProgress: {
+            isStreaming: false,
+            phase: null,
+            progress: 0,
+            message: '',
+            detail: '',
+            sql: null,
+            streamingResults: [],
+            totalRows: 0,
+          },
+        });
+      },
+
       // ============ Star/Favorite Management ============
 
       /**
@@ -615,6 +930,7 @@ export const useIsInitializing = () => useConversationStore(state => state.isIni
 export const useIsLoading = () => useConversationStore(state => state.isLoading);
 export const useSelectedDatabase = () => useConversationStore(state => state.selectedDatabase);
 export const useConversationError = () => useConversationStore(state => state.error);
+export const useQueryProgress = () => useConversationStore(state => state.queryProgress);
 
 // Derived selectors
 export const useStarredConversations = () => useConversationStore(
