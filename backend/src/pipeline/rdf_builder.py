@@ -19,6 +19,7 @@ Schema Extraction → **RDF Building** → Vector Indexing → Query Generation
 Author: Mantrix Axis AI
 """
 
+import os
 from typing import Dict, List, Any, Optional, Set, Tuple
 from datetime import datetime
 from dataclasses import dataclass
@@ -643,8 +644,114 @@ class RDFBuilder:
                     self._add_relationship(table1, table2, col_name, col_name)
                     relationships_found += 1
 
-        logger.info(f"Discovered {relationships_found} potential JOIN relationships")
+        # Also detect TPC-DS style surrogate key relationships (_SK pattern)
+        sk_relationships = self._detect_surrogate_key_relationships(snapshots)
+        relationships_found += sk_relationships
+
+        logger.info(f"Discovered {relationships_found} potential JOIN relationships (exact-match: {relationships_found - sk_relationships}, surrogate-key: {sk_relationships})")
         return relationships_found
+
+    def _detect_surrogate_key_relationships(self, snapshots: List[TableSchemaSnapshot]) -> int:
+        """
+        Detect TPC-DS style FK relationships based on _SK suffix patterns.
+
+        TPC-DS uses surrogate keys with patterns like:
+        - STORE_SALES.SS_CUSTOMER_SK -> CUSTOMER.C_CUSTOMER_SK
+        - WEB_SALES.WS_ITEM_SK -> ITEM.I_ITEM_SK
+        - STORE_SALES.SS_SOLD_DATE_SK -> DATE_DIM.D_DATE_SK
+
+        The matching strategy extracts the semantic key name (word before _SK):
+        - SS_CUSTOMER_SK -> "CUSTOMER_SK"
+        - C_CUSTOMER_SK -> "CUSTOMER_SK"
+        - SS_SOLD_DATE_SK -> "DATE_SK"
+        - D_DATE_SK -> "DATE_SK"
+
+        Returns:
+            Number of surrogate key relationships discovered
+        """
+        found = 0
+
+        def extract_sk_name(col_name: str) -> str:
+            """Extract the semantic key name from a _SK column (e.g., CUSTOMER_SK)."""
+            if "_SK" not in col_name.upper():
+                return ""
+            parts = col_name.upper().split("_")
+            try:
+                sk_idx = parts.index("SK")
+                if sk_idx > 0:
+                    return parts[sk_idx - 1] + "_SK"
+            except ValueError:
+                pass
+            return ""
+
+        # Build index of PK columns by their semantic key name
+        # e.g., CUSTOMER.C_CUSTOMER_SK -> key "CUSTOMER_SK"
+        pk_by_key: Dict[str, List[Tuple[str, str, str]]] = {}  # {key_name: [(table, col_name, type)]}
+
+        for snapshot in snapshots:
+            table_name = snapshot.table_name.upper()
+            table_prefix = table_name[0] + "_" if len(table_name) > 0 else ""
+
+            for col in snapshot.columns:
+                col_name = col['name'].upper()
+                # PK pattern: starts with single-letter table prefix + contains "_SK"
+                if col_name.startswith(table_prefix) and "_SK" in col_name:
+                    key_name = extract_sk_name(col_name)
+                    if key_name:
+                        if key_name not in pk_by_key:
+                            pk_by_key[key_name] = []
+                        pk_by_key[key_name].append((snapshot.table_name, col['name'], col['type']))
+
+        if not pk_by_key:
+            logger.debug("No surrogate key PK columns found (no _SK pattern with table prefix)")
+            return 0
+
+        logger.debug(f"Found {sum(len(pks) for pks in pk_by_key.values())} potential PK columns with _SK pattern")
+
+        # Find FK columns that reference these PKs by matching key names
+        for snapshot in snapshots:
+            table_name = snapshot.table_name.upper()
+            own_prefix = table_name[0] + "_" if len(table_name) > 0 else ""
+
+            for col in snapshot.columns:
+                col_name = col['name'].upper()
+
+                # Skip if not a _SK column
+                if "_SK" not in col_name:
+                    continue
+
+                # Skip if this is the table's own PK (starts with its own prefix)
+                if col_name.startswith(own_prefix):
+                    continue
+
+                # Extract the semantic key name
+                fk_key_name = extract_sk_name(col_name)
+                if not fk_key_name:
+                    continue
+
+                # Find matching PK columns
+                if fk_key_name in pk_by_key:
+                    for pk_table, pk_col, pk_type in pk_by_key[fk_key_name]:
+                        if pk_table.upper() == table_name:
+                            continue  # Skip self
+
+                        # Found a match! Add the relationship
+                        self._add_relationship(
+                            snapshot.table_name,
+                            pk_table,
+                            col['name'],  # Use original case
+                            pk_col
+                        )
+                        found += 1
+                        logger.debug(
+                            f"Surrogate key relationship: {snapshot.table_name}.{col['name']} -> "
+                            f"{pk_table}.{pk_col} (key: {fk_key_name})"
+                        )
+
+        if found > 0:
+            logger.info(f"Discovered {found} surrogate key (_SK) relationships")
+
+        return found
 
     def _add_relationship(self, table1: str, table2: str, col1: str, col2: str):
         """Add JOIN relationship to graph"""
@@ -802,7 +909,7 @@ class RDFBuilder:
             logger.error(f"Failed to query join path metadata: {e}")
             return None
 
-    def _merge_into_jena(self):
+    def _merge_into_jena(self, pipeline_run_id: Optional[str] = None):
         """
         Merge local RDF graph into Jena knowledge graph.
 
@@ -810,6 +917,11 @@ class RDFBuilder:
         - Remove old schema triples
         - Add new triples from local graph
         - Preserve non-schema triples (GL mappings, synonyms, etc.)
+        - If using PostgreSQL backend, persist to database
+        - If EFS path configured, create backup
+
+        Args:
+            pipeline_run_id: Optional pipeline run identifier for versioning
         """
         if not self.jena_kg:
             logger.warning("Jena KG not available, skipping merge")
@@ -833,6 +945,56 @@ class RDFBuilder:
             self.jena_kg.graph.add(triple)
 
         logger.info(f"Jena KG now has {len(self.jena_kg.graph)} total triples")
+
+        # If using PostgreSQL backend, save to database
+        from src.core.knowledge_graph.jena_singleton import JENA_BACKEND, clear_jena_cache
+        if JENA_BACKEND == "postgres":
+            try:
+                from src.core.knowledge_graph.jena_postgres_store import save_graph_to_postgres
+                graph_id = os.getenv("JENA_GRAPH_ID", "global")
+                saved = save_graph_to_postgres(
+                    self.jena_kg.graph,
+                    graph_id=graph_id,
+                    pipeline_run_id=pipeline_run_id
+                )
+                logger.info(f"Persisted {saved} triples to PostgreSQL")
+
+                # Clear the singleton cache so next access reloads from PostgreSQL
+                # This ensures all components see the updated graph
+                clear_jena_cache()
+                logger.info("Cleared Jena singleton cache - will reload from PostgreSQL on next access")
+            except Exception as e:
+                logger.error(f"Failed to persist RDF to PostgreSQL: {e}")
+
+        # Backup to EFS if configured
+        efs_path = os.getenv("JENA_EFS_PATH")
+        if efs_path:
+            self._backup_to_efs(self.jena_kg.graph, efs_path, pipeline_run_id)
+
+    def _backup_to_efs(self, graph: Graph, efs_path: str, pipeline_run_id: Optional[str] = None) -> None:
+        """
+        Backup RDF graph to EFS as TTL file.
+
+        Args:
+            graph: RDFLib Graph to backup
+            efs_path: Path to EFS mount point
+            pipeline_run_id: Optional pipeline run identifier for filename
+        """
+        try:
+            os.makedirs(efs_path, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"rdf_backup_{timestamp}.ttl"
+            if pipeline_run_id:
+                filename = f"rdf_{pipeline_run_id}.ttl"
+
+            filepath = os.path.join(efs_path, filename)
+
+            graph.serialize(destination=filepath, format="turtle")
+            logger.info(f"Backed up {len(graph)} triples to EFS: {filepath}")
+
+        except Exception as e:
+            logger.error(f"Failed to backup RDF to EFS: {e}")
 
     def add_business_semantics(self, domain_mappings: Dict[str, Any]):
         """
@@ -999,3 +1161,151 @@ Errors: {len(result.errors)}
             logger.error(f"SPARQL query failed for {table_name}: {e}")
 
         return relationships
+
+    def add_materialized_view(
+        self,
+        mv_name: str,
+        base_table: str,
+        aggregation_columns: List[str],
+        group_by_columns: List[str],
+        organization_id: str = "default",
+        database_type: str = "snowflake",
+        row_count: int = 0,
+        refresh_schedule: str = "daily",
+        definition_sql: Optional[str] = None
+    ):
+        """
+        Register a materialized view (or Dynamic Table in Snowflake) in the knowledge graph.
+
+        This enables query rewriting to use pre-computed aggregations instead of
+        scanning very large base tables.
+
+        Args:
+            mv_name: Name of the materialized view
+            base_table: Name of the base table this MV aggregates
+            aggregation_columns: Columns being aggregated (e.g., ['revenue', 'quantity'])
+            group_by_columns: Columns in GROUP BY (e.g., ['store_id', 'date'])
+            organization_id: Organization ID for multi-tenancy
+            database_type: Database type (snowflake, bigquery, etc.)
+            row_count: Estimated row count in the MV
+            refresh_schedule: How often the MV is refreshed (daily, hourly, realtime)
+            definition_sql: Optional SQL definition of the view
+
+        Example:
+            # Register a sales-by-store materialized view
+            builder.add_materialized_view(
+                mv_name="SALES_BY_STORE_DAILY",
+                base_table="STORE_SALES",
+                aggregation_columns=["SS_NET_PROFIT", "SS_QUANTITY"],
+                group_by_columns=["SS_STORE_SK", "SS_SOLD_DATE_SK"],
+                organization_id="demo",
+                database_type="snowflake"
+            )
+        """
+        logger.info(
+            f"Registering materialized view: {mv_name}",
+            base_table=base_table,
+            aggregation_columns=aggregation_columns,
+            group_by_columns=group_by_columns
+        )
+
+        # Create URIs
+        mv_uri = FIN[f"MaterializedView_{organization_id}_{database_type}_{mv_name}"]
+        base_table_uri = FIN[f"Table_{organization_id}_{database_type}_{base_table}"]
+
+        # Add MV as a special type of table
+        self.graph.add((mv_uri, RDF.type, FIN.MaterializedView))
+        self.graph.add((mv_uri, RDF.type, FIN.Table))  # Also a table for compatibility
+        self.graph.add((mv_uri, SCHEMA.tableName, Literal(mv_name)))
+        self.graph.add((mv_uri, SCHEMA.organizationId, Literal(organization_id)))
+        self.graph.add((mv_uri, SCHEMA.databaseType, Literal(database_type)))
+
+        # Link to base table
+        self.graph.add((mv_uri, SCHEMA.isMaterializedViewOf, base_table_uri))
+        self.graph.add((base_table_uri, SCHEMA.hasMaterializedView, mv_uri))
+
+        # Add aggregation metadata
+        for agg_col in aggregation_columns:
+            self.graph.add((mv_uri, SCHEMA.aggregatesColumn, Literal(agg_col.upper())))
+
+        for group_col in group_by_columns:
+            self.graph.add((mv_uri, SCHEMA.groupByColumn, Literal(group_col.upper())))
+
+        # Add metadata
+        self.graph.add((mv_uri, SCHEMA.rowCount, Literal(row_count, datatype=XSD.integer)))
+        self.graph.add((mv_uri, SCHEMA.refreshSchedule, Literal(refresh_schedule)))
+        self.graph.add((mv_uri, DCTERMS.created, Literal(datetime.now().isoformat(), datatype=XSD.dateTime)))
+
+        if definition_sql:
+            self.graph.add((mv_uri, SCHEMA.definitionSQL, Literal(definition_sql)))
+
+        # Sync to Jena if available
+        if self.jena_kg:
+            self._merge_into_jena()
+
+        logger.info(f"Materialized view {mv_name} registered successfully")
+
+    def get_materialized_views_for_table(
+        self,
+        base_table: str,
+        organization_id: str = "default",
+        database_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all materialized views that aggregate a given base table.
+
+        Args:
+            base_table: Name of the base table
+            organization_id: Organization ID for multi-tenancy
+            database_type: Optional database type filter
+
+        Returns:
+            List of materialized view info dicts with name, aggregation_columns, group_by_columns
+        """
+        db_filter = f'FILTER(?dbType = "{database_type}")' if database_type else ""
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+
+        SELECT ?mvName ?dbType ?rowCount ?refreshSchedule
+               (GROUP_CONCAT(DISTINCT ?aggCol; separator=",") AS ?aggregationColumns)
+               (GROUP_CONCAT(DISTINCT ?groupCol; separator=",") AS ?groupByColumns)
+        WHERE {{
+            ?mv a fin:MaterializedView ;
+                schema:tableName ?mvName ;
+                schema:organizationId "{organization_id}" ;
+                schema:databaseType ?dbType ;
+                schema:isMaterializedViewOf ?baseTable .
+            ?baseTable schema:tableName "{base_table.upper()}" .
+
+            OPTIONAL {{ ?mv schema:aggregatesColumn ?aggCol }}
+            OPTIONAL {{ ?mv schema:groupByColumn ?groupCol }}
+            OPTIONAL {{ ?mv schema:rowCount ?rowCount }}
+            OPTIONAL {{ ?mv schema:refreshSchedule ?refreshSchedule }}
+            {db_filter}
+        }}
+        GROUP BY ?mvName ?dbType ?rowCount ?refreshSchedule
+        """
+
+        mvs = []
+        try:
+            results = self.graph.query(sparql)
+            for row in results:
+                agg_cols = str(row.aggregationColumns).split(",") if row.aggregationColumns else []
+                group_cols = str(row.groupByColumns).split(",") if row.groupByColumns else []
+
+                mvs.append({
+                    "mv_name": str(row.mvName),
+                    "database_type": str(row.dbType),
+                    "aggregation_columns": [c.strip() for c in agg_cols if c.strip()],
+                    "group_by_columns": [c.strip() for c in group_cols if c.strip()],
+                    "row_count": int(row.rowCount) if row.rowCount else 0,
+                    "refresh_schedule": str(row.refreshSchedule) if row.refreshSchedule else "unknown"
+                })
+
+            logger.debug(f"Found {len(mvs)} materialized views for {base_table}")
+        except Exception as e:
+            logger.warning(f"Failed to get materialized views for {base_table}: {e}")
+
+        return mvs

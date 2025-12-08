@@ -11,11 +11,14 @@ Supports multiple execution strategies:
 """
 import pandas as pd
 import asyncio
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
 import structlog
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from src.core.knowledge_graph.jena_query_resolver import JenaQueryResolver
 
 from src.core.federated_query_planner import (
     ExecutionPlan,
@@ -94,7 +97,8 @@ class CrossDatabaseExecutor:
         connector_factory: Optional[ConnectorFactory] = None,
         enable_pushdown: bool = True,
         enable_federation: bool = True,
-        federation_config: Optional[Dict[str, Any]] = None
+        federation_config: Optional[Dict[str, Any]] = None,
+        jena_resolver: Optional["JenaQueryResolver"] = None
     ):
         """
         Initialize the cross-database executor.
@@ -104,10 +108,13 @@ class CrossDatabaseExecutor:
             enable_pushdown: Enable query pushdown optimization (default: True)
             enable_federation: Enable S3 federation for large datasets (default: True)
             federation_config: Optional config for FederationFactory (s3_bucket, etc.)
+            jena_resolver: Optional Jena resolver for metadata lookups (row counts, selectivity)
         """
         self.factory = connector_factory or ConnectorFactory()
         self.translator = SQLDialectTranslator()
-        self.pushdown_optimizer = QueryPushdownOptimizer() if enable_pushdown else None
+        self.jena_resolver = jena_resolver
+        # Pass Jena resolver to pushdown optimizer for accurate selectivity estimates
+        self.pushdown_optimizer = QueryPushdownOptimizer(jena_resolver=jena_resolver) if enable_pushdown else None
         self._temp_tables = {}  # Track temporary tables created
         self.enable_pushdown = enable_pushdown
         self.enable_federation = enable_federation
@@ -116,7 +123,8 @@ class CrossDatabaseExecutor:
         logger.info(
             "CrossDatabaseExecutor initialized",
             pushdown_enabled=enable_pushdown,
-            federation_enabled=enable_federation
+            federation_enabled=enable_federation,
+            has_jena=jena_resolver is not None
         )
 
     async def execute_plan(
@@ -299,8 +307,13 @@ class CrossDatabaseExecutor:
         )
 
         # Estimate data size to select strategy
-        estimated_left_rows = await self._estimate_row_count(left_connector, left_query)
-        estimated_right_rows = await self._estimate_row_count(right_connector, right_query)
+        # Use Jena table names for faster row count lookup (avoids EXPLAIN queries)
+        estimated_left_rows = await self._estimate_row_count(
+            left_connector, left_query, table_name=left_table_name
+        )
+        estimated_right_rows = await self._estimate_row_count(
+            right_connector, right_query, table_name=right_table_name
+        )
         total_estimated_rows = max(estimated_left_rows or 0, estimated_right_rows or 0)
 
         # Select execution strategy
@@ -390,24 +403,39 @@ class CrossDatabaseExecutor:
     async def _estimate_row_count(
         self,
         connector: Any,
-        query: str
+        query: str,
+        table_name: Optional[str] = None
     ) -> Optional[int]:
         """
         Estimate the number of rows a query will return.
 
+        Uses Jena metadata first for fast lookup, falls back to connector estimate.
+
         Args:
             connector: Database connector
             query: SQL query
+            table_name: Optional table name for Jena lookup (faster than EXPLAIN)
 
         Returns:
             Estimated row count, or None if estimation fails
         """
         try:
-            # Use connector's estimate method if available
+            # 1. Try Jena first (fast - no database round trip)
+            if self.jena_resolver and table_name:
+                jena_estimate = self.jena_resolver.get_table_row_count(table_name)
+                if jena_estimate is not None:
+                    logger.debug(
+                        "Using Jena row count estimate",
+                        table=table_name,
+                        rows=jena_estimate
+                    )
+                    return jena_estimate
+
+            # 2. Use connector's estimate method if available
             if hasattr(connector, 'estimate_row_count'):
                 return connector.estimate_row_count(query)
 
-            # Fallback: use EXPLAIN if supported
+            # 3. Fallback: use EXPLAIN if supported
             # This is a simplified approach - production would parse EXPLAIN output
             return None
 

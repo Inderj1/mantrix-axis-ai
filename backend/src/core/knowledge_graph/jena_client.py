@@ -18,23 +18,39 @@ from src.core.financial_semantic_parser import FinancialSemanticParser
 logger = structlog.get_logger()
 
 
+def _get_graph_id_from_env() -> str:
+    """Get graph ID from environment for multi-tenant isolation."""
+    return os.getenv("JENA_GRAPH_ID", "global")
+
+
 class JenaKnowledgeGraph:
     """RDF-based knowledge graph for financial data using RDFLib."""
-    
+
     def __init__(self, data_file: str = "financial_kg.ttl", use_cache: str = "redis"):
         """Initialize the RDF graph.
 
         Args:
             data_file: Path to the TTL file
-            use_cache: Cache strategy - "redis" (default), "memory", or "none"
+            use_cache: Cache strategy - "redis" (default), "postgres", "memory", or "none"
         """
         self.data_file = data_file
         self.use_cache = use_cache
 
-        if use_cache == "redis":
+        if use_cache == "postgres":
+            # Use PostgreSQL-backed store for persistent storage (recommended for ECS)
+            from .jena_postgres_store import get_postgres_graph
+            self.graph = get_postgres_graph(graph_id=_get_graph_id_from_env())
+            logger.info("Using PostgreSQL-backed RDF store")
+            # Still need to define namespace
+            self.FIN = Namespace("http://example.com/finance#")
+            self._fin = lambda prop: self.FIN[prop]
+            # Load table metadata into cached graph
+            self._load_table_metadata()
+            return
+        elif use_cache == "redis":
             # Use Redis-cached store for multi-process sharing
             from .jena_redis_store import get_redis_graph
-            self.graph = get_redis_graph()
+            self.graph = get_redis_graph(graph_id=_get_graph_id_from_env())
             logger.info("Using Redis-cached RDF store")
             # Still need to define namespace
             self.FIN = Namespace("http://example.com/finance#")
@@ -425,3 +441,11 @@ class JenaKnowledgeGraph:
         """Save and close the graph."""
         self.save()
         logger.info("Closed Jena knowledge graph")
+
+    def _get_graph_id(self) -> str:
+        """Get graph ID for multi-tenant isolation.
+
+        Returns:
+            Graph ID from environment or 'global' default
+        """
+        return _get_graph_id_from_env()

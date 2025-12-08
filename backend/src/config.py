@@ -171,6 +171,19 @@ class Settings(BaseSettings):
     postgres_password: str = Field(default="", alias="POSTGRES_PASSWORD")
     postgres_database: str = Field(default="customer_analytics", alias="POSTGRES_DATABASE")
 
+    # Query timeout configuration for large tables
+    large_table_query_timeout: int = Field(
+        default=900, alias="LARGE_TABLE_QUERY_TIMEOUT"
+    )  # 15 minutes - timeout for queries on very large tables (>1B rows)
+    default_query_timeout: int = Field(
+        default=300, alias="DEFAULT_QUERY_TIMEOUT"
+    )  # 5 minutes - default timeout for normal queries
+
+    # Query safety configuration
+    fail_fast_on_unknown_table_size: bool = Field(
+        default=True, alias="FAIL_FAST_ON_UNKNOWN_TABLE_SIZE"
+    )  # If true, fail queries on tables with unknown size (forces schema sync first)
+
     # Snowflake Configuration (optional - only needed if using Snowflake)
     snowflake_account: Optional[str] = Field(None, alias="SNOWFLAKE_ACCOUNT")
     snowflake_user: Optional[str] = Field(None, alias="SNOWFLAKE_USER")
@@ -309,6 +322,16 @@ class Settings(BaseSettings):
     alert_notification_batch_size: int = Field(default=100, alias="ALERT_NOTIFICATION_BATCH_SIZE")
     alert_retry_max_attempts: int = Field(default=3, alias="ALERT_RETRY_MAX_ATTEMPTS")
     alert_retry_delay_seconds: int = Field(default=300, alias="ALERT_RETRY_DELAY_SECONDS")
+
+    # Jena RDF Storage Configuration
+    # Backend options: "redis" (default), "postgres" (persistent), "memory" (single-process)
+    jena_backend: str = Field(default="redis", alias="JENA_BACKEND")
+    # Graph ID for multi-tenant isolation (default: "global")
+    jena_graph_id: str = Field(default="global", alias="JENA_GRAPH_ID")
+    # EFS path for RDF backups (optional, e.g., "/mnt/efs/rdf")
+    jena_efs_path: Optional[str] = Field(default=None, alias="JENA_EFS_PATH")
+    # Enable PostgreSQL persistence (deprecated, use jena_backend="postgres" instead)
+    jena_postgres_enabled: bool = Field(default=False, alias="JENA_POSTGRES_ENABLED")
 
 
 settings = Settings()

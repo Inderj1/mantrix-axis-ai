@@ -18,6 +18,13 @@ from src.core.business_config import (
     QueryContextEnhancer
 )
 from src.core.cross_database_validator import CrossDatabaseValidator
+from src.core.single_db_query_optimizer import (
+    SingleDatabaseQueryOptimizer,
+    get_dialect_for_database,
+    QueryAnalysis,
+    ExecutionStrategy,
+    PANDAS_MAX_ROWS
+)
 try:
     from src.core.knowledge_graph import GraphTraversalEngine
     from src.core.knowledge_graph.jena_singleton import (
@@ -276,6 +283,23 @@ class SQLGenerator:
         
         # Set LLM client in suggestion service
         self.suggestion_service.llm_client = self.llm_client
+
+        # Initialize single-database query optimizer (for large table protection)
+        self.single_db_optimizer = None
+        try:
+            self.single_db_optimizer = SingleDatabaseQueryOptimizer(
+                jena_resolver=self.kg_query_resolver,
+                weaviate_client=self.vector_client,
+                organization_id=self.organization_id,
+                database_type=self.database_type
+            )
+            logger.info(
+                "SingleDatabaseQueryOptimizer initialized",
+                database_type=self.database_type,
+                has_jena=self.kg_query_resolver is not None
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize single-db optimizer: {e}. Queries will run without size protection.")
 
         # Skip automatic indexing on startup - will be done lazily on first use
         # self._index_schemas()
@@ -1193,26 +1217,33 @@ class SQLGenerator:
                         try:
                             from src.core.knowledge_graph.join_path_finder import JoinPathFinder
 
-                            # Pass organization and database context to JoinPathFinder
+                            # Pass organization, database context, and cache manager to JoinPathFinder
                             finder = JoinPathFinder(
                                 self.knowledge_graph,
                                 organization_id=self.organization_id,
-                                database_type=self.database_type
+                                database_type=self.database_type,
+                                cache_manager=self.cache_manager
                             )
                             join_order = finder.recommend_join_order(selected_table_names)
 
-                            # Convert JoinPath objects to join hints
+                            # Convert JoinPath objects to join hints with confidence scores
                             for join_path in join_order:
                                 join_hints.append({
                                     "source": join_path.source_table,
                                     "target": join_path.target_table,
                                     "keys": [(join_path.join_column, join_path.join_column)],  # Both tables use same column name
                                     "type": join_path.join_type,
-                                    "column_type": join_path.column_type
+                                    "column_type": join_path.column_type,
+                                    "confidence": join_path.confidence,
+                                    "confidence_reason": join_path.confidence_reason
                                 })
 
                             if join_hints:
-                                logger.info(f"Jena KG found {len(join_hints)} optimal JOIN paths for {len(selected_table_names)} tables")
+                                avg_confidence = sum(h.get("confidence", 0.5) for h in join_hints) / len(join_hints)
+                                logger.info(
+                                    f"Jena KG found {len(join_hints)} optimal JOIN paths for {len(selected_table_names)} tables "
+                                    f"(avg confidence: {avg_confidence:.2f})"
+                                )
 
                         except Exception as e:
                             logger.warning(f"Jena JOIN path finding failed: {e}, falling back to table_registry")
@@ -1548,6 +1579,18 @@ class SQLGenerator:
             if improvements:
                 result["suggestions"] = improvements
 
+            # Template usage tracking: Compare generated SQL to suggested template
+            # This helps measure how well the LLM follows Jena's recommended patterns
+            if kg_enhanced_context and kg_enhanced_context.get('suggested_query') and result.get('sql'):
+                suggested_template = kg_enhanced_context['suggested_query']
+                generated_sql = result['sql']
+                template_similarity = self._calculate_template_similarity(generated_sql, suggested_template)
+                result['template_similarity'] = template_similarity
+                logger.info(
+                    f"Template usage: LLM {'followed' if template_similarity >= 0.5 else 'ignored'} "
+                    f"Jena template (similarity: {template_similarity:.0%})"
+                )
+
             # SMART CACHING: Cache after validation and test execution (if not from cache)
             if (
                 self.cache_manager
@@ -1567,20 +1610,58 @@ class SQLGenerator:
                     if settings.cache_execution_test_required and validation_status and result.get("sql"):
                         try:
                             # Quick test execution with LIMIT 1 for performance
+                            # IMPORTANT: Always use LIMIT 1 for test execution to avoid running
+                            # expensive queries (like aggregations on 28B rows) during caching
                             import time
+                            import re
                             test_sql = result["sql"]
 
-                            # Add LIMIT 1 if not already limited for testing
-                            if "LIMIT" not in test_sql.upper():
-                                test_sql += " LIMIT 1"
+                            # Check if query has aggregations - even LIMIT 1 won't help
+                            # because aggregations must scan all data first
+                            has_aggregation = bool(re.search(
+                                r'\b(SUM|COUNT|AVG|MIN|MAX|GROUP\s+BY)\b',
+                                test_sql,
+                                re.IGNORECASE
+                            ))
 
-                            start_time = time.time()
-                            # Use target database connector for test execution (multi-connector support)
-                            test_results = validation_connector.execute_query(test_sql)
-                            execution_time_ms = (time.time() - start_time) * 1000
-                            row_count = len(test_results) if test_results else 0
+                            # Check table size using optimizer if available
+                            skip_test = False
+                            if has_aggregation and self.single_db_optimizer:
+                                try:
+                                    db_type = target_db_type or self.database_type
+                                    dialect = get_dialect_for_database(db_type)
+                                    analysis = self.single_db_optimizer.analyze_query(test_sql, dialect)
+                                    # Skip test execution for aggregations on large tables (>1M rows)
+                                    if analysis.total_estimated_rows > 1_000_000:
+                                        skip_test = True
+                                        logger.info(
+                                            f"Skipping test execution - aggregation on large table "
+                                            f"({analysis.total_estimated_rows:,} estimated rows). "
+                                            f"Tables: {analysis.tables}"
+                                        )
+                                except Exception as analysis_error:
+                                    logger.debug(f"Could not analyze query for test skip: {analysis_error}")
 
-                            logger.debug(f"Test execution: {execution_time_ms:.0f}ms, {row_count} rows")
+                            if skip_test:
+                                # Trust validation result for aggregation queries on large tables
+                                logger.info("Test execution skipped for large-table aggregation query")
+                            else:
+                                # Replace any existing LIMIT with LIMIT 1, or add LIMIT 1 if none
+                                # This ensures test execution is fast even if LLM added LIMIT 1000
+                                if re.search(r'\bLIMIT\s+\d+', test_sql, re.IGNORECASE):
+                                    test_sql = re.sub(r'\bLIMIT\s+\d+', 'LIMIT 1', test_sql, flags=re.IGNORECASE)
+                                else:
+                                    test_sql += " LIMIT 1"
+
+                                logger.debug(f"Test execution SQL (LIMIT 1 enforced): {test_sql[:200]}...")
+
+                                start_time = time.time()
+                                # Use target database connector for test execution (multi-connector support)
+                                test_results = validation_connector.execute_query(test_sql)
+                                execution_time_ms = (time.time() - start_time) * 1000
+                                row_count = len(test_results) if test_results else 0
+
+                                logger.debug(f"Test execution: {execution_time_ms:.0f}ms, {row_count} rows")
 
                         except Exception as exec_error:
                             # Test execution failed - update both local vars AND result["validation"]
@@ -1907,47 +1988,84 @@ class SQLGenerator:
     
     def _select_tables_by_relevance(self, similar_tables: List[Dict[str, Any]], query: str, limit: int) -> List[Dict[str, Any]]:
         """Select tables based on relevance scores and potential for JOINs.
-        
+
         Uses similarity distances to determine if multiple tables should be included.
+        Now also uses has_relationships flag from Weaviate to boost tables with JOIN potential.
         """
         if not similar_tables:
             return []
-        
+
+        # Check if query explicitly mentions multiple entities (indicates JOIN intent)
+        query_lower = query.lower()
+        needs_join = any(keyword in query_lower for keyword in
+                       ["and", "with", "by", "per", "for each", "join", "combine",
+                        "compare", "across", "between", "customer", "product", "region"])
+
+        # If query needs JOINs, boost tables that have relationships
+        # Uses unified scoring: semantic similarity + relationship strength
+        if needs_join:
+            for table in similar_tables:
+                original_distance = table.get("distance", 1.0)
+                boost_factor = 1.0
+
+                # Boost for tables with relationships (from Weaviate has_relationships flag)
+                if table.get("has_relationships", False):
+                    boost_factor *= 0.85  # 15% boost
+
+                # Additional boost based on relationship count (from Jena metadata if available)
+                relationship_count = table.get("relationship_count", 0)
+                if relationship_count > 0:
+                    # More relationships = better JOIN potential (diminishing returns)
+                    # 1 rel = 5% boost, 2 = 10%, 3+ = 15%
+                    rel_boost = min(relationship_count * 0.05, 0.15)
+                    boost_factor *= (1.0 - rel_boost)
+
+                if boost_factor < 1.0:
+                    table["distance"] = original_distance * boost_factor
+                    logger.debug(
+                        f"Boosted table {table.get('table_name')} "
+                        f"(has_rels={table.get('has_relationships')}, rel_count={relationship_count}): "
+                        f"{original_distance:.3f} -> {table['distance']:.3f}"
+                    )
+
         # Sort by distance (lower is better)
         sorted_tables = sorted(similar_tables, key=lambda x: x.get("distance", 1.0))
-        
+
         # Always include the most relevant table
         selected = [sorted_tables[0]]
-        
+
         if len(sorted_tables) > 1:
             # Get the best match distance as baseline
             best_distance = sorted_tables[0].get("distance", 0.0)
-            
+
             # Threshold for considering additional tables (within 20% of best match)
             threshold = best_distance * 1.2
-            
-            # Check if query explicitly mentions multiple entities
-            query_lower = query.lower()
-            needs_join = any(keyword in query_lower for keyword in 
-                           ["and", "with", "by", "per", "for each", "join", "combine"])
-            
+
             # Add additional relevant tables
             for table in sorted_tables[1:]:
                 if len(selected) >= limit:
                     break
-                    
+
                 table_distance = table.get("distance", 1.0)
-                
+
                 # Include table if:
                 # 1. It's within the relevance threshold
                 # 2. Query indicates need for multiple tables
                 # 3. Table name suggests different domain than already selected
-                if table_distance <= threshold or (needs_join and table_distance <= best_distance * 1.5):
+                # 4. Table has relationships and query needs JOINs
+                include_table = (
+                    table_distance <= threshold or
+                    (needs_join and table_distance <= best_distance * 1.5) or
+                    (needs_join and table.get("has_relationships", False) and table_distance <= best_distance * 2.0)
+                )
+
+                if include_table:
                     # Check if this table adds value (different domain)
                     if self._is_complementary_table(table, selected):
                         selected.append(table)
-                        logger.info(f"Selected additional table {table['table_name']} with distance {table_distance}")
-        
+                        has_rels = "with relationships" if table.get("has_relationships") else "no relationships"
+                        logger.info(f"Selected additional table {table['table_name']} ({has_rels}) with distance {table_distance:.3f}")
+
         return selected
     
     def _is_complementary_table(self, table: Dict[str, Any], selected_tables: List[Dict[str, Any]]) -> bool:
@@ -1970,10 +2088,58 @@ class SQLGenerator:
                 return False  # Same order domain
         
         return True
-    
+
+    def _calculate_template_similarity(self, generated_sql: str, template_sql: str) -> float:
+        """
+        Calculate similarity between generated SQL and the suggested template.
+
+        Uses token-based comparison to measure how closely the LLM followed
+        the Jena-provided SQL template.
+
+        Args:
+            generated_sql: SQL generated by the LLM
+            template_sql: SQL template suggested by Jena
+
+        Returns:
+            Float between 0.0 and 1.0 (1.0 = exact match)
+        """
+        import re
+
+        def tokenize_sql(sql: str) -> set:
+            """Extract SQL tokens for comparison."""
+            sql = sql.upper()
+            # Remove comments
+            sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
+            sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
+            # Extract keywords and identifiers
+            tokens = set(re.findall(r'\b\w+\b', sql))
+            # Also extract table.column patterns
+            patterns = set(re.findall(r'\w+\.\w+', sql))
+            return tokens | patterns
+
+        try:
+            gen_tokens = tokenize_sql(generated_sql)
+            template_tokens = tokenize_sql(template_sql)
+
+            if not template_tokens:
+                return 0.0
+
+            # Jaccard similarity: intersection / union
+            intersection = gen_tokens & template_tokens
+            union = gen_tokens | template_tokens
+
+            if not union:
+                return 0.0
+
+            return len(intersection) / len(union)
+
+        except Exception as e:
+            logger.warning(f"Template similarity calculation failed: {e}")
+            return 0.0
+
     def _get_multi_domain_schemas(self, query: str, domains: List[str], limit: int) -> Dict[str, Any]:
         """Get relevant schemas for multi-domain queries with relationship hints.
-        
+
         Now uses vector search as primary mechanism, with JOIN hints added when needed.
         """
         try:
@@ -2072,6 +2238,245 @@ class SQLGenerator:
                     organization_id=self.organization_id
                 )
 
+            # Apply single-database query optimization (pushdown for large tables)
+            query_analysis = None
+            optimized_sql = sql
+            optimization_start_time = time.time()
+            if self.single_db_optimizer:
+                try:
+                    db_type = target_database_type or self.database_type
+                    dialect = get_dialect_for_database(db_type)
+
+                    logger.info(
+                        "Starting single-database query optimization",
+                        database_type=db_type,
+                        dialect=dialect,
+                        sql_preview=sql[:150] + "..." if len(sql) > 150 else sql
+                    )
+
+                    optimized_sql, query_analysis = self.single_db_optimizer.optimize_query(
+                        sql, dialect
+                    )
+                    optimization_time_ms = (time.time() - optimization_start_time) * 1000
+
+                    if query_analysis:
+                        # Determine reason for strategy selection
+                        federation_threshold = 100_000_000  # 100M rows
+                        all_row_counts_known = all(
+                            table in query_analysis.table_row_counts
+                            for table in query_analysis.tables
+                        )
+                        strategy_reason = "unknown"
+                        if query_analysis.strategy == ExecutionStrategy.FEDERATED:
+                            strategy_reason = f"Estimated rows ({query_analysis.total_estimated_rows:,}) exceeds federation threshold ({federation_threshold:,})"
+                        elif query_analysis.strategy == ExecutionStrategy.OPTIMIZED:
+                            strategy_reason = f"Estimated rows ({query_analysis.total_estimated_rows:,}) requires pushdown optimization"
+                        elif query_analysis.strategy == ExecutionStrategy.DIRECT:
+                            strategy_reason = f"Estimated rows ({query_analysis.total_estimated_rows:,}) is small enough for direct execution"
+
+                        logger.info(
+                            "Single-DB query optimization complete",
+                            tables=query_analysis.tables,
+                            table_row_counts=query_analysis.table_row_counts,
+                            all_row_counts_known=all_row_counts_known,
+                            total_estimated_rows=f"{query_analysis.total_estimated_rows:,}",
+                            estimated_result_rows=f"{query_analysis.estimated_result_rows:,}",
+                            strategy=query_analysis.strategy.value,
+                            strategy_reason=strategy_reason,
+                            federation_threshold=f"{federation_threshold:,}",
+                            has_aggregation=query_analysis.has_aggregation,
+                            has_filters=query_analysis.has_filters,
+                            has_limit=query_analysis.has_limit,
+                            limit_value=query_analysis.limit_value,
+                            warnings=query_analysis.warnings,
+                            optimization_time_ms=f"{optimization_time_ms:.2f}",
+                            analysis_time_ms=f"{query_analysis.analysis_time_ms:.2f}",
+                            memory_used_mb=f"{query_analysis.memory_used_mb:.3f}"
+                        )
+
+                        # Use optimized SQL if pushdown was applied
+                        if query_analysis.optimized_sql:
+                            sql = optimized_sql
+                            logger.info(
+                                "Pushdown optimization applied to query",
+                                original_length=len(optimized_sql),
+                                optimized_length=len(sql)
+                            )
+
+                        # Check for materialized views on very large tables (performance boost)
+                        mv_rewritten = False
+                        if (query_analysis.largest_table_rows >= 1_000_000_000 and
+                            query_analysis.has_aggregation and
+                            self.kg_query_resolver):
+                            try:
+                                # Extract aggregation and group by columns from analysis
+                                agg_cols = query_analysis.aggregation_columns if hasattr(query_analysis, 'aggregation_columns') else []
+                                group_cols = query_analysis.group_by_columns if hasattr(query_analysis, 'group_by_columns') else []
+
+                                # Look for a matching materialized view
+                                mv_result = self.kg_query_resolver.find_materialized_view(
+                                    base_table=query_analysis.largest_table,
+                                    aggregation_columns=agg_cols,
+                                    group_by_columns=group_cols
+                                )
+
+                                if mv_result:
+                                    mv_name = mv_result.get('mv_name')
+                                    mv_schema = mv_result.get('schema', '')
+                                    mv_full_name = f"{mv_schema}.{mv_name}" if mv_schema else mv_name
+                                    base_table = query_analysis.largest_table
+
+                                    # Rewrite the SQL to use the materialized view
+                                    original_sql = sql
+                                    sql = sql.replace(base_table, mv_full_name)
+
+                                    if sql != original_sql:
+                                        mv_rewritten = True
+                                        mv_row_count = mv_result.get('row_count', 0)
+
+                                        logger.info(
+                                            "MATERIALIZED VIEW REWRITE: Using pre-computed aggregation",
+                                            base_table=base_table,
+                                            materialized_view=mv_full_name,
+                                            base_table_rows=f"{query_analysis.largest_table_rows:,}",
+                                            mv_row_count=f"{mv_row_count:,}" if mv_row_count else "unknown",
+                                            match_score=mv_result.get('score', 0),
+                                            agg_columns_matched=mv_result.get('aggregation_columns', []),
+                                            group_by_matched=mv_result.get('group_by_columns', [])
+                                        )
+
+                                        # Update analysis to reflect the smaller table
+                                        if mv_row_count and mv_row_count < query_analysis.largest_table_rows:
+                                            query_analysis.largest_table_rows = mv_row_count
+                                            query_analysis.largest_table = mv_full_name
+                                            # Disable async if MV is small enough
+                                            if mv_row_count < 1_000_000_000:
+                                                query_analysis.requires_async = False
+                                                logger.info(
+                                                    "MV is small enough for sync execution",
+                                                    mv_row_count=f"{mv_row_count:,}"
+                                                )
+
+                                        query_analysis.warnings.append(
+                                            f"Query rewritten to use materialized view '{mv_full_name}' "
+                                            f"instead of scanning {base_table} ({query_analysis.largest_table_rows:,} rows)"
+                                        )
+                            except Exception as e:
+                                logger.warning(
+                                    "Materialized view lookup failed, continuing with original query",
+                                    error=str(e),
+                                    base_table=query_analysis.largest_table
+                                )
+
+                        # Route FEDERATED strategy through CrossDatabaseExecutor
+                        if query_analysis.strategy == ExecutionStrategy.FEDERATED:
+                            # Apply pagination for row-level federated queries
+                            federated_sql = sql
+                            if query_analysis.supports_pagination:
+                                dialect = get_dialect_for_database(db_type)
+                                federated_sql, count_sql = self.single_db_optimizer.generate_paginated_sql(
+                                    sql=sql,
+                                    page=1,
+                                    page_size=1000,
+                                    dialect=dialect
+                                )
+                                query_analysis.total_count_sql = count_sql
+                                logger.info(
+                                    "PAGINATION APPLIED to FEDERATED query",
+                                    supports_pagination=True,
+                                    page_size=1000,
+                                    has_joins=query_analysis.has_joins
+                                )
+
+                            logger.info(
+                                "FEDERATED EXECUTION: Routing large query through CrossDatabaseExecutor",
+                                estimated_rows=f"{query_analysis.total_estimated_rows:,}",
+                                strategy=query_analysis.strategy.value,
+                                tables=query_analysis.tables,
+                                has_joins=query_analysis.has_joins,
+                                join_count=len(query_analysis.joins),
+                                largest_table=query_analysis.largest_table,
+                                reason="Estimated rows exceed federation threshold (100M)"
+                            )
+                            return self._execute_federated_single_db(
+                                federated_sql, db_type, query_analysis
+                            )
+
+                        # Check if query requires async execution (very large tables)
+                        if query_analysis.requires_async:
+                            logger.info(
+                                "ASYNC REQUIRED: Very large source table requires background execution",
+                                estimated_rows=f"{query_analysis.largest_table_rows:,}",
+                                strategy=query_analysis.strategy.value,
+                                tables=query_analysis.tables,
+                                largest_table=query_analysis.largest_table,
+                                reason="Source table exceeds 1B row threshold"
+                            )
+                            # Return special response - routes.py will handle async execution
+                            return {
+                                "requires_async": True,
+                                "sql": sql,
+                                "largest_table_rows": query_analysis.largest_table_rows,
+                                "tables_used": query_analysis.tables,  # Use tables from analysis
+                                "explanation": f"Query scans ~{query_analysis.largest_table_rows:,} rows. Running in background.",
+                                "warnings": query_analysis.warnings,
+                                "query_analysis": query_analysis.to_dict()
+                            }
+
+                        # Log strategy-specific info
+                        if query_analysis.strategy == ExecutionStrategy.OPTIMIZED:
+                            logger.info(
+                                "OPTIMIZED EXECUTION: Pushdown applied for medium-sized query",
+                                estimated_rows=f"{query_analysis.estimated_result_rows:,}",
+                                pushdown_applied=query_analysis.pushdown_analysis is not None
+                            )
+                        elif query_analysis.strategy == ExecutionStrategy.DIRECT:
+                            logger.info(
+                                "DIRECT EXECUTION: Small query, executing directly",
+                                estimated_rows=f"{query_analysis.estimated_result_rows:,}",
+                                reason="aggregation" if query_analysis.has_aggregation else "small_table"
+                            )
+
+                        # Log warnings
+                        for warning in query_analysis.warnings:
+                            logger.warning(f"Query optimization warning: {warning}")
+
+                        # Apply automatic pagination for row-level queries on large tables
+                        if (query_analysis.supports_pagination and
+                            query_analysis.strategy in (ExecutionStrategy.OPTIMIZED, ExecutionStrategy.FEDERATED)):
+
+                            # Use pagination to avoid loading too much data at once
+                            # Default: 1000 rows for UI-friendly display
+                            dialect = get_dialect_for_database(db_type)
+                            paginated_sql, count_sql = self.single_db_optimizer.generate_paginated_sql(
+                                sql=sql,
+                                page=1,
+                                page_size=1000,
+                                dialect=dialect
+                            )
+                            sql = paginated_sql
+
+                            logger.info(
+                                "PAGINATION APPLIED: Row-level query on large table",
+                                supports_pagination=True,
+                                strategy=query_analysis.strategy.value,
+                                original_estimated_rows=f"{query_analysis.estimated_result_rows:,}",
+                                page_size=1000,
+                                reason="Row-level query without aggregation on large dataset"
+                            )
+
+                            # Store count SQL for later total count retrieval
+                            query_analysis.total_count_sql = count_sql
+
+                except Exception as e:
+                    optimization_time_ms = (time.time() - optimization_start_time) * 1000
+                    logger.warning(
+                        "Query optimization failed, proceeding with original query",
+                        error=str(e),
+                        optimization_time_ms=f"{optimization_time_ms:.2f}",
+                        exc_info=True
+                    )
+
             # Validate first
             validation = db_connector.validate_query(sql)
             if not validation["valid"]:
@@ -2126,7 +2531,7 @@ class SQLGenerator:
             total_rows = execution_result.get('total_rows', len(results))
             truncated = execution_result.get('truncated', False)
 
-            return {
+            response = {
                 "results": results,
                 "row_count": len(results),
                 "total_rows": total_rows,
@@ -2137,7 +2542,66 @@ class SQLGenerator:
                     "bytes_processed": validation.get("bytes_processed", 0)
                 }
             }
-            
+
+            # Add query optimization info if available
+            if query_analysis:
+                response["query_optimization"] = {
+                    "tables": query_analysis.tables,
+                    "total_estimated_rows": query_analysis.total_estimated_rows,
+                    "estimated_result_rows": query_analysis.estimated_result_rows,
+                    "strategy": query_analysis.strategy.value,
+                    "has_aggregation": query_analysis.has_aggregation,
+                    "has_filters": query_analysis.has_filters,
+                    "has_joins": query_analysis.has_joins,
+                    "join_count": len(query_analysis.joins),
+                    "warnings": query_analysis.warnings,
+                    "table_row_counts": query_analysis.table_row_counts
+                }
+
+                # Add pagination info for row-level queries on large tables
+                # This applies when:
+                # 1. Query supports pagination (no aggregation)
+                # 2. Table is large (total rows > 1M)
+                # 3. Either we applied pagination OR LLM added LIMIT
+                if (query_analysis.supports_pagination and
+                    query_analysis.total_estimated_rows > PANDAS_MAX_ROWS):
+
+                    # Determine page size from LLM's LIMIT or our default
+                    page_size = query_analysis.limit_value or 1000
+
+                    # Generate count SQL if not already set
+                    if not query_analysis.total_count_sql:
+                        dialect = get_dialect_for_database(target_database_type or self.database_type)
+                        _, count_sql = self.single_db_optimizer.generate_paginated_sql(
+                            sql=sql,
+                            page=1,
+                            page_size=page_size,
+                            dialect=dialect
+                        )
+                        query_analysis.total_count_sql = count_sql
+
+                    response["pagination"] = self.single_db_optimizer.get_pagination_metadata(
+                        total_count=query_analysis.total_estimated_rows,  # Use table estimate
+                        page=1,
+                        page_size=page_size
+                    )
+                    response["pagination"]["total_count_sql"] = query_analysis.total_count_sql
+                    response["pagination"]["is_paginated"] = True
+                    response["pagination"]["llm_applied_limit"] = query_analysis.has_limit
+                    response["pagination"]["note"] = (
+                        f"Results limited to {page_size:,} rows (page 1 of estimated {query_analysis.total_estimated_rows:,} total rows). "
+                        "Use total_count_sql for exact count."
+                    )
+                    logger.info(
+                        "Pagination metadata added to response",
+                        estimated_total=query_analysis.total_estimated_rows,
+                        page=1,
+                        page_size=page_size,
+                        llm_added_limit=query_analysis.has_limit
+                    )
+
+            return response
+
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
             
@@ -2165,7 +2629,154 @@ class SQLGenerator:
                 error_response["error_details"]["user_friendly_message"] = "The query took too long to execute. Try adding filters to reduce the data processed."
             
             return error_response
-    
+
+    def _execute_federated_single_db(
+        self,
+        sql: str,
+        database_type: str,
+        query_analysis: "QueryAnalysis"
+    ) -> Dict[str, Any]:
+        """
+        Execute a large single-database query through the federation path.
+
+        For very large tables (>100M rows), this routes the query through
+        CrossDatabaseExecutor which can use S3 federation for efficient execution.
+
+        Args:
+            sql: The SQL query to execute
+            database_type: Database type (snowflake, bigquery, etc.)
+            query_analysis: Analysis of the query
+
+        Returns:
+            Execution result dict
+        """
+        import asyncio
+        from src.core.cross_database_executor import get_cross_database_executor
+        from src.core.federated_query_planner import (
+            ExecutionPlan,
+            ExecutionStrategy,
+            QueryStep,
+            TableReference
+        )
+
+        try:
+            logger.info(
+                "Executing federated single-db query",
+                database_type=database_type,
+                estimated_rows=f"{query_analysis.total_estimated_rows:,}",
+                tables=query_analysis.tables
+            )
+
+            # Get the cross-database executor with federation support
+            executor = get_cross_database_executor()
+
+            # Create a single-database execution plan
+            # Build table references from query analysis
+            table_refs = [
+                TableReference(
+                    database_type=database_type,
+                    full_name=table_name,
+                    table=table_name,
+                    estimated_rows=query_analysis.table_row_counts.get(table_name)
+                )
+                for table_name in query_analysis.tables
+            ]
+
+            plan = ExecutionPlan(
+                strategy=ExecutionStrategy.SINGLE_DATABASE,
+                primary_database=database_type,
+                databases_involved=[database_type],
+                tables_by_database={database_type: table_refs},
+                steps=[
+                    QueryStep(
+                        step_number=1,
+                        database_type=database_type,
+                        sql=sql,
+                        description=f"Execute federated query on {database_type}"
+                    )
+                ],
+                estimated_total_cost=0.0,
+                estimated_execution_time_seconds=0.0,
+                data_movement_mb=query_analysis.total_estimated_rows * 100 / 1_000_000,  # Rough estimate in MB
+                metadata={"final_sql": sql, "query_analysis": query_analysis.to_dict()}
+            )
+
+            # Execute through the cross-database executor (async)
+            async def run_federated():
+                return await executor.execute_plan(
+                    plan=plan,
+                    user_id="system",  # TODO: Get actual user ID
+                    organization_id=self.organization_id,
+                    database_configs={database_type: self.database_config},
+                    skip_permission_check=True  # Already validated via connector access
+                )
+
+            # Run async execution
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(run_federated())
+            finally:
+                loop.close()
+
+            # Convert DataFrame result to dict format
+            results = result.data.to_dict('records') if not result.data.empty else []
+
+            response = {
+                "results": results,
+                "row_count": len(results),
+                "total_rows": result.rows_returned,
+                "truncated": False,
+                "validation": {"valid": True},
+                "performance_stats": {
+                    "execution_time_ms": result.execution_time_seconds * 1000,
+                    "bytes_processed": 0
+                },
+                "query_optimization": {
+                    "tables": query_analysis.tables,
+                    "total_estimated_rows": query_analysis.total_estimated_rows,
+                    "estimated_result_rows": query_analysis.estimated_result_rows,
+                    "strategy": "federated",
+                    "has_aggregation": query_analysis.has_aggregation,
+                    "has_filters": query_analysis.has_filters,
+                    "has_joins": query_analysis.has_joins,
+                    "join_count": len(query_analysis.joins),
+                    "largest_table": query_analysis.largest_table,
+                    "warnings": query_analysis.warnings + ["Query executed via federation path"],
+                    "table_row_counts": query_analysis.table_row_counts
+                }
+            }
+
+            # Add pagination info for row-level federated queries
+            if query_analysis.supports_pagination and query_analysis.total_count_sql:
+                response["pagination"] = self.single_db_optimizer.get_pagination_metadata(
+                    total_count=query_analysis.estimated_result_rows,
+                    page=1,
+                    page_size=1000
+                )
+                response["pagination"]["total_count_sql"] = query_analysis.total_count_sql
+                response["pagination"]["is_paginated"] = True
+
+            logger.info(
+                "Federated execution complete",
+                rows_returned=len(results),
+                execution_time=f"{result.execution_time_seconds:.2f}s"
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Federated execution failed: {e}")
+            return {
+                "error": str(e),
+                "results": None,
+                "error_details": {
+                    "error_type": "federation_error",
+                    "user_friendly_message": "The large query execution failed. Try adding filters to reduce the data.",
+                    "technical_details": str(e)
+                }
+            }
+
     def generate_and_execute(self, query: str) -> Dict[str, Any]:
         """Generate SQL from natural language and execute it."""
         # Add detailed logging for revenue queries

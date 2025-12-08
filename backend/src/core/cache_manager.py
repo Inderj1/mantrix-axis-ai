@@ -46,6 +46,7 @@ class CacheManager:
     PREFIX_MV_COST = "mv:cost:"
     PREFIX_OPTIMIZATION_REPORT = "optimization:report:"
     PREFIX_WEAVIATE_SEARCH = "weaviate:"
+    PREFIX_JOIN_PATH = "join_path:"  # For caching JOIN path discoveries
 
     # Default TTLs (in seconds)
     TTL_SQL_FREQUENT = 7 * 24 * 60 * 60  # 7 days for frequent queries
@@ -61,6 +62,7 @@ class CacheManager:
     TTL_MV_COST = 7 * 24 * 60 * 60       # 7 days for cost estimates
     TTL_OPTIMIZATION_REPORT = 60 * 60     # 1 hour for optimization reports
     TTL_WEAVIATE_SEARCH = 24 * 60 * 60    # 24 hours for vector search results
+    TTL_JOIN_PATH = 24 * 60 * 60          # 24 hours for JOIN path cache (invalidate on schema sync)
 
     def __init__(self, 
                  redis_url: Optional[str] = None,

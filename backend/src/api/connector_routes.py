@@ -1864,19 +1864,59 @@ async def get_schema_diagnostics(
 
     # Check Jena
     try:
-        from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph
+        from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph, JENA_BACKEND
+        import os
 
-        jena_client = get_jena_knowledge_graph()
-        if jena_client and jena_client.graph:
-            results["jena"]["connected"] = True
-            results["jena"]["triple_count"] = len(jena_client.graph)
+        results["jena"]["backend"] = JENA_BACKEND
 
-            # Count unique tables
-            tables = set()
-            for s, p, o in jena_client.graph:
-                if "table" in str(s).lower():
-                    tables.add(str(s))
-            results["jena"]["tables_in_graph"] = len(tables)
+        # For PostgreSQL backend, get authoritative count from database
+        if JENA_BACKEND == "postgres":
+            try:
+                from src.core.knowledge_graph.jena_postgres_store import JenaPostgresStore
+                graph_id = os.getenv("JENA_GRAPH_ID", "global")
+                store = JenaPostgresStore(graph_id=graph_id)
+                pg_status = store.health_check()
+                results["jena"]["postgres"] = pg_status
+
+                # Use PostgreSQL count as authoritative
+                results["jena"]["connected"] = pg_status.get("connected", False)
+                results["jena"]["triple_count"] = pg_status.get("triple_count", 0)
+                results["jena"]["graph_id"] = graph_id
+
+                # Count unique tables from database if we have triples
+                if pg_status.get("triple_count", 0) > 0:
+                    try:
+                        # Query unique table subjects from PostgreSQL
+                        table_query = """
+                            SELECT COUNT(DISTINCT subject) as count
+                            FROM rdf_triples
+                            WHERE graph_id = %s AND subject LIKE '%%table%%'
+                        """
+                        from src.db.postgresql_client import PostgreSQLClient
+                        db_client = PostgreSQLClient()
+                        table_results = db_client.execute_query(table_query, (graph_id,))
+                        results["jena"]["tables_in_graph"] = table_results[0]['count'] if table_results else 0
+                    except Exception as e:
+                        logger.warning(f"Failed to count tables in Jena: {e}")
+                        results["jena"]["tables_in_graph"] = 0
+
+            except Exception as e:
+                results["errors"].append(f"Jena PostgreSQL: {str(e)}")
+                logger.error(f"Jena PostgreSQL diagnostic failed: {e}")
+        else:
+            # For non-PostgreSQL backends, use in-memory graph
+            jena_client = get_jena_knowledge_graph()
+            if jena_client and jena_client.graph:
+                results["jena"]["connected"] = True
+                results["jena"]["triple_count"] = len(jena_client.graph)
+
+                # Count unique tables
+                tables = set()
+                for s, p, o in jena_client.graph:
+                    if "table" in str(s).lower():
+                        tables.add(str(s))
+                results["jena"]["tables_in_graph"] = len(tables)
+
     except Exception as e:
         results["errors"].append(f"Jena: {str(e)}")
         logger.error(f"Jena diagnostic failed: {e}")

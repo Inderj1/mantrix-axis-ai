@@ -285,17 +285,40 @@ const DatabaseConfigPage = () => {
   };
 
   const testConnection = async (connectorId) => {
+    // Set loading state for this connector
+    setTestResults(prev => ({
+      ...prev,
+      [connectorId]: 'testing',
+    }));
+
     try {
       const response = await apiService.testExistingConnector(connectorId);
+      const success = response.data.success;
       setTestResults(prev => ({
         ...prev,
-        [connectorId]: response.data.success ? 'connected' : 'error',
+        [connectorId]: success ? 'connected' : 'error',
       }));
+
+      // Show snackbar notification
+      setSnackbar({
+        open: true,
+        message: success
+          ? 'Connection successful!'
+          : `Connection failed: ${response.data.error || 'Unknown error'}`,
+        severity: success ? 'success' : 'error',
+      });
     } catch (error) {
       setTestResults(prev => ({
         ...prev,
         [connectorId]: 'error',
       }));
+
+      // Show error snackbar
+      setSnackbar({
+        open: true,
+        message: `Connection failed: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
     }
   };
 
@@ -373,15 +396,52 @@ const DatabaseConfigPage = () => {
       await apiService.syncConnector(connectorId);
       setSnackbar({
         open: true,
-        message: 'Schema sync initiated. Check the connector status for progress.',
+        message: 'Schema sync started...',
         severity: 'info',
       });
-      // Reload connectors to show updated status
-      setTimeout(() => loadConnectors(), 1000);
+
+      // Poll for sync completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const response = await apiService.getConnectors();
+          const connector = response.data.connectors?.find(c => c.id === connectorId);
+
+          if (connector) {
+            if (connector.sync_status === 'success') {
+              clearInterval(pollInterval);
+              setSnackbar({
+                open: true,
+                message: `Sync completed! Found ${connector.metadata?.table_count || 0} tables.`,
+                severity: 'success',
+              });
+              loadConnectors();
+            } else if (connector.sync_status === 'error' || connector.sync_error) {
+              clearInterval(pollInterval);
+              setSnackbar({
+                open: true,
+                message: `Sync failed: ${connector.sync_error || 'Unknown error'}`,
+                severity: 'error',
+              });
+              loadConnectors();
+            }
+            // If still 'syncing', continue polling
+          }
+        } catch (pollError) {
+          console.error('Error polling sync status:', pollError);
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Stop polling after 5 minutes (timeout)
+      setTimeout(() => {
+        clearInterval(pollInterval);
+      }, 300000);
+
+      // Initial reload to show syncing state
+      setTimeout(() => loadConnectors(), 500);
     } catch (error) {
       setSnackbar({
         open: true,
-        message: `Failed to sync: ${error.response?.data?.detail || error.message}`,
+        message: `Failed to start sync: ${error.response?.data?.detail || error.message}`,
         severity: 'error',
       });
     }
@@ -398,7 +458,7 @@ const DatabaseConfigPage = () => {
           const response = await apiService.clearSchemaCache();
           setSnackbar({
             open: true,
-            message: `Schema cache cleared! Jena: ${response.data.jena_cleared}, Weaviate: ${response.data.weaviate_cleared}, Redis: ${response.data.redis_cleared}`,
+            message: `Schema cache cleared! Jena: ${response.data.details?.jena_cleared}, Weaviate: ${response.data.details?.weaviate_cleared}, Redis: ${response.data.details?.redis_cleared}`,
             severity: 'success',
           });
         } catch (error) {
@@ -566,7 +626,9 @@ const DatabaseConfigPage = () => {
 
   const getStatusIcon = (connectorId) => {
     const status = testResults[connectorId];
-    if (status === 'connected') {
+    if (status === 'testing') {
+      return <CircularProgress size={20} />;
+    } else if (status === 'connected') {
       return <CheckCircleIcon sx={{ color: 'success.main' }} />;
     } else if (status === 'error') {
       return <ErrorIcon sx={{ color: 'error.main' }} />;
@@ -1040,10 +1102,11 @@ const DatabaseConfigPage = () => {
                   <CardActions>
                     <Button
                       size="small"
-                      startIcon={<TestIcon />}
+                      startIcon={testResults[connector.id] === 'testing' ? <CircularProgress size={16} /> : <TestIcon />}
                       onClick={() => testConnection(connector.id)}
+                      disabled={testResults[connector.id] === 'testing'}
                     >
-                      Test
+                      {testResults[connector.id] === 'testing' ? 'Testing...' : 'Test'}
                     </Button>
                     <Button
                       size="small"

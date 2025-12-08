@@ -23,14 +23,18 @@ logger = structlog.get_logger()
 class JenaRedisStore:
     """
     Redis-cached RDF store for better performance across processes.
+
+    Supports multi-tenancy via graph_id parameter for cache key isolation.
     """
-    
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
+
+    def __init__(self, redis_client: Optional[redis.Redis] = None, graph_id: str = "global"):
         self.redis = redis_client or self._create_redis_client()
         self.graph: Optional[Graph] = None
+        self.graph_id = graph_id
         self.ttl_file = "financial_kg.ttl"
-        self.cache_key = "jena:financial_kg:triples"
-        self.hash_key = "jena:financial_kg:hash"
+        # Include graph_id in cache keys for multi-tenant isolation
+        self.cache_key = f"jena:{graph_id}:financial_kg:triples"
+        self.hash_key = f"jena:{graph_id}:financial_kg:hash"
         self.cache_ttl = 86400  # 24 hours
         
     def _create_redis_client(self) -> redis.Redis:
@@ -217,28 +221,67 @@ class JenaRedisStore:
             return {"error": str(e)}
 
 
-# Global singleton instance with Redis
-_redis_store: Optional[JenaRedisStore] = None
+# Global singleton instances with Redis (keyed by graph_id for multi-tenancy)
+_redis_stores: dict[str, JenaRedisStore] = {}
 
 
-def get_redis_graph(redis_client: Optional[redis.Redis] = None) -> Graph:
-    """Get the singleton Redis-cached RDF graph."""
-    global _redis_store
-    if _redis_store is None:
-        _redis_store = JenaRedisStore(redis_client)
-    return _redis_store.get_graph()
+def get_redis_graph(redis_client: Optional[redis.Redis] = None, graph_id: Optional[str] = None) -> Graph:
+    """
+    Get the singleton Redis-cached RDF graph for a specific tenant.
+
+    Args:
+        redis_client: Optional Redis client override
+        graph_id: Tenant/organization identifier (defaults to JENA_GRAPH_ID env var or "global")
+
+    Returns:
+        RDFLib Graph from Redis cache
+    """
+    global _redis_stores
+
+    # Get graph_id from environment if not provided
+    if graph_id is None:
+        graph_id = os.getenv("JENA_GRAPH_ID", "global")
+
+    if graph_id not in _redis_stores:
+        _redis_stores[graph_id] = JenaRedisStore(redis_client, graph_id=graph_id)
+
+    return _redis_stores[graph_id].get_graph()
 
 
-def clear_redis_cache():
-    """Clear the Redis cache."""
-    global _redis_store
-    if _redis_store:
-        _redis_store.clear_cache()
+def clear_redis_cache(graph_id: Optional[str] = None):
+    """
+    Clear the Redis cache for a specific tenant.
+
+    Args:
+        graph_id: Tenant/organization identifier (clears all if None)
+    """
+    global _redis_stores
+
+    if graph_id is None:
+        # Clear all caches
+        for store in _redis_stores.values():
+            store.clear_cache()
+        _redis_stores.clear()
+    elif graph_id in _redis_stores:
+        _redis_stores[graph_id].clear_cache()
+        del _redis_stores[graph_id]
 
 
-def get_redis_cache_info() -> dict:
-    """Get Redis cache information."""
-    global _redis_store
-    if _redis_store:
-        return _redis_store.get_cache_info()
-    return {"exists": False}
+def get_redis_cache_info(graph_id: Optional[str] = None) -> dict:
+    """
+    Get Redis cache information for a specific tenant.
+
+    Args:
+        graph_id: Tenant/organization identifier (defaults to JENA_GRAPH_ID env var or "global")
+
+    Returns:
+        Cache info dictionary
+    """
+    global _redis_stores
+
+    if graph_id is None:
+        graph_id = os.getenv("JENA_GRAPH_ID", "global")
+
+    if graph_id in _redis_stores:
+        return _redis_stores[graph_id].get_cache_info()
+    return {"exists": False, "graph_id": graph_id}

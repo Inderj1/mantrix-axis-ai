@@ -764,6 +764,46 @@ const CHART_COLORS = [
   '#84cc16'  // Lime
 ];
 
+// Helper to detect ID/key columns that should be treated as categorical even if numeric
+const isIdColumn = (columnName) => {
+  const idPatterns = [
+    /_sk$/i,           // Surrogate key (data warehouse pattern)
+    /_id$/i,           // ID suffix
+    /_key$/i,          // Key suffix
+    /^id$/i,           // Just "id"
+    /_pk$/i,           // Primary key
+    /_fk$/i,           // Foreign key
+    /_code$/i,         // Code columns (often categorical)
+    /customer_?id/i,   // Common patterns
+    /product_?id/i,
+    /store_?id/i,
+    /item_?id/i,
+    /order_?id/i,
+    /ticket_?number/i,
+    /hdemo_?sk/i,      // Household demo surrogate key
+    /cdemo_?sk/i,      // Customer demo surrogate key
+    /addr_?sk/i,       // Address surrogate key
+    /promo_?sk/i,      // Promotion surrogate key
+  ];
+  return idPatterns.some(pattern => pattern.test(columnName));
+};
+
+// Helper to detect metric/value columns (actual numbers to aggregate/visualize)
+const isMetricColumn = (columnName, value) => {
+  if (typeof value !== 'number') return false;
+  if (isIdColumn(columnName)) return false;
+
+  // Common metric patterns
+  const metricPatterns = [
+    /price/i, /cost/i, /amount/i, /total/i, /sum/i,
+    /revenue/i, /sales/i, /profit/i, /margin/i,
+    /quantity/i, /qty/i, /count/i, /num/i,
+    /rate/i, /percent/i, /ratio/i, /avg/i,
+    /weight/i, /size/i, /length/i, /width/i, /height/i
+  ];
+  return metricPatterns.some(pattern => pattern.test(columnName));
+};
+
 /**
  * Auto-detect the best chart type based on data shape and characteristics.
  * This provides smart defaults when LLM returns 'auto' or makes suboptimal choices.
@@ -774,14 +814,23 @@ const detectChartType = (data) => {
   // Network/graph data has nodes and links
   if (data.nodes && data.links) return 'sankey';
 
-  const keys = Object.keys(data[0] || {});
-  const numericKeys = keys.filter(k => typeof data[0][k] === 'number');
-  const stringKeys = keys.filter(k => typeof data[0][k] === 'string');
+  const firstRow = data[0] || {};
+  const keys = Object.keys(firstRow);
+
+  // Enhanced type detection - separates IDs from actual metrics
+  const idKeys = keys.filter(k => isIdColumn(k) && typeof firstRow[k] === 'number');
+  const metricKeys = keys.filter(k => isMetricColumn(k, firstRow[k]));
+  const stringKeys = keys.filter(k => typeof firstRow[k] === 'string');
+  const numericKeys = keys.filter(k => typeof firstRow[k] === 'number' && !isIdColumn(k));
+
+  // Treat ID columns as categorical for chart selection
+  const categoricalKeys = [...stringKeys, ...idKeys];
 
   // 1. SINGLE ROW → metric or gauge (NEVER bar!)
   if (data.length === 1) {
-    if (numericKeys.length === 1) return 'metric';
-    if (numericKeys.length <= 5) return 'gauge';
+    const valueKeys = metricKeys.length > 0 ? metricKeys : numericKeys;
+    if (valueKeys.length === 1) return 'metric';
+    if (valueKeys.length <= 5) return 'gauge';
     return 'radar'; // Multiple metrics → radar
   }
 
@@ -798,7 +847,7 @@ const detectChartType = (data) => {
       if (dateKey) return 'calendar';
     }
     // Multiple series flowing over time → themeRiver
-    if (stringKeys.length >= 2 && numericKeys.length >= 1) {
+    if (categoricalKeys.length >= 2 && (metricKeys.length >= 1 || numericKeys.length >= 1)) {
       return 'themeRiver';
     }
     // Regular time series → line (default for time data)
@@ -806,63 +855,83 @@ const detectChartType = (data) => {
   }
 
   // 3. SMALL CATEGORICAL (≤6 rows) → pie/donut
-  if (data.length <= 6) {
-    // Check if values look like percentages (sum to ~100)
-    const firstNumericKey = numericKeys[0];
-    if (firstNumericKey) {
-      const total = data.reduce((sum, row) => sum + (row[firstNumericKey] || 0), 0);
+  // Use categoricalKeys (strings + IDs) for detection
+  if (data.length <= 6 && categoricalKeys.length >= 1) {
+    const valueKeys = metricKeys.length > 0 ? metricKeys : numericKeys;
+    if (valueKeys.length >= 1) {
+      // Check if values look like percentages (sum to ~100)
+      const firstValueKey = valueKeys[0];
+      const total = data.reduce((sum, row) => sum + (row[firstValueKey] || 0), 0);
       if (total >= 95 && total <= 105) return 'donut'; // Percentages → donut with total
+      return 'pie';
     }
-    return 'pie';
   }
 
-  // 4. LONG LABELS → horizontalBar
-  if (stringKeys.length > 0) {
-    const labelKey = stringKeys[0];
+  // 4. MEDIUM CATEGORICAL (7-12 rows) → donut
+  if (data.length >= 7 && data.length <= 12 && categoricalKeys.length >= 1) {
+    const valueKeys = metricKeys.length > 0 ? metricKeys : numericKeys;
+    if (valueKeys.length >= 1) return 'donut';
+  }
+
+  // 5. LONG LABELS → horizontalBar
+  if (categoricalKeys.length > 0) {
+    const labelKey = categoricalKeys[0];
     const avgLabelLength = data.reduce((sum, row) => sum + String(row[labelKey] || '').length, 0) / data.length;
     if (avgLabelLength > 15) return 'horizontalBar';
   }
 
-  // 5. MULTI-DIMENSIONAL (many numeric columns) → radar or parallel
-  if (numericKeys.length >= 5) {
+  // 6. MULTI-DIMENSIONAL (many numeric/metric columns) → radar or parallel
+  const valueKeys = metricKeys.length > 0 ? metricKeys : numericKeys;
+  if (valueKeys.length >= 5) {
     if (data.length <= 10) return 'radar';
     return 'parallel';
   }
 
-  // 6. SCATTER detection (two numeric columns, many rows)
-  if (numericKeys.length === 2 && data.length > 10) {
+  // 7. SCATTER detection (two numeric value columns, many rows)
+  if (valueKeys.length === 2 && data.length > 10) {
     return 'scatter';
   }
 
-  // 7. FUNNEL detection (sequential stages with decreasing values)
-  if (data.length >= 3 && data.length <= 8 && numericKeys.length === 1) {
-    const values = data.map(row => row[numericKeys[0]]);
+  // 8. FUNNEL detection (sequential stages with decreasing values)
+  if (data.length >= 3 && data.length <= 8 && valueKeys.length === 1) {
+    const values = data.map(row => row[valueKeys[0]]);
     const isDecreasing = values.every((v, i) => i === 0 || v <= values[i - 1]);
     if (isDecreasing) return 'funnel';
   }
 
-  // 8. MATRIX detection (looks like row x column data)
-  // If there are exactly 2 string columns and 1+ numeric, might be heatmap
-  if (stringKeys.length === 2 && numericKeys.length >= 1) {
-    // Check if combinations suggest matrix
-    const col1Values = new Set(data.map(row => row[stringKeys[0]]));
-    const col2Values = new Set(data.map(row => row[stringKeys[1]]));
+  // 9. MATRIX detection (looks like row x column data)
+  // If there are 2+ categorical columns and 1+ value, might be heatmap
+  if (categoricalKeys.length >= 2 && valueKeys.length >= 1) {
+    const col1Values = new Set(data.map(row => row[categoricalKeys[0]]));
+    const col2Values = new Set(data.map(row => row[categoricalKeys[1]]));
     if (col1Values.size * col2Values.size === data.length) {
       return 'heatmap';
     }
   }
 
-  // 9. DEFAULT → bar for categorical comparisons
+  // 10. MANY ROWS with ID columns → treemap for better visualization
+  if (data.length > 12 && idKeys.length > 0 && valueKeys.length >= 1) {
+    return 'treemap';
+  }
+
+  // 11. Mostly ID columns → horizontalBar for readability
+  if (idKeys.length >= keys.length / 2 && valueKeys.length >= 1) {
+    return 'horizontalBar';
+  }
+
+  // 12. DEFAULT → bar for categorical comparisons
   return 'bar';
 };
 
 /**
  * Auto-detect x and y keys from data.
+ * Prioritizes metric columns for y-axis and categorical/ID columns for x-axis.
  */
 const detectKeys = (data) => {
   if (!data || data.length === 0) return { xKey: null, yKey: null };
 
-  const keys = Object.keys(data[0]);
+  const firstRow = data[0] || {};
+  const keys = Object.keys(firstRow);
 
   // Filter out internal columns from multi-DB queries
   const filteredKeys = keys.filter(k =>
@@ -871,13 +940,20 @@ const detectKeys = (data) => {
     k !== '_row_id'
   );
 
-  const numericKeys = filteredKeys.filter(k => typeof data[0][k] === 'number');
-  const textKeys = filteredKeys.filter(k => typeof data[0][k] === 'string');
+  // Categorize columns
+  const textKeys = filteredKeys.filter(k => typeof firstRow[k] === 'string');
+  const idKeys = filteredKeys.filter(k => isIdColumn(k) && typeof firstRow[k] === 'number');
+  const metricKeys = filteredKeys.filter(k => isMetricColumn(k, firstRow[k]));
+  const numericKeys = filteredKeys.filter(k => typeof firstRow[k] === 'number' && !isIdColumn(k));
 
-  // Prefer text for x-axis (categories), numeric for y-axis (values)
+  // For x-axis: prefer string keys, then ID keys (categorical)
+  // For y-axis: prefer metric keys, then numeric keys (values)
+  const categoricalKeys = [...textKeys, ...idKeys];
+  const valueKeys = metricKeys.length > 0 ? metricKeys : numericKeys;
+
   return {
-    xKey: textKeys[0] || filteredKeys[0],
-    yKey: numericKeys[0] || filteredKeys[1] || filteredKeys[0]
+    xKey: categoricalKeys[0] || filteredKeys[0],
+    yKey: valueKeys[0] || filteredKeys[1] || filteredKeys[0]
   };
 };
 

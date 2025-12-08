@@ -115,8 +115,11 @@ class QueryResponse(BaseModel):
     follow_up_suggestions: Optional[List[str]] = None  # Copilot follow-up suggestions
     from_cache: bool = False
     empty_result_note: Optional[str] = None  # Helpful note when query returns no results
+    # LLM-recommended chart type (primary recommendation from SQL generation)
+    recommended_chart_type: Optional[str] = None  # "bar", "line", "pie", etc. - LLM's best pick
+    chart_config: Optional[Dict[str, Any]] = None  # {"x_axis_column": "date", "y_axis_column": "revenue"}
     # Chart intelligence fields (backend-driven visualization recommendations)
-    chart_recommendations: Optional[List[str]] = None  # ["bar", "line", "pie"]
+    chart_recommendations: Optional[List[str]] = None  # ["bar", "line", "pie"] - fallback list
     dimensions: Optional[List[str]] = None  # Categorical columns
     measures: Optional[List[str]] = None  # Numeric columns
     time_columns: Optional[List[str]] = None  # Date/time columns
@@ -602,3 +605,143 @@ class AllowedDatabasesResponse(BaseModel):
 class AuditLogResponse(BaseModel):
     entries: List[Dict[str, Any]]
     total_count: int
+
+
+# Pagination Models
+
+class PaginateRequest(BaseModel):
+    """Request model for paginating query results (Load More functionality)."""
+    sql: str = Field(..., description="SQL query to paginate")
+    database_type: str = Field(..., description="Database type (bigquery, snowflake, postgresql, etc.)")
+    connector_id: Optional[str] = Field(None, description="Connector ID to use for execution")
+    page: int = Field(2, ge=1, description="Page number (1-indexed, default 2 for 'load more')")
+    page_size: int = Field(100, ge=1, le=10000, description="Number of rows per page")
+    total_count: Optional[int] = Field(None, description="Total row count (if known from previous query)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "sql": "SELECT * FROM STORE_SALES LIMIT 100",
+                "database_type": "snowflake",
+                "connector_id": "snowflake_tpcds_123",
+                "page": 2,
+                "page_size": 100,
+                "total_count": 28800000000
+            }
+        }
+
+
+class PaginateResponse(BaseModel):
+    """Response model for paginated query results."""
+    success: bool
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    row_count: int = Field(0, description="Number of rows in this page")
+    page: int = Field(..., description="Current page number")
+    page_size: int = Field(..., description="Page size used")
+    has_more: bool = Field(False, description="Whether more results are available")
+    total_count: Optional[int] = Field(None, description="Total estimated row count")
+    error: Optional[str] = None
+    execution_time_ms: Optional[float] = None
+
+
+# Query History Models (Background Query Notifications)
+
+class NotificationPreferences(BaseModel):
+    """User's notification preferences for query completion."""
+    browser: bool = Field(True, description="Send browser notification when query completes")
+    email: bool = Field(False, description="Send email notification when query completes")
+
+
+class QueryResultSummary(BaseModel):
+    """Summary of query results for quick display."""
+    row_count: int = Field(..., description="Total number of rows returned")
+    columns: List[str] = Field(default_factory=list, description="Column names in result set")
+    preview: List[Dict[str, Any]] = Field(default_factory=list, description="First 10 rows for preview")
+
+
+class NotificationsSent(BaseModel):
+    """Track which notifications have been sent."""
+    browser: bool = False
+    email: bool = False
+    email_sent_at: Optional[str] = None
+
+
+class QueryHistoryEntry(BaseModel):
+    """A query history entry with full details."""
+    execution_id: str = Field(..., description="Unique execution ID")
+    user_id: str = Field(..., description="User who ran the query")
+    organization_id: str = Field(..., description="Organization ID")
+    question: str = Field(..., description="Original natural language question")
+    sql: str = Field(..., description="Generated SQL query")
+    status: str = Field(..., description="Query status: running, complete, error")
+    started_at: str = Field(..., description="ISO timestamp when query started")
+    completed_at: Optional[str] = Field(None, description="ISO timestamp when query completed")
+    execution_time_seconds: Optional[float] = Field(None, description="Total execution time in seconds")
+    result_summary: Optional[QueryResultSummary] = Field(None, description="Summary of results")
+    error: Optional[str] = Field(None, description="Error message if query failed")
+    is_background: bool = Field(False, description="Whether query is running in background")
+    notification_preferences: NotificationPreferences = Field(default_factory=NotificationPreferences)
+    notifications_sent: NotificationsSent = Field(default_factory=NotificationsSent)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "execution_id": "exec_abc123",
+                "user_id": "user_12345",
+                "organization_id": "org_67890",
+                "question": "Show me total sales from store_sales",
+                "sql": "SELECT SUM(ss_sales_price) FROM STORE_SALES",
+                "status": "complete",
+                "started_at": "2024-01-15T10:30:00Z",
+                "completed_at": "2024-01-15T10:35:00Z",
+                "execution_time_seconds": 300.5,
+                "result_summary": {
+                    "row_count": 1,
+                    "columns": ["total_sales"],
+                    "preview": [{"total_sales": 1234567890.50}]
+                },
+                "is_background": True,
+                "notification_preferences": {"browser": True, "email": True},
+                "notifications_sent": {"browser": True, "email": True, "email_sent_at": "2024-01-15T10:35:01Z"}
+            }
+        }
+
+
+class QueryHistoryListResponse(BaseModel):
+    """Response for listing query history."""
+    queries: List[QueryHistoryEntry] = Field(default_factory=list)
+    total_count: int = Field(0, description="Total number of queries matching filter")
+    pending_count: int = Field(0, description="Number of currently running queries")
+
+
+class QueryHistoryRequest(BaseModel):
+    """Request for creating a query history entry (typically internal use)."""
+    execution_id: str = Field(..., description="Unique execution ID")
+    question: str = Field(..., description="Original natural language question")
+    sql: str = Field(..., description="Generated SQL query")
+    is_background: bool = Field(False, description="Whether to run in background mode")
+    notification_preferences: Optional[NotificationPreferences] = Field(
+        default_factory=NotificationPreferences,
+        description="Notification preferences for this query"
+    )
+
+
+class MarkBackgroundRequest(BaseModel):
+    """Request to mark a query as background (user navigating away)."""
+    notification_preferences: NotificationPreferences = Field(
+        default_factory=NotificationPreferences,
+        description="Updated notification preferences"
+    )
+
+
+class QueryHistoryFullResponse(BaseModel):
+    """Response for getting full query results from history."""
+    execution_id: str
+    status: str
+    question: str
+    sql: str
+    result_summary: Optional[QueryResultSummary] = None
+    full_results: Optional[List[Dict[str, Any]]] = Field(None, description="Complete result set (if available)")
+    full_results_s3_url: Optional[str] = Field(None, description="S3 presigned URL for large results")
+    execution_time_seconds: Optional[float] = None
+    error: Optional[str] = None

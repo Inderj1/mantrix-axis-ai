@@ -156,7 +156,7 @@ ORDER BY current_inventory ASC"""
             # Define the tool for structured output
             sql_generation_tool = {
                 "name": "generate_sql_query",
-                "description": "Generate a SQL query with metadata",
+                "description": "Generate a SQL query with metadata and visualization recommendation",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -181,9 +181,56 @@ ORDER BY current_inventory ASC"""
                         "optimization_notes": {
                             "type": "string",
                             "description": "Any performance considerations or optimizations applied"
+                        },
+                        "recommended_chart_type": {
+                            "type": "string",
+                            "enum": [
+                                "bar", "horizontalBar", "line", "area", "pie", "donut",
+                                "scatter", "heatmap", "treemap", "sunburst", "funnel",
+                                "gauge", "metric", "radar", "table", "calendar",
+                                "sankey", "boxplot", "candlestick"
+                            ],
+                            "description": """Best chart type for visualizing this query's results. Selection guide:
+- metric: Single aggregate value (COUNT, SUM, AVG) - shows one big number
+- gauge: Single percentage or rate (0-100 scale)
+- line: Time series data with dates/months/years - shows trends over time
+- area: Time series with emphasis on cumulative values
+- bar: Comparing 7+ categories (vertical bars)
+- horizontalBar: Categories with long names or 10+ items
+- pie: 2-6 categories showing proportions/distribution (parts of whole)
+- donut: 7-12 categories showing proportions (like pie but with center space)
+- scatter: Correlation between two numeric measures
+- heatmap: Matrix/cross-tab data (two dimensions + one measure)
+- treemap: Hierarchical data or many categories with size comparison
+- sunburst: Nested hierarchical data (parent-child relationships)
+- funnel: Sequential stages with decreasing values (sales pipeline, conversion)
+- radar: Comparing multiple metrics across categories
+- table: Complex data with many columns, or when exact values matter
+- calendar: Daily data over months/years (activity heatmap)
+- sankey: Flow/transition data between states
+- boxplot: Statistical distribution comparison
+- candlestick: Financial OHLC (open, high, low, close) data"""
+                        },
+                        "chart_config": {
+                            "type": "object",
+                            "description": "Optional chart configuration hints",
+                            "properties": {
+                                "x_axis_column": {
+                                    "type": "string",
+                                    "description": "Column name for x-axis (categories/time)"
+                                },
+                                "y_axis_column": {
+                                    "type": "string",
+                                    "description": "Column name for y-axis (values/measures)"
+                                },
+                                "group_by_column": {
+                                    "type": "string",
+                                    "description": "Column for grouping/coloring series (optional)"
+                                }
+                            }
                         }
                     },
-                    "required": ["sql", "explanation", "tables_used", "estimated_complexity"]
+                    "required": ["sql", "explanation", "tables_used", "estimated_complexity", "recommended_chart_type"]
                 }
             }
             
@@ -742,13 +789,18 @@ Rules:
 4. ⚠️ CRITICAL - AVOID UNNECESSARY JOINS & PREFER SINGLE-TABLE QUERIES:
     - FIRST: Check if ALL required columns exist in a SINGLE table - if yes, use ONLY that table (no joins!)
     - If columns exist in multiple tables, prefer the SMALLEST/MOST SPECIFIC table based on row counts in the schema
-    - JOINs on large tables (>1M rows) are EXTREMELY EXPENSIVE - avoid unless absolutely necessary
+    - JOINs on large tables (>1M rows) are EXPENSIVE - avoid unless absolutely necessary
     - Before adding a JOIN, ask yourself: "Do I really need data from the second table, or does the first table have everything?"
     - IMPORTANT: Use ONLY tables provided in the schema context below - do NOT reference any tables not explicitly listed
 5. Use CTEs for complex queries to improve readability
-6. Consider using APPROX functions for large datasets when exact results aren't required
+6. ⚠️ CRITICAL - HANDLING LARGE TABLES (billions of rows):
+    - AGGREGATION QUERIES ARE SAFE: SUM(), COUNT(), AVG(), MIN(), MAX() with GROUP BY are efficient on ANY table size - do NOT add LIMIT
+    - LIMIT IS ONLY NEEDED FOR: SELECT * or SELECT columns WITHOUT aggregation - add LIMIT 1000 for row-level queries
+    - When user asks for "total", "sum", "count", "average" → Use aggregation, NO LIMIT needed
+    - When user asks for "list", "show rows", "details" → Add LIMIT for safety
+    - The database optimizer handles aggregations efficiently even on billion-row tables
 7. Use proper date/timestamp functions for time-based queries
-8. Always include appropriate WHERE clauses to limit data scanned
+8. Include WHERE clauses when filtering makes sense for the business question
 9. Do not include backticks or triple quotes around the SQL - just provide the raw SQL query
 10. For better performance, consider using materialized views when available
 11. ⚠️ CRITICAL - COLUMN NAME VALIDATION (NEVER GUESS, INVENT, OR HALLUCINATE):
@@ -1042,8 +1094,23 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
                 target = hint['target']
                 keys = hint['keys']
                 join_type = hint.get('type', 'left').upper()
+                confidence = hint.get('confidence', 0.5)
+                confidence_reason = hint.get('confidence_reason', '')
+                source_rows = hint.get('source_row_count', 0)
+                target_rows = hint.get('target_row_count', 0)
 
-                prompt_parts.append(f"\n{source} → {target}:")
+                # Show confidence level
+                confidence_level = "HIGH" if confidence >= 0.8 else "MEDIUM" if confidence >= 0.5 else "LOW"
+                prompt_parts.append(f"\n{source} → {target} (Confidence: {confidence_level} {confidence:.0%}):")
+
+                # Show reason for JOIN recommendation
+                if confidence_reason:
+                    prompt_parts.append(f"  Reason: {confidence_reason}")
+
+                # Show cardinality if available
+                if source_rows and target_rows:
+                    prompt_parts.append(f"  Cardinality: {source} ({source_rows:,} rows) → {target} ({target_rows:,} rows)")
+
                 for source_col, target_col in keys:
                     # Special handling for Sales_Order JOIN with leading zero issue
                     if source_col == "Sales_Order_KDAUF" and target_col == "SalesDocument_VBELN":
@@ -1213,6 +1280,70 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         else:
             return f"~{row_count/1000000:.1f}M rows"
 
+    def _get_best_filter_columns(self, columns: List[Dict[str, Any]], max_cols: int = 5) -> List[str]:
+        """
+        Get columns with high selectivity that are good for WHERE clauses.
+
+        High selectivity (close to 1.0) means many unique values, which makes
+        filters more effective at reducing result sets.
+
+        Args:
+            columns: List of column dicts with stats
+            max_cols: Maximum number of columns to return
+
+        Returns:
+            List of column names sorted by selectivity (best first)
+        """
+        filter_cols = []
+
+        for col in columns:
+            name = col.get('name', col.get('column_name', ''))
+            stats = col.get('stats', {})
+            selectivity = stats.get('selectivity', 0)
+
+            # High selectivity (> 0.5) or indexed columns are good for filtering
+            is_indexed = col.get('has_index') or stats.get('hasIndex')
+            is_pk = col.get('is_primary_key') or stats.get('isPrimaryKey')
+
+            if selectivity and selectivity > 0.5:
+                filter_cols.append((name, selectivity, 'selectivity'))
+            elif is_indexed or is_pk:
+                filter_cols.append((name, 1.0 if is_pk else 0.8, 'indexed'))
+
+        # Sort by selectivity descending
+        filter_cols.sort(key=lambda x: x[1], reverse=True)
+
+        return [col[0] for col in filter_cols[:max_cols]]
+
+    def _get_column_aliases(self, columns: List[Dict[str, Any]]) -> str:
+        """
+        Get a formatted string of column aliases/synonyms.
+
+        Helps the LLM understand alternative names users might use for columns.
+
+        Args:
+            columns: List of column dicts that may contain 'synonyms' or 'aliases'
+
+        Returns:
+            Formatted string like "revenue=sales_amount, customer=client_id"
+        """
+        aliases = []
+
+        for col in columns:
+            name = col.get('name', col.get('column_name', ''))
+            synonyms = col.get('synonyms', col.get('aliases', []))
+
+            if synonyms and isinstance(synonyms, list):
+                # Format: alias1/alias2 -> column_name
+                alias_str = '/'.join(synonyms[:2])  # Limit to 2 aliases per column
+                aliases.append(f"{alias_str}→{name}")
+
+        if not aliases:
+            return ""
+
+        # Limit total output to avoid bloating prompts
+        return ', '.join(aliases[:8])
+
     def _format_column_with_stats(self, col: Dict[str, Any]) -> str:
         """Format column with RDF statistics."""
         name = col.get('name', col.get('column_name', ''))
@@ -1239,6 +1370,12 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         result = f"{name} ({dtype})"
         if hints:
             result += f" [{', '.join(hints)}]"
+
+        # Add column synonyms/aliases if present
+        synonyms = col.get('synonyms', col.get('aliases', []))
+        if synonyms:
+            result += f" (also: {', '.join(synonyms[:3])})"
+
         return result
 
     def _get_table_relationships(self, schema: Dict[str, Any]) -> List[str]:
@@ -1312,6 +1449,16 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
 
         if len(schema.get('columns', [])) > 15:
             lines.append(f"    ... and {len(schema['columns']) - 15} more")
+
+        # Best filter columns (high selectivity - good for WHERE clauses)
+        best_filter_cols = self._get_best_filter_columns(schema.get('columns', []))
+        if best_filter_cols:
+            lines.append(f"  Best filter columns: {', '.join(best_filter_cols)}")
+
+        # Column aliases/synonyms (help LLM match user terms to column names)
+        column_aliases = self._get_column_aliases(schema.get('columns', []))
+        if column_aliases:
+            lines.append(f"  Column aliases: {column_aliases}")
 
         # Relationships
         rels = self._get_table_relationships(schema)

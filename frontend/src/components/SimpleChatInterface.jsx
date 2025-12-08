@@ -108,6 +108,22 @@ import {
 // Import images as modules for proper caching
 import axisAiLogo from '../assets/axis-ai4.png';
 
+// Memoized AI Avatar component - only renders once, reused for all messages
+const AiAvatar = React.memo(() => (
+  <img
+    src={axisAiLogo}
+    alt="Axis AI"
+    style={{
+      height: 40,
+      width: 'auto',
+      objectFit: 'contain',
+      marginTop: 2,
+      flexShrink: 0,
+    }}
+  />
+));
+AiAvatar.displayName = 'AiAvatar';
+
 // Chart colors
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0', '#ffb347', '#67b7dc'];
 
@@ -232,6 +248,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     loadingConversations,
     isInitializing,
     isLoading: loading,
+    isLoadingMore,
     queryProgress,
     // Actions
     initialize,
@@ -244,7 +261,9 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     updateMessage,
     sendQuery,
     sendQueryStreaming,
+    previewQuery,
     resetQueryProgress,
+    loadMoreResults,
     toggleStar,
     setIsLoading,
   } = useConversationStore();
@@ -284,6 +303,13 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     title: '',
     message: '',
     onConfirm: null,
+  });
+
+  // Long-running query warning dialog state
+  const [longRunningWarning, setLongRunningWarning] = useState({
+    open: false,
+    question: '',
+    preview: null, // { tables_used, table_row_counts, largest_table_rows, estimated_minutes, warning }
   });
 
   // User persona state for personalized Quick Actions
@@ -423,8 +449,9 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || loading) return;
+  const handleSendMessage = async (skipPreview = false, questionOverride = null) => {
+    const question = questionOverride || inputMessage;
+    if (!question.trim() || loading) return;
 
     // Check for dashboard creation intent first
     const dashboardIntentPatterns = [
@@ -435,15 +462,15 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       /dashboard\s+(for|with|showing)/i,
     ];
 
-    const hasDashboardIntent = dashboardIntentPatterns.some(pattern => pattern.test(inputMessage));
+    const hasDashboardIntent = dashboardIntentPatterns.some(pattern => pattern.test(question));
 
     if (hasDashboardIntent) {
       // Handle dashboard creation flow (not using store for this special case)
       try {
-        const response = await apiService.createDashboardFromConversation(inputMessage);
+        const response = await apiService.createDashboardFromConversation(question);
         const previewData = response.data;
 
-        setDashboardPreviewQuery(inputMessage);
+        setDashboardPreviewQuery(question);
         setDashboardPreviewData(previewData);
         setDashboardPreviewOpen(true);
         setInputMessage('');
@@ -454,13 +481,32 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       return;
     }
 
+    // Preview query to check if it will be long-running
+    if (!skipPreview) {
+      try {
+        const preview = await previewQuery(question);
+
+        if (preview && preview.is_long_running) {
+          // Show warning dialog before executing
+          setLongRunningWarning({
+            open: true,
+            question,
+            preview,
+          });
+          return; // Wait for user confirmation
+        }
+      } catch (error) {
+        console.log('Preview failed, proceeding with query:', error);
+        // Continue anyway if preview fails
+      }
+    }
+
     // Use store's sendQueryStreaming - handles everything with live progress:
     // - Creating conversation if needed
     // - Adding user/assistant messages
     // - Streaming API call with progress updates
     // - Error handling
     // - Updating conversations list
-    const question = inputMessage;
     setInputMessage('');
 
     // Scroll when user sends message
@@ -473,6 +519,19 @@ const SimpleChatInterface = forwardRef((props, ref) => {
     setTimeout(scrollToBottom, 100);
 
     console.log('Query result:', result);
+  };
+
+  // Handle user confirming long-running query
+  const handleConfirmLongRunningQuery = () => {
+    const { question } = longRunningWarning;
+    setLongRunningWarning({ open: false, question: '', preview: null });
+    // Execute with skipPreview=true to avoid re-checking
+    handleSendMessage(true, question);
+  };
+
+  // Handle user canceling long-running query
+  const handleCancelLongRunningQuery = () => {
+    setLongRunningWarning({ open: false, question: '', preview: null });
   };
 
   const handleKeyDown = (e) => {
@@ -1216,21 +1275,24 @@ const SimpleChatInterface = forwardRef((props, ref) => {
       );
     }
 
-    // Assistant message - Simple plain text
+    // Assistant message - Simple plain text with logo
     return (
       <Box sx={{ mb: 3, maxWidth: '85%' }}>
-        {message.content && (
-          <Typography
-            sx={{
-              fontSize: '0.9375rem',
-              lineHeight: 1.7,
-              color: '#374151',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {message.content}
-          </Typography>
-        )}
+        <Stack direction="row" spacing={1.5} alignItems="flex-start">
+          <AiAvatar />
+          <Box sx={{ flex: 1 }}>
+            {message.content && (
+              <Typography
+                sx={{
+                  fontSize: '0.9375rem',
+                  lineHeight: 1.7,
+                  color: '#374151',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {message.content}
+              </Typography>
+            )}
 
             {/* Error display */}
             {message.error && (
@@ -1393,6 +1455,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                       title={message.question || 'Query Results Visualization'}
                     />
                   }
+                  onLoadMore={() => loadMoreResults(message.id)}
+                  isLoadingMore={isLoadingMore}
                 />
 
                 {/* Follow-up Suggestions */}
@@ -1534,6 +1598,8 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                 </Box>
               </Paper>
             )}
+          </Box>
+        </Stack>
       </Box>
     );
   };
@@ -1810,6 +1876,10 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                   detail={queryProgress.detail}
                   sql={queryProgress.sql}
                   error={queryProgress.phase === 'error' ? queryProgress.message : null}
+                  isLongRunning={queryProgress.isLongRunning}
+                  estimatedMinutes={queryProgress.estimatedMinutes}
+                  executionId={queryProgress.executionId}
+                  largestTableRows={queryProgress.largestTableRows}
                 />
               </Box>
             )}
@@ -2121,6 +2191,91 @@ const SimpleChatInterface = forwardRef((props, ref) => {
           </Button>
           <Button onClick={confirmDialog.onConfirm} variant="contained" color="warning" autoFocus>
             Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Long-Running Query Warning Dialog */}
+      <Dialog
+        open={longRunningWarning.open}
+        onClose={handleCancelLongRunningQuery}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, color: 'warning.main' }}>
+          <WarningIcon />
+          Large Query Warning
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              This query will scan a very large dataset and may take several minutes to complete.
+            </Typography>
+
+            {longRunningWarning.preview && (
+              <Box sx={{
+                bgcolor: alpha(theme.palette.warning.main, 0.1),
+                borderRadius: 2,
+                p: 2,
+                border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`
+              }}>
+                <Stack spacing={1.5}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Estimated rows to scan:
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold" color="warning.main">
+                      ~{longRunningWarning.preview.largest_table_rows?.toLocaleString() || 'billions'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Estimated time:
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold" color="warning.main">
+                      {longRunningWarning.preview.estimated_minutes || '5+'}+ minutes
+                    </Typography>
+                  </Box>
+                  {longRunningWarning.preview.tables_used?.length > 0 && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                        Tables involved:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {longRunningWarning.preview.tables_used.map((table, idx) => (
+                          <Chip
+                            key={idx}
+                            label={table}
+                            size="small"
+                            variant="outlined"
+                            sx={{ fontSize: '0.75rem' }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Stack>
+              </Box>
+            )}
+
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              The query will run in the background and you'll receive a notification when it completes.
+              You can continue asking other questions while waiting.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCancelLongRunningQuery} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmLongRunningQuery}
+            variant="contained"
+            color="warning"
+            autoFocus
+            startIcon={<PlayArrowIcon />}
+          >
+            Run in Background
           </Button>
         </DialogActions>
       </Dialog>

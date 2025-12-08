@@ -12,11 +12,14 @@ import Layout from './components/Layout';
  * AppInitializer - Eagerly initializes the conversation store when user is authenticated.
  * This prevents the 4-5 second delay when clicking "New Chat" because the store
  * is already initialized by the time the user navigates to /chat.
+ *
+ * Also starts the background query checker to poll for completed queries.
  */
 const AppInitializer = ({ children }) => {
   const { user, loading: authLoading } = useAuth();
   const initialize = useConversationStore(state => state.initialize);
   const isInitialized = useConversationStore(state => state.isInitialized);
+  const checkPendingQueries = useConversationStore(state => state.checkPendingQueries);
 
   useEffect(() => {
     // Initialize conversation store as soon as user is authenticated
@@ -25,6 +28,29 @@ const AppInitializer = ({ children }) => {
       initialize(user.userId);
     }
   }, [user?.userId, authLoading, isInitialized, initialize]);
+
+  // Background query checker - polls for completed queries every 30 seconds
+  useEffect(() => {
+    if (!user?.userId || authLoading) return;
+
+    // Check immediately on mount
+    const pendingQueries = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
+    if (pendingQueries.length > 0) {
+      console.log('[AppInitializer] Found', pendingQueries.length, 'pending background queries, checking status...');
+      checkPendingQueries();
+    }
+
+    // Set up interval to check every 30 seconds
+    const interval = setInterval(() => {
+      const pending = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
+      if (pending.length > 0) {
+        console.log('[AppInitializer] Checking', pending.length, 'pending background queries...');
+        checkPendingQueries();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [user?.userId, authLoading, checkPendingQueries]);
 
   return children;
 };

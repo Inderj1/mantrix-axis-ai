@@ -17,6 +17,7 @@ import {
   TrendingUp as TrendingUpIcon,
   AttachMoney as MoneyIcon,
   Numbers as NumbersIcon,
+  MoreHoriz as MoreIcon,
 } from '@mui/icons-material';
 
 // Stat card component
@@ -121,8 +122,18 @@ const SummaryStatsHeader = ({
   tablesUsed,
   results,
   fromCache,
+  totalEstimatedRows,
+  isPaginated,
 }) => {
   const theme = useTheme();
+
+  // Determine display text for rows
+  const rowsDisplay = isPaginated && totalEstimatedRows > rowCount
+    ? `${formatNumber(rowCount)} of ${formatNumber(totalEstimatedRows)}`
+    : formatNumber(rowCount);
+  const rowsTooltip = isPaginated && totalEstimatedRows > rowCount
+    ? `Showing ${rowCount?.toLocaleString()} of ~${totalEstimatedRows?.toLocaleString()} total rows`
+    : `${rowCount?.toLocaleString()} rows returned`;
 
   // Detect key metrics from results
   const detectedMetrics = useMemo(() => {
@@ -177,6 +188,7 @@ const SummaryStatsHeader = ({
           alignItems: 'center',
           gap: 1.5,
           mb: 2,
+          flexWrap: 'wrap',
         }}
       >
         <Chip
@@ -191,6 +203,21 @@ const SummaryStatsHeader = ({
             fontSize: '0.75rem',
           }}
         />
+        {isPaginated && totalEstimatedRows > rowCount && (
+          <Tooltip title={`This table has ~${formatNumber(totalEstimatedRows)} rows. Showing first ${rowCount?.toLocaleString()} rows.`}>
+            <Chip
+              size="small"
+              icon={<MoreIcon sx={{ fontSize: 16 }} />}
+              label={`~${formatNumber(totalEstimatedRows)} total rows`}
+              sx={{
+                bgcolor: alpha('#6366F1', 0.1),
+                color: '#6366F1',
+                fontWeight: 600,
+                fontSize: '0.75rem',
+              }}
+            />
+          </Tooltip>
+        )}
         {executionTime && (
           <Typography variant="caption" color="text.secondary">
             Completed in {executionTime.toFixed(2)}s
@@ -208,10 +235,10 @@ const SummaryStatsHeader = ({
       >
         <StatCard
           icon={RowsIcon}
-          value={formatNumber(rowCount)}
+          value={rowsDisplay}
           label="Rows"
-          color="#3B82F6" // Blue
-          tooltip={`${rowCount?.toLocaleString()} rows returned`}
+          color={isPaginated ? '#F59E0B' : '#3B82F6'} // Amber if paginated, Blue otherwise
+          tooltip={rowsTooltip}
         />
         <StatCard
           icon={ColumnsIcon}

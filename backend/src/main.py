@@ -31,6 +31,7 @@ from src.api.dashboard_creation_routes import router as dashboard_creation_route
 from src.api.narrative_routes import router as narrative_router
 from src.api.sharing_routes import router as sharing_router
 from src.api.comments_routes import router as comments_router
+from src.api.query_history_routes import router as query_history_router
 
 # Configure structured logging
 structlog.configure(
@@ -215,6 +216,7 @@ app.include_router(dashboard_creation_router)
 app.include_router(narrative_router)
 app.include_router(sharing_router)
 app.include_router(comments_router)
+app.include_router(query_history_router)
 
 
 @app.get("/")

@@ -5,12 +5,15 @@ import {
   Typography,
   ToggleButton,
   ToggleButtonGroup,
+  Button,
+  CircularProgress,
   useTheme,
   alpha,
 } from '@mui/material';
 import {
   TableChart as TableIcon,
   BarChart as ChartIcon,
+  ExpandMore as LoadMoreIcon,
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
 
@@ -99,6 +102,8 @@ const EnhancedResultsCard = ({
   onViewDetailed,
   showChart,
   chartComponent,
+  onLoadMore,
+  isLoadingMore = false,
 }) => {
   const theme = useTheme();
   const [viewMode, setViewMode] = useState('table');
@@ -109,7 +114,12 @@ const EnhancedResultsCard = ({
     results,
     resultCount,
     metadata,
+    pagination,
   } = message || {};
+
+  // Check if there are more results to load
+  const hasMoreResults = pagination?.is_paginated && pagination?.total_count > (results?.length || 0);
+  const totalEstimatedRows = pagination?.total_count || resultCount || results?.length || 0;
 
   // Generate table columns
   const columns = useMemo(
@@ -153,6 +163,8 @@ const EnhancedResultsCard = ({
           tablesUsed={metadata?.tablesUsed}
           results={results}
           fromCache={metadata?.fromCache}
+          totalEstimatedRows={totalEstimatedRows}
+          isPaginated={hasMoreResults}
         />
 
         {/* Results Section */}
@@ -196,45 +208,86 @@ const EnhancedResultsCard = ({
 
             {/* Table or Chart */}
             {viewMode === 'table' ? (
-              <Box
-                sx={{
-                  height: Math.min(400, rows.length * 52 + 110),
-                  width: '100%',
-                  '& .enhanced-header': {
-                    bgcolor: alpha(theme.palette.primary.main, 0.05),
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                  },
-                  '& .MuiDataGrid-root': {
-                    border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                    borderRadius: 2,
-                    fontSize: '0.875rem',
-                  },
-                  '& .MuiDataGrid-cell': {
-                    borderColor: alpha(theme.palette.divider, 0.3),
-                  },
-                  '& .MuiDataGrid-row:nth-of-type(even)': {
-                    bgcolor: alpha(theme.palette.action.hover, 0.3),
-                  },
-                  '& .MuiDataGrid-row:hover': {
-                    bgcolor: alpha(theme.palette.primary.main, 0.05),
-                  },
-                  '& .MuiDataGrid-footerContainer': {
-                    borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-                  },
-                }}
-              >
-                <DataGrid
-                  rows={rows}
-                  columns={columns}
-                  pageSize={pageSize}
-                  onPageSizeChange={setPageSize}
-                  rowsPerPageOptions={[10, 25, 50, 100]}
-                  disableSelectionOnClick
-                  density="compact"
-                  getRowId={(row) => row.id}
-                />
-              </Box>
+              <>
+                <Box
+                  sx={{
+                    height: Math.min(400, rows.length * 52 + 110),
+                    width: '100%',
+                    '& .enhanced-header': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.05),
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                    },
+                    '& .MuiDataGrid-root': {
+                      border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                      borderRadius: 2,
+                      fontSize: '0.875rem',
+                    },
+                    '& .MuiDataGrid-cell': {
+                      borderColor: alpha(theme.palette.divider, 0.3),
+                    },
+                    '& .MuiDataGrid-row:nth-of-type(even)': {
+                      bgcolor: alpha(theme.palette.action.hover, 0.3),
+                    },
+                    '& .MuiDataGrid-row:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.05),
+                    },
+                    '& .MuiDataGrid-footerContainer': {
+                      borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                    },
+                  }}
+                >
+                  <DataGrid
+                    rows={rows}
+                    columns={columns}
+                    pageSize={pageSize}
+                    onPageSizeChange={setPageSize}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    disableSelectionOnClick
+                    density="compact"
+                    getRowId={(row) => row.id}
+                    // Hide footer pagination when server-side "Load More" is available
+                    // to avoid UX confusion between client-side and server-side paging
+                    hideFooterPagination={hasMoreResults}
+                  />
+                </Box>
+
+                {/* Load More Button */}
+                {hasMoreResults && onLoadMore && (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      mt: 2,
+                      pt: 2,
+                      borderTop: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
+                    }}
+                  >
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      onClick={onLoadMore}
+                      disabled={isLoadingMore}
+                      startIcon={isLoadingMore ? <CircularProgress size={18} /> : <LoadMoreIcon />}
+                      sx={{
+                        borderRadius: 2,
+                        textTransform: 'none',
+                        px: 3,
+                        py: 1,
+                      }}
+                    >
+                      {isLoadingMore
+                        ? 'Loading more...'
+                        : `Load more rows (${results?.length?.toLocaleString()} of ${totalEstimatedRows >= 1e9
+                            ? (totalEstimatedRows / 1e9).toFixed(1) + 'B'
+                            : totalEstimatedRows >= 1e6
+                              ? (totalEstimatedRows / 1e6).toFixed(1) + 'M'
+                              : totalEstimatedRows?.toLocaleString() || '?'} total)`
+                      }
+                    </Button>
+                  </Box>
+                )}
+              </>
             ) : (
               chartComponent
             )}

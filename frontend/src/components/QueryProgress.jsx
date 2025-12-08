@@ -15,6 +15,8 @@ import {
   alpha,
   Fade,
   Skeleton,
+  Button,
+  CircularProgress,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -31,6 +33,9 @@ import {
   DataObject as DataIcon,
   Verified as ValidateIcon,
   QuestionAnswer as ContextIcon,
+  HourglassTop as LongRunningIcon,
+  Notifications as NotificationsIcon,
+  NotificationsActive as NotificationsActiveIcon,
 } from '@mui/icons-material';
 
 // Progress phases with user-friendly messaging and icons
@@ -41,6 +46,8 @@ const PHASES = [
   { id: 'generating', label: 'AI writing SQL query', detail: 'Generating optimized query', icon: WriteIcon, color: '#7C3AED' },
   { id: 'validating', label: 'Validating query syntax', detail: 'Checking for errors', icon: ValidateIcon, color: '#059669' },
   { id: 'executing', label: 'Running query on database', detail: 'Executing SQL', icon: ExecuteIcon, color: '#DC2626' },
+  { id: 'long_running', label: 'Processing large dataset', detail: 'This may take several minutes', icon: LongRunningIcon, color: '#F59E0B' },
+  { id: 'background', label: 'Running in background', detail: 'You will be notified when complete', icon: NotificationsActiveIcon, color: '#10B981' },
   { id: 'processing', label: 'Processing results', detail: 'Formatting data', icon: DataIcon, color: '#EA580C' },
 ];
 
@@ -62,6 +69,11 @@ const QueryProgress = ({
   error,
   showSql = false,
   onToggleSql,
+  isLongRunning = false,
+  estimatedMinutes = 0,
+  executionId = null,
+  onNotifyMe,
+  largestTableRows = 0,
 }) => {
   const theme = useTheme();
   const [tipIndex, setTipIndex] = React.useState(0);
@@ -74,6 +86,18 @@ const QueryProgress = ({
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Format row count for display
+  const formatRowCount = (rows) => {
+    if (rows >= 1_000_000_000) {
+      return `${(rows / 1_000_000_000).toFixed(1)}B`;
+    } else if (rows >= 1_000_000) {
+      return `${(rows / 1_000_000).toFixed(1)}M`;
+    } else if (rows >= 1_000) {
+      return `${(rows / 1_000).toFixed(1)}K`;
+    }
+    return rows.toString();
+  };
 
   // Get current phase index
   const currentPhaseIndex = PHASES.findIndex((p) => p.id === currentPhase);
@@ -356,6 +380,92 @@ const QueryProgress = ({
               {sql}
             </Box>
           </Collapse>
+        </Box>
+      )}
+
+      {/* Background Mode - Query moved to background processing */}
+      {currentPhase === 'background' && (
+        <Box
+          sx={{
+            mb: 2,
+            p: 2,
+            bgcolor: alpha('#10B981', 0.1),
+            borderRadius: 2,
+            border: `1px solid ${alpha('#10B981', 0.3)}`,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <NotificationsActiveIcon sx={{ color: '#10B981', fontSize: 24 }} />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#059669' }}>
+                Running in Background
+              </Typography>
+              <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                {message || 'Query running in background. You will be notified when complete.'}
+              </Typography>
+            </Box>
+            {largestTableRows > 0 && (
+              <Chip
+                label={`~${formatRowCount(largestTableRows)} rows`}
+                size="small"
+                sx={{
+                  height: 22,
+                  fontSize: '0.75rem',
+                  bgcolor: alpha('#10B981', 0.15),
+                  color: '#059669',
+                  fontWeight: 600,
+                }}
+              />
+            )}
+          </Box>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#059669' }}>
+            You can continue asking other questions. A notification will appear when this query completes.
+          </Typography>
+        </Box>
+      )}
+
+      {/* Long-Running Query Alert - Transitional state before moving to background */}
+      {(isLongRunning || currentPhase === 'long_running') && currentPhase !== 'background' && (
+        <Box
+          sx={{
+            mb: 2,
+            p: 2,
+            bgcolor: alpha('#F59E0B', 0.08),
+            borderRadius: 2,
+            border: `1px solid ${alpha('#F59E0B', 0.25)}`,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <LongRunningIcon sx={{ color: '#F59E0B', fontSize: 24 }} />
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#B45309' }}>
+              Large Dataset Detected
+            </Typography>
+            {largestTableRows > 0 && (
+              <Chip
+                label={`${formatRowCount(largestTableRows)} rows`}
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: '0.7rem',
+                  bgcolor: alpha('#F59E0B', 0.15),
+                  color: '#B45309',
+                  fontWeight: 600,
+                }}
+              />
+            )}
+          </Box>
+
+          <Typography variant="body2" sx={{ color: theme.palette.text.secondary, mb: 1.5 }}>
+            {message || `Scanning a large dataset (~${formatRowCount(largestTableRows)} rows). Moving to background...`}
+          </Typography>
+
+          {/* Progress indicator */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CircularProgress size={16} sx={{ color: '#F59E0B' }} />
+            <Typography variant="caption" sx={{ color: theme.palette.text.secondary }}>
+              Switching to background mode...
+            </Typography>
+          </Box>
         </Box>
       )}
 

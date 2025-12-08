@@ -47,6 +47,7 @@ export const useConversationStore = create(
 
       // Query execution state
       isLoading: false,
+      isLoadingMore: false, // For pagination load more
 
       // Database selection (null = let backend use enabled connector)
       selectedDatabase: null,
@@ -488,6 +489,8 @@ export const useConversationStore = create(
             isCrossConnector: data.is_cross_connector || false,
             connectorQueries: data.connector_queries || null,
             joinSpec: data.join_specification || null,
+            // Pagination metadata for large table queries
+            pagination: data.pagination || null,
             metadata: {
               cost: data.validation?.estimated_cost_usd,
               bytesProcessed: data.validation?.total_bytes_processed,
@@ -495,6 +498,9 @@ export const useConversationStore = create(
               // Include connector info for cross-connector queries
               connectorsUsed: data.execution?.connectors_used,
               databaseTypesUsed: data.execution?.database_types_used,
+              // Include database_type and connector_id for pagination "Load More" requests
+              databaseType: data.database_type,
+              connectorId: data.connector_id,
             },
           });
 
@@ -660,8 +666,62 @@ export const useConversationStore = create(
                 progress: status.progress,
                 message: status.message,
                 sql: status.sql || state.queryProgress.sql,
+                isLongRunning: status.is_long_running || false,
+                estimatedMinutes: status.estimated_minutes,
+                largestTableRows: status.largest_table_rows,
               },
             }));
+
+            // Check if long_running - auto-switch to background mode
+            if (status.status === 'long_running' || status.is_long_running) {
+              console.log('[ConversationStore] Long-running query detected - switching to background mode');
+              console.log('[ConversationStore] Estimated time:', status.estimated_minutes, 'minutes');
+              console.log('[ConversationStore] Largest table rows:', status.largest_table_rows?.toLocaleString());
+
+              // Request notification permission
+              if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                Notification.requestPermission();
+              }
+
+              // Save to localStorage for background checking
+              const pendingQueries = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
+              if (!pendingQueries.find(p => p.execution_id === execution_id)) {
+                pendingQueries.push({
+                  execution_id,
+                  started_at: Date.now(),
+                  message: status.message,
+                  estimated_minutes: status.estimated_minutes,
+                  largest_table_rows: status.largest_table_rows,
+                  question: question,
+                });
+                localStorage.setItem('pendingQueries', JSON.stringify(pendingQueries));
+              }
+
+              // Update UI to background mode and stop loading
+              set(state => ({
+                isLoading: false, // Allow user to run other queries
+                queryProgress: {
+                  ...state.queryProgress,
+                  phase: 'background',
+                  isLongRunning: true,
+                  isStreaming: false,
+                  estimatedMinutes: status.estimated_minutes,
+                  largestTableRows: status.largest_table_rows,
+                  message: 'Query running in background. You will be notified when complete.',
+                  executionId: execution_id,
+                },
+              }));
+
+              // Add system message to conversation
+              get().addMessage({
+                role: 'assistant',
+                type: 'system',
+                content: `This query is scanning ~${status.largest_table_rows?.toLocaleString() || 'billions of'} rows and may take ${status.estimated_minutes || '5+'}+ minutes. It's now running in the background - you'll receive a notification when it completes. Feel free to continue asking other questions!`,
+              });
+
+              // Exit polling - background checker takes over
+              return;
+            }
 
             // Check if complete
             if (status.status === 'complete') {
@@ -673,8 +733,23 @@ export const useConversationStore = create(
                   progress: 100,
                   message: 'Done!',
                   isStreaming: false,
+                  isLongRunning: false,
                 },
               }));
+
+              // Show browser notification if query was long-running
+              if (status.is_long_running || get().queryProgress.isLongRunning) {
+                try {
+                  if (Notification.permission === 'granted') {
+                    new Notification('Query Complete!', {
+                      body: 'Your large table query has finished executing.',
+                      icon: '/favicon.ico',
+                    });
+                  }
+                } catch (e) {
+                  console.log('Could not show notification:', e);
+                }
+              }
               break;
             }
 
@@ -684,8 +759,33 @@ export const useConversationStore = create(
             }
           }
 
-          // Timeout check
-          if (!finalData) {
+          // Timeout check - extended for long-running queries
+          const isLongRunning = get().queryProgress.isLongRunning;
+          const effectiveTimeout = isLongRunning ? 3600000 : MAX_POLL_TIME; // 1 hour for long-running, 10 min otherwise
+
+          if (!finalData && (Date.now() - startTime) >= effectiveTimeout) {
+            if (isLongRunning) {
+              // For long-running queries, don't throw error - just inform user
+              set(state => ({
+                queryProgress: {
+                  ...state.queryProgress,
+                  phase: 'background',
+                  message: 'Query is still running in background. You will be notified when it completes.',
+                  isStreaming: false,
+                },
+              }));
+
+              // Store execution_id for later retrieval
+              const pendingQueries = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
+              pendingQueries.push({
+                executionId: execution_id,
+                startTime: startTime,
+                question: question,
+              });
+              localStorage.setItem('pendingQueries', JSON.stringify(pendingQueries));
+
+              return; // Exit without error
+            }
             throw new Error('Query timed out after 10 minutes');
           }
 
@@ -703,6 +803,8 @@ export const useConversationStore = create(
             isCrossConnector: finalData.is_cross_connector || false,
             connectorQueries: finalData.connector_queries || null,
             joinSpec: finalData.join_specification || null,
+            // Pagination metadata for large table queries
+            pagination: finalData.pagination || null,
             metadata: {
               cost: finalData.validation?.estimated_cost_usd,
               bytesProcessed: finalData.validation?.total_bytes_processed,
@@ -819,6 +921,120 @@ export const useConversationStore = create(
         });
       },
 
+      /**
+       * Load more results for a paginated query.
+       * Appends additional rows to an existing message's results.
+       *
+       * @param {string} messageId - ID of the message to append results to
+       * @returns {Promise<{success: boolean, newRows?: number, error?: string}>}
+       */
+      loadMoreResults: async (messageId) => {
+        const state = get();
+        const { messages, selectedDatabase } = state;
+
+        // Find the message
+        const messageIndex = messages.findIndex((m) => m.id === messageId);
+        if (messageIndex === -1) {
+          console.error('[ConversationStore] Message not found:', messageId);
+          return { success: false, error: 'Message not found' };
+        }
+
+        const message = messages[messageIndex];
+
+        // Check if message has pagination info
+        if (!message.pagination?.is_paginated) {
+          console.warn('[ConversationStore] Message is not paginated');
+          return { success: false, error: 'No more results to load' };
+        }
+
+        // Calculate next page
+        const currentCount = message.results?.length || 0;
+        const pageSize = message.pagination?.page_size || 100;
+        const nextPage = Math.floor(currentCount / pageSize) + 1;
+
+        const totalCount = message.pagination?.total_count;
+
+        console.log('[ConversationStore] Loading more results', {
+          messageId,
+          currentCount,
+          pageSize,
+          nextPage,
+          totalCount,
+        });
+
+        set({ isLoadingMore: true });
+
+        try {
+          const response = await apiService.loadMoreResults({
+            sql: message.sql,
+            databaseType: message.metadata?.databaseType || selectedDatabase,
+            connectorId: message.metadata?.connectorId,
+            page: nextPage,
+            pageSize,
+            totalCount,
+          });
+
+          const newResults = response.data?.results || [];
+          const hasMore = response.data?.has_more ?? false;
+          console.log('[ConversationStore] Loaded', newResults.length, 'more rows, hasMore:', hasMore);
+
+          if (newResults.length === 0) {
+            // No more results - update pagination to reflect that
+            set((state) => ({
+              isLoadingMore: false,
+              messages: state.messages.map((m, idx) => {
+                if (idx === messageIndex) {
+                  return {
+                    ...m,
+                    pagination: {
+                      ...m.pagination,
+                      is_paginated: false, // No more pages to load
+                    },
+                  };
+                }
+                return m;
+              }),
+            }));
+            return { success: true, newRows: 0 };
+          }
+
+          // Update the message with appended results
+          set((state) => ({
+            isLoadingMore: false,
+            messages: state.messages.map((m, idx) => {
+              if (idx === messageIndex) {
+                return {
+                  ...m,
+                  results: [...(m.results || []), ...newResults],
+                  resultCount: (m.resultCount || 0) + newResults.length,
+                  pagination: {
+                    ...m.pagination,
+                    page: nextPage,
+                    is_paginated: hasMore, // Update based on backend response
+                  },
+                };
+              }
+              return m;
+            }),
+          }));
+
+          return { success: true, newRows: newResults.length };
+        } catch (error) {
+          console.error('[ConversationStore] Failed to load more results:', error);
+          set({ isLoadingMore: false });
+
+          // Check if it's a 404/501 (endpoint not implemented)
+          if (error.response?.status === 404 || error.response?.status === 501) {
+            return {
+              success: false,
+              error: 'Pagination endpoint not yet implemented. This feature is coming soon!',
+            };
+          }
+
+          return { success: false, error: error.message || 'Failed to load more results' };
+        }
+      },
+
       // ============ Star/Favorite Management ============
 
       /**
@@ -892,6 +1108,119 @@ export const useConversationStore = create(
        */
       clearError: () => {
         set({ error: null });
+      },
+
+      // ============ Query Preview ============
+
+      /**
+       * Preview query complexity before execution.
+       * Returns estimated rows, time, and warnings for large queries.
+       *
+       * @param {string} question - The natural language question
+       * @param {string} databaseType - Optional database type
+       * @returns {Promise<{is_long_running: boolean, estimated_minutes: number, warning?: string}>}
+       */
+      previewQuery: async (question, databaseType) => {
+        try {
+          const token = await getAuthToken();
+          const baseUrl = getApiBaseUrl();
+
+          const payload = { question };
+          if (databaseType) {
+            payload.database_type = databaseType;
+          }
+
+          const response = await fetch(`${baseUrl}/api/v1/query/preview`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            console.warn('[ConversationStore] Preview failed, proceeding without warning');
+            return { is_long_running: false, estimated_minutes: 0 };
+          }
+
+          return response.json();
+        } catch (error) {
+          console.error('[ConversationStore] Preview error:', error);
+          // On error, don't block - just proceed without warning
+          return { is_long_running: false, estimated_minutes: 0 };
+        }
+      },
+
+      // ============ Background Query Checker ============
+
+      /**
+       * Check status of pending background queries.
+       * Called periodically (every 30s) and on app load.
+       * Shows browser notification when queries complete.
+       */
+      checkPendingQueries: async () => {
+        const pendingQueries = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
+        if (pendingQueries.length === 0) return;
+
+        console.log('[ConversationStore] Checking', pendingQueries.length, 'pending queries');
+
+        const token = await getAuthToken();
+        const baseUrl = getApiBaseUrl();
+
+        const stillPending = [];
+
+        for (const query of pendingQueries) {
+          try {
+            const response = await fetch(`${baseUrl}/api/v1/query/status/${query.execution_id}`, {
+              headers: { 'Authorization': token ? `Bearer ${token}` : '' },
+            });
+
+            if (response.ok) {
+              const status = await response.json();
+
+              if (status.status === 'complete') {
+                console.log('[ConversationStore] Background query completed:', query.execution_id);
+                // Show browser notification
+                if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                  new Notification('Query Complete!', {
+                    body: query.question ? `"${query.question.substring(0, 50)}..." has finished.` : 'Your large table query has finished.',
+                    icon: '/favicon.ico',
+                  });
+                }
+                // Don't add to stillPending - it's done
+              } else if (status.status === 'error') {
+                console.log('[ConversationStore] Background query failed:', query.execution_id);
+                if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                  new Notification('Query Failed', {
+                    body: status.message || 'Query execution failed.',
+                    icon: '/favicon.ico',
+                  });
+                }
+                // Don't add to stillPending - it's done (failed)
+              } else {
+                // Still processing - keep in pending list
+                stillPending.push(query);
+              }
+            } else if (response.status === 404) {
+              // Query expired or not found - remove from list
+              console.log('[ConversationStore] Query expired:', query.execution_id);
+            } else {
+              // Keep in list on other errors (might be temporary)
+              stillPending.push(query);
+            }
+          } catch (e) {
+            console.warn('[ConversationStore] Failed to check query:', query.execution_id, e);
+            stillPending.push(query); // Keep in list on error
+          }
+        }
+
+        // Update localStorage with remaining pending queries
+        localStorage.setItem('pendingQueries', JSON.stringify(stillPending));
+
+        if (stillPending.length < pendingQueries.length) {
+          console.log('[ConversationStore] Cleared', pendingQueries.length - stillPending.length, 'completed queries');
+        }
       },
 
       /**

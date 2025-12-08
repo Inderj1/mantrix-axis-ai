@@ -695,6 +695,401 @@ GROUP BY gl_account, gl_description
                 
         return gl_accounts
     
+    def get_table_row_count(self, table_name: str) -> Optional[int]:
+        """
+        Get approximate row count for a table from RDF metadata.
+
+        This is much faster than running EXPLAIN or COUNT(*) queries.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            Row count if available, None otherwise
+        """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+
+        SELECT ?rowCount
+        WHERE {{
+            ?table a fin:Table ;
+                   fin:tableName "{table_name}" ;
+                   schema:rowCount ?rowCount .
+            {filter_clause}
+        }}
+        LIMIT 1
+        """
+
+        try:
+            results = self.graph.query(sparql)
+            if results:
+                row_count = int(results[0].get('rowCount', 0))
+                logger.debug(f"Got row count from Jena: {table_name} = {row_count:,} rows")
+                return row_count
+        except Exception as e:
+            logger.warning(f"Failed to get row count for {table_name}: {e}")
+
+        return None
+
+    def get_table_row_counts(self, table_names: List[str]) -> Dict[str, int]:
+        """
+        Get row counts for multiple tables in a single query.
+
+        Args:
+            table_names: List of table names
+
+        Returns:
+            Dict mapping table name to row count
+        """
+        if not table_names:
+            return {}
+
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        # Build VALUES clause for table names
+        values_clause = " ".join([f'"{t}"' for t in table_names])
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+
+        SELECT ?tableName ?rowCount
+        WHERE {{
+            VALUES ?tableName {{ {values_clause} }}
+            ?table a fin:Table ;
+                   fin:tableName ?tableName ;
+                   schema:rowCount ?rowCount .
+            {filter_clause}
+        }}
+        """
+
+        row_counts = {}
+        try:
+            results = self.graph.query(sparql)
+            for row in results:
+                table_name = str(row.get('tableName'))
+                row_count = int(row.get('rowCount', 0))
+                row_counts[table_name] = row_count
+
+            logger.info(f"Got row counts from Jena for {len(row_counts)}/{len(table_names)} tables")
+        except Exception as e:
+            logger.warning(f"Failed to get row counts: {e}")
+
+        return row_counts
+
+    def get_column_selectivity(self, table_name: str, column_name: str) -> Optional[float]:
+        """
+        Get selectivity for a specific column.
+
+        Selectivity = cardinality / row_count (higher = more unique values)
+
+        Args:
+            table_name: Name of the table
+            column_name: Name of the column
+
+        Returns:
+            Selectivity value (0.0 - 1.0) if available, None otherwise
+        """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/statistics#>
+
+        SELECT ?selectivity
+        WHERE {{
+            ?table a fin:Table ;
+                   fin:tableName "{table_name}" .
+            ?column a fin:Column ;
+                    fin:columnName "{column_name}" ;
+                    fin:belongsTo ?table ;
+                    stats:selectivity ?selectivity .
+            {filter_clause}
+        }}
+        LIMIT 1
+        """
+
+        try:
+            results = self.graph.query(sparql)
+            if results:
+                selectivity = float(results[0].get('selectivity', 0.5))
+                logger.debug(f"Got selectivity from Jena: {table_name}.{column_name} = {selectivity:.4f}")
+                return selectivity
+        except Exception as e:
+            logger.warning(f"Failed to get selectivity for {table_name}.{column_name}: {e}")
+
+        return None
+
+    def get_high_selectivity_columns(self, table_name: str, min_selectivity: float = 0.5) -> List[Dict[str, Any]]:
+        """
+        Get columns with high selectivity (good for filtering).
+
+        Args:
+            table_name: Name of the table
+            min_selectivity: Minimum selectivity threshold (default 0.5 = 50% unique)
+
+        Returns:
+            List of column info dicts with name, selectivity, cardinality
+        """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/statistics#>
+
+        SELECT ?columnName ?selectivity ?cardinality ?hasIndex
+        WHERE {{
+            ?table a fin:Table ;
+                   fin:tableName "{table_name}" .
+            ?column a fin:Column ;
+                    fin:columnName ?columnName ;
+                    fin:belongsTo ?table ;
+                    stats:selectivity ?selectivity .
+            OPTIONAL {{ ?column stats:cardinality ?cardinality }}
+            OPTIONAL {{ ?column stats:hasIndex ?hasIndex }}
+            FILTER(?selectivity >= {min_selectivity})
+            {filter_clause}
+        }}
+        ORDER BY DESC(?selectivity)
+        """
+
+        columns = []
+        try:
+            results = self.graph.query(sparql)
+            for row in results:
+                columns.append({
+                    "column_name": str(row.get('columnName')),
+                    "selectivity": float(row.get('selectivity', 0)),
+                    "cardinality": int(row.get('cardinality', 0)) if row.get('cardinality') else None,
+                    "has_index": bool(row.get('hasIndex', False))
+                })
+
+            logger.debug(f"Found {len(columns)} high-selectivity columns for {table_name}")
+        except Exception as e:
+            logger.warning(f"Failed to get high selectivity columns for {table_name}: {e}")
+
+        return columns
+
+    def find_materialized_view(
+        self,
+        base_table: str,
+        aggregation_columns: Optional[List[str]] = None,
+        group_by_columns: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find a materialized view that can satisfy an aggregation query on the given base table.
+
+        Matches MV if:
+        1. MV aggregates the base table
+        2. MV includes the required aggregation columns (or all if not specified)
+        3. MV includes the required group by columns (or all if not specified)
+
+        Args:
+            base_table: Name of the base table being queried
+            aggregation_columns: Columns being aggregated (e.g., ['revenue', 'quantity'])
+            group_by_columns: Columns in GROUP BY (e.g., ['store_id'])
+
+        Returns:
+            Dict with mv_name, aggregation_columns, group_by_columns, row_count if found
+            None if no matching MV exists
+
+        Example:
+            # Find MV for "SELECT SUM(revenue) FROM sales GROUP BY store_id"
+            mv = resolver.find_materialized_view(
+                base_table="SALES",
+                aggregation_columns=["REVENUE"],
+                group_by_columns=["STORE_ID"]
+            )
+            # Returns: {"mv_name": "SALES_BY_STORE", "group_by_columns": ["STORE_ID"], ...}
+        """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?mv <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?mv <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        # First, get all MVs for this base table
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+
+        SELECT ?mvName ?rowCount ?refreshSchedule
+               (GROUP_CONCAT(DISTINCT ?aggCol; separator=",") AS ?aggregationColumns)
+               (GROUP_CONCAT(DISTINCT ?groupCol; separator=",") AS ?groupByColumns)
+        WHERE {{
+            ?mv a fin:MaterializedView ;
+                schema:tableName ?mvName ;
+                schema:isMaterializedViewOf ?baseTable .
+            ?baseTable schema:tableName ?baseTableName .
+            FILTER(UCASE(?baseTableName) = "{base_table.upper()}")
+
+            OPTIONAL {{ ?mv schema:aggregatesColumn ?aggCol }}
+            OPTIONAL {{ ?mv schema:groupByColumn ?groupCol }}
+            OPTIONAL {{ ?mv schema:rowCount ?rowCount }}
+            OPTIONAL {{ ?mv schema:refreshSchedule ?refreshSchedule }}
+            {filter_clause}
+        }}
+        GROUP BY ?mvName ?rowCount ?refreshSchedule
+        """
+
+        try:
+            results = self.graph.query(sparql)
+
+            best_match = None
+            best_score = 0
+
+            for row in results:
+                mv_agg_cols = set(
+                    c.strip().upper()
+                    for c in str(row.aggregationColumns or "").split(",")
+                    if c.strip()
+                )
+                mv_group_cols = set(
+                    c.strip().upper()
+                    for c in str(row.groupByColumns or "").split(",")
+                    if c.strip()
+                )
+
+                # Check if MV satisfies the query requirements
+                score = 0
+
+                # Check aggregation columns match
+                if aggregation_columns:
+                    required_agg = set(c.upper() for c in aggregation_columns)
+                    if required_agg.issubset(mv_agg_cols):
+                        score += len(required_agg)  # More matching columns = higher score
+                    else:
+                        continue  # Skip if missing required aggregation columns
+                else:
+                    score += len(mv_agg_cols)  # Bonus for having aggregation columns
+
+                # Check group by columns match
+                if group_by_columns:
+                    required_group = set(c.upper() for c in group_by_columns)
+                    if required_group.issubset(mv_group_cols):
+                        score += len(required_group) * 2  # Group by columns weighted more
+                    else:
+                        continue  # Skip if missing required group by columns
+                else:
+                    score += len(mv_group_cols)  # Bonus for having group by columns
+
+                # Track best match
+                if score > best_score:
+                    best_score = score
+                    best_match = {
+                        "mv_name": str(row.mvName),
+                        "aggregation_columns": list(mv_agg_cols),
+                        "group_by_columns": list(mv_group_cols),
+                        "row_count": int(row.rowCount) if row.rowCount else 0,
+                        "refresh_schedule": str(row.refreshSchedule) if row.refreshSchedule else "unknown",
+                        "match_score": score
+                    }
+
+            if best_match:
+                logger.info(
+                    f"Found materialized view for {base_table}: {best_match['mv_name']} "
+                    f"(score: {best_match['match_score']})"
+                )
+            else:
+                logger.debug(f"No matching materialized view found for {base_table}")
+
+            return best_match
+
+        except Exception as e:
+            logger.warning(f"Failed to find materialized view for {base_table}: {e}")
+            return None
+
+    def get_join_selectivity(self, left_col: str, right_col: str) -> Optional[float]:
+        """
+        Get estimated join selectivity between two columns.
+
+        Returns a factor 0-1 where lower = more selective (fewer rows after join).
+
+        Args:
+            left_col: Left side join column name
+            right_col: Right side join column name
+
+        Returns:
+            Selectivity factor if known, None otherwise
+        """
+        # Build filter for organization and database
+        filters = []
+        if self.organization_id:
+            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+        if self.database_type:
+            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+
+        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+
+        # Look for FK relationship that indicates join pattern
+        sparql = f"""
+        PREFIX fin: <http://example.com/finance#>
+        PREFIX schema: <http://example.com/schema#>
+        PREFIX stats: <http://example.com/stats#>
+
+        SELECT ?selectivity
+        WHERE {{
+            ?rel a fin:JoinRelationship ;
+                 schema:sourceColumn ?srcCol ;
+                 schema:targetColumn ?tgtCol .
+            ?srcCol schema:columnName ?srcColName .
+            ?tgtCol schema:columnName ?tgtColName .
+            FILTER(
+                (UCASE(?srcColName) = "{left_col.upper()}" && UCASE(?tgtColName) = "{right_col.upper()}")
+                || (UCASE(?srcColName) = "{right_col.upper()}" && UCASE(?tgtColName) = "{left_col.upper()}")
+            )
+            OPTIONAL {{ ?rel stats:joinSelectivity ?selectivity }}
+            {filter_clause}
+        }}
+        LIMIT 1
+        """
+
+        try:
+            results = self.graph.query(sparql)
+            if results:
+                selectivity = float(results[0].get('selectivity', 0.8))
+                logger.debug(f"Got join selectivity for {left_col}-{right_col}: {selectivity:.4f}")
+                return selectivity
+        except Exception as e:
+            logger.debug(f"No join selectivity found for {left_col}-{right_col}: {e}")
+
+        return None
+
     def close(self):
         """Close the graph connection."""
         self.graph.close()

@@ -449,6 +449,50 @@ class WeaviateClient:
             logger.error(f"Failed to count schemas for connector {connector_id}: {e}")
             return 0
 
+    def get_table_by_name(
+        self,
+        table_name: str,
+        organization_id: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Look up a table by exact name and return its metadata including row_count.
+
+        Args:
+            table_name: The table name to look up (case-insensitive)
+            organization_id: Optional organization ID filter
+
+        Returns:
+            Dict with table metadata including row_count, or None if not found
+        """
+        try:
+            collection = self.client.collections.get(self.collection_name)
+
+            # Build filter
+            filters = wvc.query.Filter.by_property("table_name").equal(table_name.upper())
+            if organization_id:
+                filters = filters & wvc.query.Filter.by_property("organization_id").equal(organization_id)
+
+            # Query by exact name match
+            response = collection.query.fetch_objects(
+                filters=filters,
+                limit=1,
+                return_properties=["table_name", "row_count", "dataset", "project", "database_type"]
+            )
+
+            if response.objects:
+                item = response.objects[0]
+                return {
+                    "table_name": item.properties.get("table_name", ""),
+                    "row_count": item.properties.get("row_count", 0),
+                    "dataset": item.properties.get("dataset", ""),
+                    "project": item.properties.get("project", ""),
+                    "database_type": item.properties.get("database_type", "")
+                }
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to get table {table_name}: {e}")
+            return None
+
     def record_query_performance(
         self,
         sql_text: str,

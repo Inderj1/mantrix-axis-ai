@@ -499,13 +499,28 @@ class BigQueryConnector(BaseDatabaseConnector):
             table_ref = f"{self.project_id}.{dataset}.{table_name}"
             table = self.client.get_table(table_ref)
 
+            # Get row count - use num_bytes as fallback for external/federated tables
+            # where num_rows may be NULL
+            row_count = table.num_rows
+            bytes_size = table.num_bytes
+
+            if not row_count and bytes_size:
+                # Estimate row count from bytes (assume ~100 bytes per row average)
+                # This is conservative - better to overestimate for query planning
+                row_count = bytes_size // 100
+                logger.info(
+                    f"Estimated row_count for {table_name}: {row_count:,} "
+                    f"(from {bytes_size:,} bytes, num_rows was NULL)"
+                )
+
             schema_info = {
                 "table_name": table_name,
                 "schema": dataset,  # BigQuery uses "dataset" instead of "schema"
                 "dataset": dataset,
                 "project": self.project_id,
                 "description": table.description,
-                "row_count": table.num_rows,
+                "row_count": row_count,
+                "size_bytes": bytes_size,
                 "created": table.created.isoformat() if table.created else None,
                 "modified": table.modified.isoformat() if table.modified else None,
                 "columns": []

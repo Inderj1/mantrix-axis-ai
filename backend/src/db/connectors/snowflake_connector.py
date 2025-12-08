@@ -14,6 +14,7 @@ Supports multiple authentication methods:
 from typing import List, Dict, Any, Optional
 from contextlib import contextmanager
 import threading
+import re
 from queue import Queue, Empty
 import structlog
 
@@ -55,6 +56,36 @@ VALID_AUTH_METHODS = [AUTH_METHOD_PASSWORD, AUTH_METHOD_KEYPAIR, AUTH_METHOD_PAT
 DEFAULT_MIN_CONNECTIONS = 2
 DEFAULT_MAX_CONNECTIONS = 10
 CONNECTION_ACQUIRE_TIMEOUT = 30  # seconds
+
+# TPC-DS base row counts at scale factor 1 (SF1 = 1GB)
+# Used to estimate row counts for SNOWFLAKE_SAMPLE_DATA shared databases
+# where INFORMATION_SCHEMA.TABLES.ROW_COUNT returns NULL
+TPCDS_BASE_ROWS = {
+    'STORE_SALES': 2_880_000,           # ~2.88M rows per SF
+    'STORE_RETURNS': 288_000,           # ~288K rows per SF
+    'CATALOG_SALES': 1_440_000,         # ~1.44M rows per SF
+    'CATALOG_RETURNS': 144_000,         # ~144K rows per SF
+    'WEB_SALES': 720_000,               # ~720K rows per SF
+    'WEB_RETURNS': 72_000,              # ~72K rows per SF
+    'INVENTORY': 11_745_000,            # ~11.7M rows per SF
+    'CUSTOMER': 100_000,                # ~100K rows per SF
+    'CUSTOMER_ADDRESS': 50_000,         # ~50K rows per SF
+    'CUSTOMER_DEMOGRAPHICS': 1_920_800, # Fixed per spec
+    'ITEM': 18_000,                     # ~18K rows per SF
+    'DATE_DIM': 73_049,                 # Fixed dimension
+    'TIME_DIM': 86_400,                 # Fixed dimension
+    'STORE': 12,                        # Small dimension per SF
+    'CALL_CENTER': 6,                   # Small dimension per SF
+    'CATALOG_PAGE': 11_718,             # ~12K per SF
+    'WEB_PAGE': 60,                     # Small dimension per SF
+    'WEB_SITE': 30,                     # Small dimension per SF
+    'WAREHOUSE': 5,                     # Small dimension per SF
+    'HOUSEHOLD_DEMOGRAPHICS': 7_200,    # Fixed per spec
+    'INCOME_BAND': 20,                  # Fixed dimension
+    'PROMOTION': 300,                   # Small dimension per SF
+    'REASON': 35,                       # Fixed dimension
+    'SHIP_MODE': 20,                    # Fixed dimension
+}
 
 
 class SnowflakeConnector(BaseDatabaseConnector):
@@ -288,6 +319,55 @@ class SnowflakeConnector(BaseDatabaseConnector):
             'token': self.programmatic_access_token,
             'authenticator': 'programmatic_access_token',
         }
+
+    def _estimate_tpcds_row_count(self, database: str, schema: str, table_name: str) -> Optional[int]:
+        """
+        Estimate row count for TPC-DS tables based on scale factor.
+
+        Snowflake's INFORMATION_SCHEMA.TABLES returns NULL for ROW_COUNT on shared
+        databases like SNOWFLAKE_SAMPLE_DATA. This method estimates row counts
+        based on the TPC-DS specification and scale factor encoded in the schema name.
+
+        Schema naming convention: TPCDS_SF{scale}TCL
+        - SF10TCL = Scale Factor 10 * 1000 (TCL multiplier) = 10,000x base rows
+        - This represents a 10TB dataset
+
+        Args:
+            database: Database name (e.g., 'SNOWFLAKE_SAMPLE_DATA')
+            schema: Schema name (e.g., 'TPCDS_SF10TCL')
+            table_name: Table name (e.g., 'STORE_SALES')
+
+        Returns:
+            Estimated row count or None if not a recognized TPC-DS table
+        """
+        if not database or database.upper() != 'SNOWFLAKE_SAMPLE_DATA':
+            return None
+
+        if not schema:
+            return None
+
+        # Parse scale factor from schema name (e.g., TPCDS_SF10TCL -> 10 * 1000 = 10000)
+        match = re.match(r'TPCDS_SF(\d+)TCL', schema.upper())
+        if not match:
+            # Also support non-TCL variants (e.g., TPCDS_SF1)
+            match = re.match(r'TPCDS_SF(\d+)$', schema.upper())
+            if not match:
+                return None
+            scale_factor = int(match.group(1))
+        else:
+            # TCL = 1000x multiplier (Tera-scale)
+            scale_factor = int(match.group(1)) * 1000
+
+        base_rows = TPCDS_BASE_ROWS.get(table_name.upper())
+        if base_rows is None:
+            return None
+
+        estimated = base_rows * scale_factor
+        logger.info(
+            f"Estimated TPC-DS row count for {database}.{schema}.{table_name}: "
+            f"{estimated:,} rows (base={base_rows:,}, scale_factor={scale_factor:,})"
+        )
+        return estimated
 
     def connect(self) -> None:
         """
@@ -602,13 +682,33 @@ class SnowflakeConnector(BaseDatabaseConnector):
                 finally:
                     cursor.close()
 
+            # Get row count and bytes - use BYTES as fallback for shared databases
+            # where ROW_COUNT is often NULL (e.g., SNOWFLAKE_SAMPLE_DATA)
+            row_count = table_info.get('ROW_COUNT') if table_info else None
+            bytes_size = table_info.get('BYTES') if table_info else None
+
+            if not row_count and bytes_size:
+                # Estimate row count from bytes (assume ~100 bytes per row average)
+                # This is conservative - better to overestimate for query planning
+                row_count = bytes_size // 100
+                logger.info(
+                    f"Estimated row_count for {table_name}: {row_count:,} "
+                    f"(from {bytes_size:,} bytes, ROW_COUNT was NULL)"
+                )
+
+            # If still no row count, try TPC-DS scale-based estimation
+            # This handles SNOWFLAKE_SAMPLE_DATA shared databases where both
+            # ROW_COUNT and BYTES are NULL
+            if not row_count:
+                row_count = self._estimate_tpcds_row_count(self.database, target_schema, table_name)
+
             schema_info = {
                 "table_name": table_name,
                 "schema": target_schema,
                 "database": self.database,
                 "description": table_info.get('COMMENT') if table_info else None,
-                "row_count": table_info.get('ROW_COUNT') if table_info else None,
-                "bytes": table_info.get('BYTES') if table_info else None,
+                "row_count": row_count,
+                "bytes": bytes_size,
                 "created": str(table_info.get('CREATED')) if table_info and table_info.get('CREATED') else None,
                 "modified": str(table_info.get('LAST_ALTERED')) if table_info and table_info.get('LAST_ALTERED') else None,
                 "columns": []

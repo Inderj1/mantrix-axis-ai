@@ -609,64 +609,181 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
     }
   };
 
+  // Helper to check if a value is numeric (number or numeric string)
+  const isNumericValue = (value) => {
+    if (typeof value === 'number') return true;
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/[$,]/g, '').trim();
+      return !isNaN(parseFloat(cleaned)) && isFinite(cleaned);
+    }
+    return false;
+  };
+
+  // Helper to detect ID/key columns that should be treated as categorical even if numeric
+  // These are surrogate keys, foreign keys, etc. - NOT metric values to aggregate
+  const isIdColumn = (columnName) => {
+    const idPatterns = [
+      /_sk$/i,           // Surrogate key (data warehouse pattern)
+      /_id$/i,           // ID suffix
+      /_key$/i,          // Key suffix
+      /^id$/i,           // Just "id"
+      /_pk$/i,           // Primary key
+      /_fk$/i,           // Foreign key
+      /_code$/i,         // Code columns (often categorical)
+      /customer_?id/i,   // Common patterns
+      /product_?id/i,
+      /store_?id/i,
+      /item_?id/i,
+      /order_?id/i,
+      /ticket_?number/i,
+      /hdemo_?sk/i,      // Household demo surrogate key
+      /cdemo_?sk/i,      // Customer demo surrogate key
+      /addr_?sk/i,       // Address surrogate key
+      /promo_?sk/i,      // Promotion surrogate key
+    ];
+    return idPatterns.some(pattern => pattern.test(columnName));
+  };
+
+  // Helper to detect metric/value columns (actual numbers to aggregate/visualize)
+  const isMetricColumn = (columnName, value) => {
+    if (!isNumericValue(value)) return false;
+    if (isIdColumn(columnName)) return false;
+
+    // Common metric patterns
+    const metricPatterns = [
+      /price/i, /cost/i, /amount/i, /total/i, /sum/i,
+      /revenue/i, /sales/i, /profit/i, /margin/i,
+      /quantity/i, /qty/i, /count/i, /num/i,
+      /rate/i, /percent/i, /ratio/i, /avg/i,
+      /weight/i, /size/i, /length/i, /width/i, /height/i
+    ];
+    return metricPatterns.some(pattern => pattern.test(columnName));
+  };
+
   // Smart chart type override - analyzes data and suggests better chart when LLM chooses poorly
   const getSmartChartType = (llmType, chartData, xAxis, yAxis) => {
     if (!Array.isArray(chartData) || chartData.length === 0) return llmType;
 
-    const keys = Object.keys(chartData[0] || {});
-    const numericKeys = keys.filter(k => typeof chartData[0][k] === 'number');
-    const stringKeys = keys.filter(k => typeof chartData[0][k] === 'string');
+    const firstRow = chartData[0] || {};
+    const keys = Object.keys(firstRow);
+
+    // Enhanced type detection - separates IDs from actual metrics
+    const idKeys = keys.filter(k => isIdColumn(k) && isNumericValue(firstRow[k]));
+    const metricKeys = keys.filter(k => isMetricColumn(k, firstRow[k]));
+    const stringKeys = keys.filter(k => typeof firstRow[k] === 'string' && !isNumericValue(firstRow[k]));
+    const numericKeys = keys.filter(k => isNumericValue(firstRow[k]) && !isIdColumn(k));
+
+    // Treat ID columns as categorical for chart selection purposes
+    const categoricalKeys = [...stringKeys, ...idKeys];
+    const rowCount = chartData.length;
+
+    // Determine what can be used as values for visualization
+    // Priority: metricKeys > numericKeys > idKeys (last resort - use ID as count/value)
+    const hasValueColumn = metricKeys.length >= 1 || numericKeys.length >= 1 || idKeys.length >= 1;
+
+    // DEBUG: Log what data the smart override sees
+    console.log('[SmartOverride] Analyzing:', {
+      llmType,
+      rowCount,
+      keys,
+      idKeys,
+      metricKeys,
+      numericKeys,
+      stringKeys,
+      categoricalKeys,
+      hasValueColumn,
+      xAxis: xAxis?.key,
+      yAxis: yAxis?.key,
+      sample: firstRow
+    });
 
     // Override rules when LLM chose 'bar' but data suggests otherwise
     if (llmType === 'bar') {
-      // Single row → metric (NEVER bar for single values)
-      if (chartData.length === 1) {
-        if (numericKeys.length === 1) return 'metric';
+      // Rule 1: Single row → metric (NEVER bar for single values)
+      if (rowCount === 1) {
+        console.log('[SmartOverride] Override: bar → metric (single row)');
+        if (metricKeys.length === 1 || numericKeys.length === 1) return 'metric';
         return 'gauge';
       }
 
-      // Time series → line
-      const timePatterns = ['date', 'time', 'month', 'year', 'quarter', 'week', 'period'];
+      // Rule 2: Time series → line
+      const timePatterns = ['date', 'time', 'month', 'year', 'quarter', 'week', 'period', 'day'];
       const hasTimeKey = keys.some(k => timePatterns.some(p => k.toLowerCase().includes(p)));
-      if (hasTimeKey) return 'line';
+      if (hasTimeKey && rowCount > 2) {
+        console.log('[SmartOverride] Override: bar → line (time series detected)');
+        return 'line';
+      }
 
-      // Matrix/cross-tab detection (2 categorical + 1 numeric) → heatmap
-      if (stringKeys.length >= 2 && numericKeys.length >= 1 && chartData.length >= 4) {
-        const col1Values = new Set(chartData.map(row => row[stringKeys[0]]));
-        const col2Values = new Set(chartData.map(row => row[stringKeys[1]]));
+      // Rule 3: Small categorical dataset (2-6 rows) → pie
+      // Use categoricalKeys (strings + ID columns) for detection
+      // hasValueColumn includes idKeys as fallback when no metrics exist
+      if (rowCount >= 2 && rowCount <= 6 && categoricalKeys.length >= 1 && hasValueColumn) {
+        console.log('[SmartOverride] Override: bar → pie (small categorical, ' + rowCount + ' rows, categorical keys: ' + categoricalKeys.join(', ') + ')');
+        return 'pie';
+      }
+
+      // Rule 4: Medium categorical (7-12 rows) → donut (more modern look)
+      if (rowCount >= 7 && rowCount <= 12 && categoricalKeys.length >= 1 && hasValueColumn) {
+        console.log('[SmartOverride] Override: bar → donut (medium categorical, ' + rowCount + ' rows)');
+        return 'donut';
+      }
+
+      // Rule 5: Matrix/cross-tab detection (2 categorical + 1 numeric) → heatmap
+      if (categoricalKeys.length >= 2 && hasValueColumn && rowCount >= 4) {
+        const col1Values = new Set(chartData.map(row => row[categoricalKeys[0]]));
+        const col2Values = new Set(chartData.map(row => row[categoricalKeys[1]]));
         // If it looks like a cross-tab (unique combinations)
-        if (col1Values.size >= 2 && col2Values.size >= 2 && col1Values.size * col2Values.size >= chartData.length * 0.5) {
-          console.log('[MantraxResultsView] Smart override: bar → heatmap (detected matrix data)');
+        if (col1Values.size >= 2 && col2Values.size >= 2 && col1Values.size * col2Values.size >= rowCount * 0.5) {
+          console.log('[SmartOverride] Override: bar → heatmap (detected matrix data)');
           return 'heatmap';
         }
       }
 
-      // Small dataset (≤6 rows) → pie
-      if (chartData.length <= 6 && stringKeys.length >= 1 && numericKeys.length >= 1) {
-        console.log('[MantraxResultsView] Smart override: bar → pie (small categorical)');
-        return 'pie';
-      }
-
-      // Long labels → horizontalBar
-      if (stringKeys.length > 0) {
-        const labelKey = stringKeys[0];
-        const avgLen = chartData.reduce((sum, row) => sum + String(row[labelKey] || '').length, 0) / chartData.length;
+      // Rule 6: Long labels → horizontalBar
+      if (categoricalKeys.length > 0 && hasValueColumn) {
+        const labelKey = xAxis?.key || categoricalKeys[0];
+        const avgLen = chartData.reduce((sum, row) => sum + String(row[labelKey] || '').length, 0) / rowCount;
         if (avgLen > 20) {
-          console.log('[MantraxResultsView] Smart override: bar → horizontalBar (long labels)');
+          console.log('[SmartOverride] Override: bar → horizontalBar (long labels, avg ' + avgLen.toFixed(1) + ' chars)');
           return 'horizontalBar';
         }
       }
+
+      // Rule 7: Many rows with ID columns → treemap for hierarchical view
+      if (rowCount > 12 && idKeys.length > 0 && hasValueColumn) {
+        console.log('[SmartOverride] Override: bar → treemap (many rows with IDs, ' + rowCount + ' rows)');
+        return 'treemap';
+      }
+
+      // Rule 8: All numeric but mostly IDs → horizontal bar for better readability
+      if (idKeys.length >= keys.length / 2 && hasValueColumn) {
+        console.log('[SmartOverride] Override: bar → horizontalBar (mostly ID columns)');
+        return 'horizontalBar';
+      }
+
+      // Rule 9: String category with ID values (no metrics) - common for dimension tables
+      // With 10 rows and a string category, donut is better than bar
+      if (rowCount >= 7 && rowCount <= 15 && stringKeys.length >= 1 && idKeys.length >= 1 && metricKeys.length === 0 && numericKeys.length === 0) {
+        console.log('[SmartOverride] Override: bar → donut (categorical with ID values, no metrics)');
+        return 'donut';
+      }
     }
 
+    // Keep bar if none of the override rules matched
+    console.log('[SmartOverride] Keeping original type:', llmType);
     return llmType;
   };
 
+  // Valid chart types that ECharts supports
+  const validChartTypes = new Set([
+    'bar', 'horizontalBar', 'pictorialBar', 'line', 'area', 'themeRiver', 'calendar',
+    'pie', 'donut', 'treemap', 'sunburst', 'scatter', 'heatmap', 'boxplot',
+    'funnel', 'sankey', 'graph', 'gauge', 'metric', 'radar', 'parallel', 'candlestick'
+  ]);
+
   // Render chart based on type using ECharts
   const renderChart = (component) => {
-    const { type, title, data, xAxis, yAxis } = component.data || {};
-
-    // DEBUG: Log what chart type the LLM chose
-    console.log('[MantraxResultsView] LLM chart type:', type, '| title:', title);
+    const { type: llmType, title, data, xAxis, yAxis, backend_recommended_type } = component.data || {};
 
     // Parse data if it's a string
     let chartData = typeof data === 'string' ? JSON.parse(data) : data;
@@ -681,10 +798,24 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
       chartData = sanitizeChartData(chartData, yAxis?.key);
     }
 
-    // Apply smart override if LLM chose suboptimally
-    const smartType = getSmartChartType(type, chartData, xAxis, yAxis);
-    if (smartType !== type) {
-      console.log('[MantraxResultsView] Chart type overridden:', type, '→', smartType);
+    // CHART TYPE PRIORITY:
+    // 1. Backend recommendation (from ColumnMetadataService - most reliable)
+    // 2. Smart override (frontend data analysis)
+    // 3. LLM choice (fallback)
+    let finalType;
+
+    if (backend_recommended_type && validChartTypes.has(backend_recommended_type)) {
+      // Use backend recommendation - it's based on deterministic data analysis
+      finalType = backend_recommended_type;
+      console.log('[Chart] Using BACKEND recommendation:', finalType, '| LLM wanted:', llmType);
+    } else {
+      // Fall back to smart override logic
+      finalType = getSmartChartType(llmType, chartData, xAxis, yAxis);
+      if (finalType !== llmType) {
+        console.log('[Chart] Smart override:', llmType, '→', finalType);
+      } else {
+        console.log('[Chart] Using LLM choice:', llmType);
+      }
     }
 
     // Map chart types (some APIs use different names)
@@ -727,7 +858,7 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
       'candle_stick': 'candlestick',
     };
 
-    const echartsType = chartTypeMap[smartType] || 'auto';
+    const echartsType = chartTypeMap[finalType] || 'auto';
 
     return (
       <ChartCard title={title} theme={theme}>

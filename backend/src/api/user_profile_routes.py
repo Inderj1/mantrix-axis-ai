@@ -28,7 +28,7 @@ async def get_current_user_persona(current_user: dict = Depends(get_current_user
     Returns the user's role template and personalization context.
     If no profile exists, returns default Finance Analyst persona.
     """
-    user_id = current_user.get("sub") or current_user.get("cognito:username")
+    user_id = current_user.get("id") or current_user.get("sub") or current_user.get("cognito:username")
 
     if not user_id:
         raise HTTPException(

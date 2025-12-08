@@ -22,6 +22,12 @@ class ResultsFormatterAgent(MantraxAgent):
         )
         # Store the current system prompt (can be updated with persona context)
         self._current_system_prompt = None
+        # Backend chart intelligence (set by format_results)
+        self._current_backend_chart_recommendation = None
+        self._chart_recommendations = []
+        self._dimensions = []
+        self._measures = []
+        self._time_columns = []
     
     def get_system_prompt(self, user_context: str = "") -> str:
         # If a current prompt was set (with persona context), return that
@@ -244,7 +250,13 @@ CHART PRIORITY (check in this order):
                       sql: str,
                       results: List[Dict[str, Any]],
                       metadata: Optional[Dict[str, Any]] = None,
-                      user_id: Optional[str] = None) -> Dict[str, Any]:
+                      user_id: Optional[str] = None,
+                      recommended_chart_type: Optional[str] = None,
+                      chart_config: Optional[Dict[str, Any]] = None,
+                      chart_recommendations: Optional[List[str]] = None,
+                      dimensions: Optional[List[str]] = None,
+                      measures: Optional[List[str]] = None,
+                      time_columns: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Format query results into a structured presentation.
 
@@ -254,10 +266,30 @@ CHART PRIORITY (check in this order):
             results: Raw query results
             metadata: Optional metadata about the query
             user_id: Optional user ID for personalized insights
+            recommended_chart_type: LLM's primary chart type recommendation (highest priority)
+            chart_config: LLM's chart axis configuration hints
+            chart_recommendations: Backend's deterministic chart type recommendations (fallback)
+            dimensions: Identified dimension columns (categorical)
+            measures: Identified measure columns (numeric)
+            time_columns: Identified time/date columns
 
         Returns:
             Formatted presentation structure
         """
+        # LLM recommendation takes priority over column-based analysis
+        # Priority: recommended_chart_type (LLM) > chart_recommendations[0] (column analysis)
+        if recommended_chart_type:
+            self._current_backend_chart_recommendation = recommended_chart_type
+            logger.info(f"Using LLM recommended chart type: {recommended_chart_type}")
+        else:
+            self._current_backend_chart_recommendation = chart_recommendations[0] if chart_recommendations else None
+
+        # Store chart config for axis hints
+        self._chart_config = chart_config or {}
+        self._chart_recommendations = chart_recommendations or []
+        self._dimensions = dimensions or []
+        self._measures = measures or []
+        self._time_columns = time_columns or []
         # Get user personalization context if user_id provided
         user_context = ""
         user_role_name = ""
@@ -342,25 +374,39 @@ CHART PRIORITY (check in this order):
         """Process the agent response into a standardized format."""
         content = response.get("content", "") or "Results formatted successfully."
         tool_calls = response.get("tool_calls", [])
-        
+
         # Build the formatted result
         formatted = {
             "summary": content,
             "components": []
         }
-        
+
         # Process tool calls
         for tool_call in tool_calls:
             tool_name = tool_call.get("tool")
             arguments = tool_call.get("arguments", {})
-            
+
             component = {
                 "type": tool_name.replace("create_", "").replace("_", "-"),
                 "data": arguments
             }
-            
+
+            # For chart-config components, add backend recommendation for frontend to use
+            if component["type"] == "chart-config":
+                if self._current_backend_chart_recommendation:
+                    component["data"]["backend_recommended_type"] = self._current_backend_chart_recommendation
+                component["data"]["all_recommendations"] = self._chart_recommendations
+                # Add LLM axis hints if available
+                if hasattr(self, '_chart_config') and self._chart_config:
+                    if self._chart_config.get("x_axis_column"):
+                        component["data"]["llm_x_axis"] = self._chart_config["x_axis_column"]
+                    if self._chart_config.get("y_axis_column"):
+                        component["data"]["llm_y_axis"] = self._chart_config["y_axis_column"]
+                    if self._chart_config.get("group_by_column"):
+                        component["data"]["llm_group_by"] = self._chart_config["group_by_column"]
+
             formatted["components"].append(component)
-        
+
         return formatted
     
     def _format_input(self, input_data: Dict[str, Any]) -> str:
@@ -415,7 +461,8 @@ NOW CREATE YOUR PRESENTATION:
    - Highlight top 3 and bottom 3 performers
 
 3. CHART:
-   - Choose the best chart type for this data
+   - Backend analysis recommends: {self._current_backend_chart_recommendation or 'auto (analyze data to determine)'}
+   - Use the backend recommendation unless it cannot render this data shape
    - Show distribution or comparison of key metric
 
 4. INSIGHTS (3-7 insights):

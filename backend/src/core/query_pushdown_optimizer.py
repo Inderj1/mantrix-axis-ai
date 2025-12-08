@@ -7,6 +7,9 @@ to source databases before data transfer. This significantly reduces:
 - Memory usage
 - Query execution time
 
+Now integrates with Jena RDF knowledge graph to use actual column selectivity
+data instead of hardcoded 50% estimates.
+
 Example:
     Instead of:
         1. Fetch 1M rows from PostgreSQL
@@ -20,9 +23,12 @@ Example:
 """
 import sqlglot
 from sqlglot import exp, parse_one
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Dict, List, Optional, Set, Tuple, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 import structlog
+
+if TYPE_CHECKING:
+    from src.core.knowledge_graph.jena_query_resolver import JenaQueryResolver
 
 logger = structlog.get_logger()
 
@@ -72,11 +78,23 @@ class QueryPushdownOptimizer:
     2. Projection Pushdown: SELECT only needed columns
     3. Limit Pushdown: Apply LIMIT at source
     4. Aggregation Pushdown: Push GROUP BY/aggregations when possible
+
+    When a JenaQueryResolver is provided, uses actual column selectivity from
+    RDF metadata instead of hardcoded 50% estimates.
     """
 
-    def __init__(self):
-        """Initialize the query pushdown optimizer."""
-        logger.info("QueryPushdownOptimizer initialized")
+    def __init__(self, jena_resolver: Optional["JenaQueryResolver"] = None):
+        """
+        Initialize the query pushdown optimizer.
+
+        Args:
+            jena_resolver: Optional JenaQueryResolver for column selectivity lookups
+        """
+        self.jena_resolver = jena_resolver
+        logger.info(
+            "QueryPushdownOptimizer initialized",
+            has_jena=jena_resolver is not None
+        )
 
     def analyze_pushdown_opportunities(
         self,
@@ -131,8 +149,13 @@ class QueryPushdownOptimizer:
             # 4. Extract full table reference (with schema if present)
             table_ref = self._extract_table_reference(parsed, table_name, table_alias)
 
-            # 5. Estimate reduction
-            analysis.estimated_reduction_percent = self._estimate_reduction(analysis)
+            # 5. Estimate reduction (use Jena selectivity if available)
+            filter_columns = [f.column for f in filters] if filters else None
+            analysis.estimated_reduction_percent = self._estimate_reduction(
+                analysis,
+                table_name=table_name,
+                filter_columns=filter_columns
+            )
 
             # 6. Generate optimized SQL
             analysis.optimized_sql = self._generate_optimized_query(
@@ -307,24 +330,54 @@ class QueryPushdownOptimizer:
 
         return None
 
-    def _estimate_reduction(self, analysis: PushdownAnalysis) -> float:
+    def _estimate_reduction(
+        self,
+        analysis: PushdownAnalysis,
+        table_name: Optional[str] = None,
+        filter_columns: Optional[List[str]] = None
+    ) -> float:
         """
         Estimate percentage reduction in data transfer.
 
-        Heuristics:
+        When Jena resolver is available, uses actual column selectivity.
+        Otherwise falls back to heuristics:
         - Each filter: ~50% reduction (assumes good selectivity)
         - Projection pushdown: ~30% reduction (assumes half columns needed)
         - LIMIT: Variable based on limit value
+
+        Args:
+            analysis: PushdownAnalysis results
+            table_name: Table name for selectivity lookup
+            filter_columns: List of columns being filtered (for selectivity lookup)
         """
         reduction = 0.0
 
         # Filter pushdown
         if analysis.can_pushdown_filters:
-            # Each filter provides ~50% reduction (assumes good selectivity)
-            # Multiple filters compound
             num_filters = len(analysis.pushdown_filters)
-            filter_reduction = 1.0 - (0.5 ** num_filters)
-            reduction += filter_reduction * 100
+
+            # Try to get actual selectivity from Jena
+            if self.jena_resolver and table_name and filter_columns:
+                for col_name in filter_columns:
+                    selectivity = self.jena_resolver.get_column_selectivity(table_name, col_name)
+                    if selectivity is not None:
+                        # Selectivity = unique values / total rows
+                        # High selectivity (0.9) = lots of unique values = good filter
+                        # Low selectivity (0.1) = few unique values = less effective filter
+                        # Reduction = 1 - selectivity (inverted: low selectivity = more rows match)
+                        col_reduction = (1 - selectivity) * 100
+                        reduction += col_reduction * (1 - reduction/100)
+                        logger.debug(
+                            f"Using Jena selectivity for {table_name}.{col_name}: "
+                            f"{selectivity:.3f} -> {col_reduction:.1f}% reduction"
+                        )
+                    else:
+                        # Fall back to 50% heuristic for this column
+                        reduction += 50 * (1 - reduction/100)
+            else:
+                # No Jena - use heuristic: each filter provides ~50% reduction
+                filter_reduction = 1.0 - (0.5 ** num_filters)
+                reduction += filter_reduction * 100
 
         # Projection pushdown (conservative estimate)
         if analysis.can_pushdown_projections and len(analysis.required_columns) > 0:

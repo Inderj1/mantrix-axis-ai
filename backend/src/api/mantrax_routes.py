@@ -25,6 +25,14 @@ class FormatResultsRequest(BaseModel):
     results: List[Dict[str, Any]]
     metadata: Optional[Dict[str, Any]] = None
     user_id: Optional[str] = None  # For personalized insights
+    # LLM chart recommendation (highest priority - from SQL generation)
+    recommended_chart_type: Optional[str] = None
+    chart_config: Optional[Dict[str, Any]] = None  # {"x_axis_column": "date", "y_axis_column": "revenue"}
+    # Chart intelligence from backend's ColumnMetadataService (fallback)
+    chart_recommendations: Optional[List[str]] = None
+    dimensions: Optional[List[str]] = None
+    measures: Optional[List[str]] = None
+    time_columns: Optional[List[str]] = None
 
 
 class FormatResultsResponse(BaseModel):
@@ -50,7 +58,13 @@ async def format_results(request: FormatResultsRequest) -> FormatResultsResponse
             sql=request.sql,
             results=request.results,
             metadata=request.metadata,
-            user_id=request.user_id
+            user_id=request.user_id,
+            recommended_chart_type=request.recommended_chart_type,  # LLM's primary choice
+            chart_config=request.chart_config,  # LLM's axis hints
+            chart_recommendations=request.chart_recommendations,  # Column-based fallback
+            dimensions=request.dimensions,
+            measures=request.measures,
+            time_columns=request.time_columns
         )
         
         # Check for errors

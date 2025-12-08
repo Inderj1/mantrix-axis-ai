@@ -164,9 +164,22 @@ export const apiService = {
     api.post('/api/v1/explain', { question, sql }),
   
   // Error correction
-  correctError: (question, sql, error) => 
+  correctError: (question, sql, error) =>
     api.post('/api/v1/correct-error', { question, sql, error }),
-  
+
+  // Load more results (pagination) - uses backend /api/v1/query/paginate endpoint
+  loadMoreResults: ({ sql, databaseType, connectorId, page = 2, pageSize = 100, totalCount }) => {
+    console.log('[API] Loading more results', { sql: sql?.substring(0, 50), databaseType, page, pageSize, totalCount });
+    return api.post('/api/v1/query/paginate', {
+      sql,
+      database_type: databaseType,
+      connector_id: connectorId,
+      page,
+      page_size: pageSize,
+      total_count: totalCount,
+    });
+  },
+
   // Result analysis
   analyzeResults: (question, sql, results, metadata = null) =>
     api.post('/api/v1/analyze-results', { 
@@ -402,12 +415,21 @@ export const apiService = {
     api.delete('/api/v1/query-logs'),
   
   // Mantrax Agent endpoints
-  formatResultsWithMantrax: (query, sql, results, metadata = null) =>
+  formatResultsWithMantrax: (query, sql, results, metadata = null, userId = null) =>
     api.post('/api/v1/mantrax/format-results', {
       query,
       sql,
       results,
-      metadata
+      metadata,
+      user_id: userId,
+      // Pass backend's chart intelligence for more reliable chart selection
+      // recommended_chart_type is from LLM (highest priority)
+      recommended_chart_type: metadata?.recommended_chart_type,
+      chart_config: metadata?.chart_config,
+      chart_recommendations: metadata?.chart_recommendations,
+      dimensions: metadata?.dimensions,
+      measures: metadata?.measures,
+      time_columns: metadata?.time_columns
     }),
   
   listMantraxAgents: () =>
@@ -737,6 +759,59 @@ export const apiService = {
       edited_connector_id,
       edited_sql,
       join_specification
+    }),
+
+  // Query History endpoints (Background Query Notifications)
+  /**
+   * Get query history for current user
+   * @param {Object} options - Query options
+   * @param {string} [options.status] - Filter by status: running, complete, error
+   * @param {number} [options.limit=20] - Maximum queries to return
+   * @param {number} [options.offset=0] - Pagination offset
+   */
+  getQueryHistory: (options = {}) =>
+    api.get('/api/v1/query-history', { params: options }),
+
+  /**
+   * Get pending (running) queries for current user
+   */
+  getPendingQueries: () =>
+    api.get('/api/v1/query-history/pending'),
+
+  /**
+   * Get count of pending queries (for badge display)
+   */
+  getPendingQueryCount: () =>
+    api.get('/api/v1/query-history/pending/count'),
+
+  /**
+   * Get a specific query from history with optional full results
+   * @param {string} executionId - Query execution ID
+   * @param {boolean} includeResults - Include full results in response
+   */
+  getQueryHistoryEntry: (executionId, includeResults = false) =>
+    api.get(`/api/v1/query-history/${executionId}`, {
+      params: { include_results: includeResults }
+    }),
+
+  /**
+   * Mark a running query as background (user navigating away)
+   * @param {string} executionId - Query execution ID
+   * @param {Object} notificationPreferences - { browser: true, email: false }
+   */
+  markQueryAsBackground: (executionId, notificationPreferences = { browser: true, email: false }) =>
+    api.post(`/api/v1/query-history/${executionId}/background`, {
+      notification_preferences: notificationPreferences
+    }),
+
+  /**
+   * Mark a notification as sent (called after showing browser notification)
+   * @param {string} executionId - Query execution ID
+   * @param {string} notificationType - 'browser' or 'email'
+   */
+  markQueryNotificationSent: (executionId, notificationType) =>
+    api.post(`/api/v1/query-history/${executionId}/notification-sent`, null, {
+      params: { notification_type: notificationType }
     }),
 
   // Generic HTTP methods

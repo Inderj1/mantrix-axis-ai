@@ -31,10 +31,12 @@ from src.api.models import (
     AnalyzeDocumentRequest, AskDocumentQuestionRequest,
     CreateResearchPlanRequest, ResearchPlanResponse, ResearchStepResponse,
     ExecuteResearchRequest, ResearchProgressResponse,
-    ResearchReportResponse, ResearchInsightResponse, ResearchRecommendationResponse
+    ResearchReportResponse, ResearchInsightResponse, ResearchRecommendationResponse,
+    PaginateRequest, PaginateResponse
 )
 from src.core.sql_generator import SQLGenerator
 from src.core.sql_generator_singleton import get_sql_generator
+from src.core.knowledge_graph.jena_singleton import get_jena_query_resolver
 from src.db.bigquery import BigQueryClient
 from src.db.weaviate_client import WeaviateClient
 from src.core.optimization import (
@@ -93,15 +95,23 @@ weaviate_client = None
 mv_manager = None
 mv_optimizer = None
 query_logger = None
-metrics_precalculator = None
-query_pattern_analyzer = None
-cache_warmer = None
 document_service = None
-research_planner = None
-research_executor = None
-research_synthesizer = None
 active_research_plans = {}  # Store active research plans
 active_research_executions = {}  # Store active executions
+
+# Per-organization instance caches (for multi-tenancy)
+# These helpers need org-specific database connections
+import threading
+_metrics_precalculators: Dict[str, "FinancialMetricsPreCalculator"] = {}
+_query_pattern_analyzers: Dict[str, "QueryPatternAnalyzer"] = {}
+_cache_warmers: Dict[str, "SmartCacheWarmer"] = {}
+_research_executors: Dict[str, "ResearchExecutor"] = {}
+_helpers_lock = threading.Lock()
+
+# Shared (org-independent) singletons for LLM-only components
+_research_planner = None
+_research_synthesizer = None
+_shared_lock = threading.Lock()
 
 # Note: get_sql_generator is now imported from sql_generator_singleton module
 
@@ -117,6 +127,41 @@ async def get_org_sql_generator(
     """
     org_id = user.get('organization_id') if user else None
     return get_sql_generator(organization_id=org_id)
+
+
+# Organization-aware FastAPI dependencies
+# These wrap the helper functions to automatically get the org_id from the authenticated user
+
+async def get_org_metrics_precalculator(
+    user: Optional[Dict] = Depends(get_current_user)
+) -> "FinancialMetricsPreCalculator":
+    """Dependency that returns org-specific FinancialMetricsPreCalculator."""
+    org_id = user.get('organization_id') if user else None
+    return get_metrics_precalculator(organization_id=org_id)
+
+
+async def get_org_query_pattern_analyzer(
+    user: Optional[Dict] = Depends(get_current_user)
+) -> "QueryPatternAnalyzer":
+    """Dependency that returns org-specific QueryPatternAnalyzer."""
+    org_id = user.get('organization_id') if user else None
+    return get_query_pattern_analyzer(organization_id=org_id)
+
+
+async def get_org_cache_warmer(
+    user: Optional[Dict] = Depends(get_current_user)
+) -> "SmartCacheWarmer":
+    """Dependency that returns org-specific SmartCacheWarmer."""
+    org_id = user.get('organization_id') if user else None
+    return get_cache_warmer(organization_id=org_id)
+
+
+async def get_org_research_executor(
+    user: Optional[Dict] = Depends(get_current_user)
+) -> "ResearchExecutor":
+    """Dependency that returns org-specific ResearchExecutor."""
+    org_id = user.get('organization_id') if user else None
+    return get_research_executor(organization_id=org_id)
 
 
 async def initialize_sql_generators_for_organizations():
@@ -215,37 +260,61 @@ def get_mv_optimizer() -> MaterializedViewOptimizer:
     return mv_optimizer
 
 
-def get_metrics_precalculator() -> FinancialMetricsPreCalculator:
-    global metrics_precalculator
-    if metrics_precalculator is None:
-        metrics_precalculator = FinancialMetricsPreCalculator(
-            bq_client=get_bq_client(),
-            cache_manager=get_sql_generator().cache_manager
-        )
-    return metrics_precalculator
+def get_metrics_precalculator(organization_id: str = None) -> FinancialMetricsPreCalculator:
+    """Get org-specific FinancialMetricsPreCalculator."""
+    org_id = organization_id or "default"
+
+    if org_id in _metrics_precalculators:
+        return _metrics_precalculators[org_id]
+
+    with _helpers_lock:
+        if org_id not in _metrics_precalculators:
+            generator = get_sql_generator(organization_id=org_id)
+            _metrics_precalculators[org_id] = FinancialMetricsPreCalculator(
+                bq_client=generator.db_client if hasattr(generator, 'db_client') else get_bq_client(),
+                cache_manager=generator.cache_manager
+            )
+            logger.info(f"Initialized FinancialMetricsPreCalculator for organization: {org_id}")
+        return _metrics_precalculators[org_id]
 
 
-def get_query_pattern_analyzer() -> QueryPatternAnalyzer:
-    global query_pattern_analyzer
-    if query_pattern_analyzer is None:
-        query_pattern_analyzer = QueryPatternAnalyzer(
-            query_logger=get_query_logger(),
-            bq_client=get_bq_client(),
-            mv_manager=get_mv_manager(),
-            cache_manager=get_sql_generator().cache_manager
-        )
-    return query_pattern_analyzer
+def get_query_pattern_analyzer(organization_id: str = None) -> QueryPatternAnalyzer:
+    """Get org-specific QueryPatternAnalyzer."""
+    org_id = organization_id or "default"
+
+    if org_id in _query_pattern_analyzers:
+        return _query_pattern_analyzers[org_id]
+
+    with _helpers_lock:
+        if org_id not in _query_pattern_analyzers:
+            generator = get_sql_generator(organization_id=org_id)
+            _query_pattern_analyzers[org_id] = QueryPatternAnalyzer(
+                query_logger=get_query_logger(),
+                bq_client=generator.db_client if hasattr(generator, 'db_client') else get_bq_client(),
+                mv_manager=get_mv_manager(),
+                cache_manager=generator.cache_manager
+            )
+            logger.info(f"Initialized QueryPatternAnalyzer for organization: {org_id}")
+        return _query_pattern_analyzers[org_id]
 
 
-def get_cache_warmer() -> SmartCacheWarmer:
-    global cache_warmer
-    if cache_warmer is None:
-        cache_warmer = SmartCacheWarmer(
-            sql_generator=get_sql_generator(),
-            query_logger=get_query_logger(),
-            cache_manager=get_sql_generator().cache_manager
-        )
-    return cache_warmer
+def get_cache_warmer(organization_id: str = None) -> SmartCacheWarmer:
+    """Get org-specific SmartCacheWarmer."""
+    org_id = organization_id or "default"
+
+    if org_id in _cache_warmers:
+        return _cache_warmers[org_id]
+
+    with _helpers_lock:
+        if org_id not in _cache_warmers:
+            generator = get_sql_generator(organization_id=org_id)
+            _cache_warmers[org_id] = SmartCacheWarmer(
+                sql_generator=generator,
+                query_logger=get_query_logger(),
+                cache_manager=generator.cache_manager
+            )
+            logger.info(f"Initialized SmartCacheWarmer for organization: {org_id}")
+        return _cache_warmers[org_id]
 
 
 def get_document_service() -> DocumentService:
@@ -256,29 +325,45 @@ def get_document_service() -> DocumentService:
 
 
 def get_research_planner() -> ResearchPlanner:
-    global research_planner
-    if research_planner is None:
-        research_planner = ResearchPlanner(llm_client=get_sql_generator().llm_client)
-    return research_planner
+    """Get shared ResearchPlanner (uses shared LLM client, not org-specific)."""
+    global _research_planner
+    if _research_planner is None:
+        with _shared_lock:
+            if _research_planner is None:
+                from src.core.shared_clients import get_shared_llm_client
+                _research_planner = ResearchPlanner(llm_client=get_shared_llm_client())
+                logger.info("Initialized shared ResearchPlanner")
+    return _research_planner
 
 
-def get_research_executor() -> ResearchExecutor:
-    global research_executor
-    if research_executor is None:
-        research_executor = ResearchExecutor(
-            sql_generator=get_sql_generator(),
-            bq_client=get_bq_client()
-        )
-    return research_executor
+def get_research_executor(organization_id: str = None) -> ResearchExecutor:
+    """Get org-specific ResearchExecutor."""
+    org_id = organization_id or "default"
+
+    if org_id in _research_executors:
+        return _research_executors[org_id]
+
+    with _helpers_lock:
+        if org_id not in _research_executors:
+            generator = get_sql_generator(organization_id=org_id)
+            _research_executors[org_id] = ResearchExecutor(
+                sql_generator=generator,
+                bq_client=generator.db_client if hasattr(generator, 'db_client') else get_bq_client()
+            )
+            logger.info(f"Initialized ResearchExecutor for organization: {org_id}")
+        return _research_executors[org_id]
 
 
 def get_research_synthesizer() -> ResearchSynthesizer:
-    global research_synthesizer
-    if research_synthesizer is None:
-        research_synthesizer = ResearchSynthesizer(
-            llm_client=get_sql_generator().llm_client
-        )
-    return research_synthesizer
+    """Get shared ResearchSynthesizer (uses shared LLM client, not org-specific)."""
+    global _research_synthesizer
+    if _research_synthesizer is None:
+        with _shared_lock:
+            if _research_synthesizer is None:
+                from src.core.shared_clients import get_shared_llm_client
+                _research_synthesizer = ResearchSynthesizer(llm_client=get_shared_llm_client())
+                logger.info("Initialized shared ResearchSynthesizer")
+    return _research_synthesizer
 
 
 async def analyze_empty_results(
@@ -325,7 +410,14 @@ Be specific to THIS query - don't give generic advice. Respond in plain text, no
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Check the health of all services."""
+    """Check the health of all services.
+
+    Note: This endpoint uses shared clients that don't require organization context.
+    This avoids the 'No enabled database connector for organization default' error
+    when no connectors are configured.
+    """
+    from src.core.shared_clients import get_shared_cache_manager
+
     health_status = {
         "status": "healthy",
         "bigquery": "unknown",
@@ -333,8 +425,8 @@ async def health_check():
         "redis": "unknown",
         "version": "0.1.0"
     }
-    
-    # Check BigQuery
+
+    # Check BigQuery (uses environment config, not org-specific)
     try:
         bq = get_bq_client()
         tables = bq.list_tables()
@@ -342,7 +434,7 @@ async def health_check():
     except Exception as e:
         health_status["bigquery"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
-    
+
     # Check Weaviate
     try:
         wv = get_weaviate_client()
@@ -351,21 +443,20 @@ async def health_check():
     except Exception as e:
         health_status["weaviate"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
-    
-    # Check Redis Cache
+
+    # Check Redis Cache directly (no SQLGenerator needed)
     try:
-        generator = get_sql_generator()
-        if generator.cache_manager:
-            cache_health = generator.cache_manager.health_check()
+        cache_manager = get_shared_cache_manager()
+        if cache_manager:
+            cache_health = cache_manager.health_check()
             health_status["redis"] = f"connected (latency: {cache_health['latency_ms']}ms)"
             health_status["cache_stats"] = cache_health["stats"]["performance"]
         else:
             health_status["redis"] = "disabled"
     except Exception as e:
         health_status["redis"] = f"error: {str(e)}"
-        if "cache" not in str(e).lower():  # Don't degrade status if cache is just disabled
-            health_status["status"] = "degraded"
-    
+        # Don't degrade status for cache issues - it's optional
+
     return HealthResponse(**health_status)
 
 
@@ -668,6 +759,12 @@ async def _execute_query_logic(
                         execution_result = retry_result
 
             result = {**sql_result, "execution": execution_result}
+            # Promote pagination to top level for frontend
+            if execution_result.get("pagination"):
+                result["pagination"] = execution_result["pagination"]
+            # Include database_type and connector_id for pagination "Load More" requests
+            result["database_type"] = database_type
+            result["connector_id"] = connector_id
             if correction_info:
                 result["correction_info"] = correction_info
             if error_analysis:
@@ -829,6 +926,18 @@ async def process_query(
             phase="understanding"
         )
 
+        # Create query history entry in MongoDB for background tracking
+        user_id = user.get("sub", "default") if user else "default"
+        org_id = user.get("organization_id", "default") if user else "default"
+        await status_manager.create_query_entry(
+            execution_id=execution_id,
+            user_id=user_id,
+            organization_id=org_id,
+            question=request.question,
+            sql="",  # SQL will be updated on completion
+            is_background=True
+        )
+
         async def process_in_background():
             """Background task that processes the query and updates status."""
             try:
@@ -843,23 +952,31 @@ async def process_query(
                     start_time=start_time
                 )
 
-                # Store final result
-                status_manager.update_status(
+                # Store final result and persist to MongoDB for query history
+                await status_manager.complete_and_persist(
                     execution_id=execution_id,
+                    user_id=user_id,
+                    organization_id=org_id,
+                    question=request.question,
+                    sql=result.get("sql", ""),
                     status="complete",
-                    progress=100,
-                    message="Done!",
-                    phase="complete",
-                    result=result
+                    result=result,
+                    started_at=start_time,
+                    is_background=True
                 )
             except Exception as e:
                 logger.error(f"Background query processing failed: {e}", exc_info=True)
-                status_manager.update_status(
+                # Persist error to MongoDB as well
+                await status_manager.complete_and_persist(
                     execution_id=execution_id,
+                    user_id=user_id,
+                    organization_id=org_id,
+                    question=request.question,
+                    sql="",
                     status="error",
-                    progress=0,
-                    message="Query processing failed",
-                    error=str(e)
+                    error=str(e),
+                    started_at=start_time,
+                    is_background=True
                 )
 
         # Start background task
@@ -1140,6 +1257,102 @@ async def process_query(
             # If generate_sql returned a cross-connector query, execute it
             # using the CrossDatabaseExecutor instead of single-connector
             # ============================================================
+            # Check if query requires async execution (very large tables)
+            if sql_result.get("requires_async"):
+                logger.info(
+                    "ASYNC REQUIRED: Very large table query - forcing background execution",
+                    largest_table_rows=sql_result.get("largest_table_rows"),
+                    tables_used=sql_result.get("tables_used"),
+                    execution_id=execution_id
+                )
+
+                # Estimate execution time based on row count
+                # Rough estimate: 1 billion rows ≈ 2-5 minutes with aggregation
+                row_count = sql_result.get('largest_table_rows', 0)
+                estimated_minutes = max(5, int(row_count / 5_000_000_000) * 5)  # At least 5 min, +5 min per 5B rows
+
+                # Store query details for background execution
+                status_manager.update_status(
+                    execution_id=execution_id,
+                    status="long_running",
+                    progress=10,
+                    message=f"Query scans ~{row_count:,} rows. Estimated time: {estimated_minutes}+ minutes.",
+                    phase="executing",
+                    sql=sql_result.get("sql"),
+                    is_long_running=True,
+                    estimated_minutes=estimated_minutes,
+                    largest_table_rows=row_count
+                )
+
+                # Start background execution
+                async def execute_large_query_in_background():
+                    """Background task for very large table queries."""
+                    try:
+                        # Get connector using the existing generator
+                        db_connector = generator._get_connector_for_database(database_type)
+
+                        if not db_connector:
+                            raise Exception(f"No connector available for {database_type}")
+
+                        status_manager.update_status(
+                            execution_id=execution_id,
+                            status="processing",
+                            progress=50,
+                            message="Executing query on database...",
+                            phase="executing"
+                        )
+
+                        # Execute with timeout for very large queries
+                        exec_result = db_connector.execute_query(sql_result.get("sql"))
+
+                        result = {
+                            "sql": sql_result.get("sql"),
+                            "tables_used": sql_result.get("tables_used", []),
+                            "explanation": sql_result.get("explanation", ""),
+                            "execution": {
+                                "results": exec_result.get("rows", []),
+                                "row_count": exec_result.get("row_count", 0),
+                                "execution_time_seconds": exec_result.get("execution_time_seconds"),
+                            },
+                            "warnings": sql_result.get("warnings", []),
+                            "from_cache": False
+                        }
+
+                        status_manager.update_status(
+                            execution_id=execution_id,
+                            status="complete",
+                            progress=100,
+                            message="Query completed successfully!",
+                            phase="complete",
+                            result=result
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Background large query execution failed: {e}", exc_info=True)
+                        status_manager.update_status(
+                            execution_id=execution_id,
+                            status="error",
+                            progress=0,
+                            message=f"Query execution failed: {str(e)}",
+                            error=str(e)
+                        )
+
+                asyncio.create_task(execute_large_query_in_background())
+
+                # Return immediately with long_running status
+                return {
+                    "execution_id": execution_id,
+                    "status": "long_running",
+                    "is_long_running": True,
+                    "estimated_minutes": estimated_minutes,
+                    "largest_table_rows": row_count,
+                    "message": f"This query scans ~{row_count:,} rows and may take {estimated_minutes}+ minutes. "
+                               f"You can wait or close this and be notified when it completes.",
+                    "sql": sql_result.get("sql"),
+                    "tables_used": sql_result.get("tables_used", []),
+                    "warnings": sql_result.get("warnings", [])
+                }
+
             if sql_result.get("requires_cross_connector"):
                 logger.info(
                     "Cross-connector query detected - routing to CrossDatabaseExecutor",
@@ -1362,6 +1575,12 @@ async def process_query(
                     **sql_result,
                     "execution": execution_result
                 }
+                # Promote pagination to top level for frontend
+                if execution_result.get("pagination"):
+                    result["pagination"] = execution_result["pagination"]
+                # Include database_type and connector_id for pagination "Load More" requests
+                result["database_type"] = database_type
+                result["connector_id"] = connector_id
 
                 # Add correction info if auto-retry was attempted
                 if correction_info:
@@ -1568,8 +1787,14 @@ async def process_query(
                 response_data["default_aggregations"] = chart_metadata.get("default_aggregations")
                 response_data["visualization_config"] = chart_metadata.get("visualization_config")
 
+                # Log LLM chart recommendation (from SQL generation) - this takes priority
+                llm_chart = response_data.get("recommended_chart_type")
+                if llm_chart:
+                    logger.info(f"LLM recommended chart type: {llm_chart}")
+
                 logger.debug("Chart intelligence added to response",
-                           recommended_charts=response_data.get("chart_recommendations"),
+                           llm_recommended_chart=llm_chart,
+                           fallback_charts=response_data.get("chart_recommendations"),
                            dimensions_count=len(response_data.get("dimensions", [])),
                            measures_count=len(response_data.get("measures", [])))
 
@@ -1684,6 +1909,129 @@ async def get_query_status(
         )
 
     return status
+
+
+# ============================================================================
+# QUERY PREVIEW ENDPOINT - Pre-execution complexity estimation
+# ============================================================================
+
+@router.post("/query/preview")
+async def preview_query(
+    request: QueryRequest,
+    generator: SQLGenerator = Depends(get_org_sql_generator),
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Preview query complexity WITHOUT executing it.
+
+    Returns estimated rows, time, and warnings to help users decide
+    whether to proceed with potentially long-running queries.
+
+    This endpoint:
+    1. Uses vector search to identify relevant tables
+    2. Looks up row counts from Jena RDF metadata
+    3. Estimates execution time
+    4. Returns warnings for large queries (>1B rows)
+
+    Use this before /query to warn users about long-running queries.
+    """
+    try:
+        # Use vector search to find relevant tables (same as generate_sql does)
+        # This generates an embedding and searches Weaviate
+        tables_used = []
+
+        try:
+            # Generate embedding for the query
+            query_embedding = generator.llm_client.generate_embedding(request.question)
+
+            # Get organization and connector info from generator
+            organization_id = generator.organization_id
+            connector_ids = generator.connector_ids
+
+            # Search for similar tables using vector search
+            weaviate = get_weaviate_client()
+            similar_tables = weaviate.search_similar_tables(
+                query_embedding,
+                limit=5,
+                organization_id=organization_id,
+                connector_ids=connector_ids if connector_ids else None
+            )
+
+            # Extract table names
+            tables_used = [t.get("table_name") for t in similar_tables if t.get("table_name")]
+
+        except Exception as e:
+            logger.warning(f"Vector search failed in preview: {e}")
+            # Continue without tables - will return is_long_running=False
+
+        # Get row counts from Jena
+        row_counts = {}
+        largest_table = None
+        largest_table_rows = 0
+
+        try:
+            jena_resolver = get_jena_query_resolver()
+            if jena_resolver and tables_used:
+                row_counts = jena_resolver.get_table_row_counts(tables_used)
+
+                # Find largest table
+                for table, count in row_counts.items():
+                    if count and count > largest_table_rows:
+                        largest_table_rows = count
+                        largest_table = table
+        except Exception as e:
+            logger.warning(f"Failed to get row counts from Jena: {e}")
+
+        # Calculate estimates
+        total_estimated_rows = sum(c for c in row_counts.values() if c)
+
+        # Estimate time: ~5 min per 5B rows for aggregations
+        # This is a rough heuristic based on Snowflake performance
+        estimated_minutes = 0
+        if largest_table_rows >= 1_000_000_000:  # >1B rows
+            estimated_minutes = max(5, int(largest_table_rows / 5_000_000_000) * 5)
+
+        is_long_running = largest_table_rows >= 1_000_000_000  # >1B rows threshold
+
+        # Build warning message
+        warning = None
+        if is_long_running:
+            warning = f"This query will scan ~{largest_table_rows:,} rows from table '{largest_table}' and may take {estimated_minutes}+ minutes."
+
+        logger.info(
+            "Query preview completed",
+            tables_used=tables_used,
+            largest_table=largest_table,
+            largest_table_rows=largest_table_rows,
+            is_long_running=is_long_running,
+            estimated_minutes=estimated_minutes
+        )
+
+        return {
+            "tables_used": tables_used,
+            "table_row_counts": row_counts,
+            "largest_table": largest_table,
+            "largest_table_rows": largest_table_rows,
+            "total_estimated_rows": total_estimated_rows,
+            "is_long_running": is_long_running,
+            "estimated_minutes": estimated_minutes,
+            "warning": warning
+        }
+
+    except Exception as e:
+        logger.error(f"Query preview failed: {e}", exc_info=True)
+        # Return non-long-running on error so user can still proceed
+        return {
+            "tables_used": [],
+            "table_row_counts": {},
+            "largest_table": None,
+            "largest_table_rows": 0,
+            "total_estimated_rows": 0,
+            "is_long_running": False,
+            "estimated_minutes": 0,
+            "warning": None,
+            "error": str(e)
+        }
 
 
 @router.post("/generate", response_model=QueryResponse)
@@ -1933,6 +2281,171 @@ async def execute_single_connector_query(
     except Exception as e:
         logger.error(f"Single connector query execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/query/paginate", response_model=PaginateResponse)
+async def paginate_query_results(
+    request: PaginateRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Load more results for a paginated query (Load More functionality).
+
+    This endpoint takes an existing SQL query and re-executes it with LIMIT/OFFSET
+    to fetch the next page of results. Used by the frontend "Load More" button.
+
+    Request body:
+    {
+        "sql": "SELECT * FROM STORE_SALES LIMIT 100",
+        "database_type": "snowflake",
+        "connector_id": "snowflake_tpcds_123",  # Optional - auto-detects if not provided
+        "page": 2,
+        "page_size": 100,
+        "total_count": 28800000000  # Optional - for has_more calculation
+    }
+
+    Returns the next page of results to be appended to existing results.
+    """
+    import re
+    import time
+    from bson import ObjectId
+
+    start_time = time.time()
+
+    try:
+        # Get organization_id from user context
+        organization_id = user.get('organization_id') if user else 'default'
+
+        # Get MongoDB client for connector lookup
+        mongodb_client = await get_mongodb_client()
+        collection = mongodb_client.db["database_connectors"]
+
+        # Find the connector to use
+        connector_doc = None
+
+        if request.connector_id:
+            # Use specified connector
+            connector_doc = await collection.find_one({
+                '_id': ObjectId(request.connector_id),
+                'organization_id': organization_id
+            })
+            if not connector_doc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Connector {request.connector_id} not found"
+                )
+        else:
+            # Find an enabled connector matching the database type
+            connector_doc = await collection.find_one({
+                'connector_type': request.database_type,
+                'organization_id': organization_id,
+                'enabled_for_chat': True,
+                'status': {'$in': ['connected', 'active', 'success']}
+            })
+            if not connector_doc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No enabled {request.database_type} connector found"
+                )
+
+        # Calculate OFFSET for pagination
+        offset = (request.page - 1) * request.page_size
+
+        # Modify the SQL to add OFFSET/LIMIT for pagination
+        # First, remove any existing LIMIT clause
+        sql = request.sql.strip()
+
+        # Remove trailing semicolon if present
+        if sql.endswith(';'):
+            sql = sql[:-1].strip()
+
+        # Check if query already has LIMIT - we need to modify it
+        limit_pattern = re.compile(r'\bLIMIT\s+(\d+)\s*$', re.IGNORECASE)
+        has_limit = limit_pattern.search(sql)
+
+        if has_limit:
+            # Replace existing LIMIT with our LIMIT/OFFSET
+            sql = limit_pattern.sub('', sql).strip()
+
+        # Build paginated query with LIMIT and OFFSET
+        # Note: Different databases have different syntax for pagination
+        database_type = request.database_type.lower()
+
+        if database_type in ('snowflake', 'postgresql', 'redshift', 'bigquery'):
+            # Standard SQL: LIMIT x OFFSET y
+            paginated_sql = f"{sql} LIMIT {request.page_size} OFFSET {offset}"
+        elif database_type == 'databricks':
+            # Databricks/Spark SQL uses same syntax
+            paginated_sql = f"{sql} LIMIT {request.page_size} OFFSET {offset}"
+        else:
+            # Default fallback
+            paginated_sql = f"{sql} LIMIT {request.page_size} OFFSET {offset}"
+
+        logger.info(
+            "Executing paginated query",
+            database_type=request.database_type,
+            page=request.page,
+            page_size=request.page_size,
+            offset=offset,
+            sql_preview=paginated_sql[:100] + "..." if len(paginated_sql) > 100 else paginated_sql
+        )
+
+        # Create connector instance and execute
+        connector = ConnectorFactory.create_connector(
+            connector_type=request.database_type,
+            config=connector_doc.get('config', {})
+        )
+
+        result = connector.execute_query(paginated_sql)
+
+        # Extract results
+        results = result.get('results', [])
+        row_count = len(results)
+
+        execution_time_ms = (time.time() - start_time) * 1000
+
+        # Calculate has_more
+        has_more = False
+        if request.total_count:
+            total_fetched = offset + row_count
+            has_more = total_fetched < request.total_count
+        elif row_count == request.page_size:
+            # If we got a full page, assume there might be more
+            has_more = True
+
+        logger.info(
+            "Pagination query completed",
+            page=request.page,
+            rows_fetched=row_count,
+            has_more=has_more,
+            execution_time_ms=round(execution_time_ms, 2)
+        )
+
+        return PaginateResponse(
+            success=True,
+            results=results,
+            row_count=row_count,
+            page=request.page,
+            page_size=request.page_size,
+            has_more=has_more,
+            total_count=request.total_count,
+            execution_time_ms=round(execution_time_ms, 2)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Pagination query failed: {e}", exc_info=True)
+        return PaginateResponse(
+            success=False,
+            results=[],
+            row_count=0,
+            page=request.page,
+            page_size=request.page_size,
+            has_more=False,
+            total_count=request.total_count,
+            error=str(e)
+        )
 
 
 @router.post("/rejoin-cross-connector", response_model=CrossConnectorRejoinResponse)
@@ -2906,7 +3419,7 @@ async def find_similar_queries(
 async def precalculate_metrics(
     metrics: Optional[List[str]] = None,
     granularities: Optional[List[str]] = None,
-    precalculator: FinancialMetricsPreCalculator = Depends(get_metrics_precalculator)
+    precalculator: FinancialMetricsPreCalculator = Depends(get_org_metrics_precalculator)
 ):
     """Manually trigger financial metrics pre-calculation."""
     try:
@@ -2938,7 +3451,7 @@ async def get_precalculated_metrics(
     metric_code: Optional[str] = None,
     granularity: Optional[str] = None,
     time_period: Optional[str] = None,
-    precalculator: FinancialMetricsPreCalculator = Depends(get_metrics_precalculator)
+    precalculator: FinancialMetricsPreCalculator = Depends(get_org_metrics_precalculator)
 ):
     """Get available pre-calculated metrics."""
     try:
@@ -2974,7 +3487,7 @@ async def get_precalculated_metrics(
 async def analyze_query_patterns(
     lookback_days: int = 30,
     min_frequency: int = 5,
-    analyzer: QueryPatternAnalyzer = Depends(get_query_pattern_analyzer)
+    analyzer: QueryPatternAnalyzer = Depends(get_org_query_pattern_analyzer)
 ):
     """Analyze query patterns from historical logs."""
     try:
@@ -3005,7 +3518,7 @@ async def analyze_query_patterns(
 
 @router.get("/patterns/insights")
 async def get_pattern_insights(
-    analyzer: QueryPatternAnalyzer = Depends(get_query_pattern_analyzer)
+    analyzer: QueryPatternAnalyzer = Depends(get_org_query_pattern_analyzer)
 ):
     """Get insights about query patterns."""
     try:
@@ -3021,7 +3534,7 @@ async def get_pattern_insights(
 async def get_pattern_mv_recommendations(
     min_frequency: int = 10,
     min_bytes_gb: float = 1.0,
-    analyzer: QueryPatternAnalyzer = Depends(get_query_pattern_analyzer)
+    analyzer: QueryPatternAnalyzer = Depends(get_org_query_pattern_analyzer)
 ):
     """Get materialized view recommendations based on query patterns."""
     try:
@@ -3061,7 +3574,7 @@ async def get_pattern_mv_recommendations(
 async def auto_create_pattern_mvs(
     max_mvs: int = 5,
     min_confidence: float = 0.7,
-    analyzer: QueryPatternAnalyzer = Depends(get_query_pattern_analyzer)
+    analyzer: QueryPatternAnalyzer = Depends(get_org_query_pattern_analyzer)
 ):
     """Automatically create materialized views based on patterns."""
     try:
@@ -3086,7 +3599,7 @@ async def auto_create_pattern_mvs(
 @router.post("/cache/warm")
 async def warm_cache_endpoint(
     strategy: str = "popularity",
-    warmer: SmartCacheWarmer = Depends(get_cache_warmer)
+    warmer: SmartCacheWarmer = Depends(get_org_cache_warmer)
 ):
     """Manually trigger cache warming."""
     try:
@@ -3104,7 +3617,7 @@ async def warm_cache_endpoint(
 
 @router.post("/cache/warm/financial")
 async def warm_financial_cache(
-    warmer: SmartCacheWarmer = Depends(get_cache_warmer)
+    warmer: SmartCacheWarmer = Depends(get_org_cache_warmer)
 ):
     """Warm cache specifically for financial metrics."""
     try:
@@ -3118,7 +3631,7 @@ async def warm_financial_cache(
 
 @router.get("/cache/warming/stats")
 async def get_warming_stats(
-    warmer: SmartCacheWarmer = Depends(get_cache_warmer)
+    warmer: SmartCacheWarmer = Depends(get_org_cache_warmer)
 ):
     """Get cache warming statistics."""
     try:
@@ -3132,7 +3645,7 @@ async def get_warming_stats(
 
 @router.post("/cache/warming/start")
 async def start_continuous_warming(
-    warmer: SmartCacheWarmer = Depends(get_cache_warmer)
+    warmer: SmartCacheWarmer = Depends(get_org_cache_warmer)
 ):
     """Start continuous cache warming service."""
     try:
@@ -3152,7 +3665,7 @@ async def start_continuous_warming(
 
 @router.post("/cache/warming/stop")
 async def stop_continuous_warming(
-    warmer: SmartCacheWarmer = Depends(get_cache_warmer)
+    warmer: SmartCacheWarmer = Depends(get_org_cache_warmer)
 ):
     """Stop continuous cache warming service."""
     try:
@@ -3551,7 +4064,7 @@ async def create_research_plan(
 async def execute_research_plan(
     plan_id: str,
     request: ExecuteResearchRequest = ExecuteResearchRequest(),
-    executor: ResearchExecutor = Depends(get_research_executor)
+    executor: ResearchExecutor = Depends(get_org_research_executor)
 ):
     """Execute a research plan."""
     try:
@@ -3590,7 +4103,7 @@ async def execute_research_plan(
 @router.get("/research/status/{execution_id}", response_model=ResearchProgressResponse)
 async def get_research_status(
     execution_id: str,
-    executor: ResearchExecutor = Depends(get_research_executor)
+    executor: ResearchExecutor = Depends(get_org_research_executor)
 ):
     """Get the status of a research execution."""
     try:

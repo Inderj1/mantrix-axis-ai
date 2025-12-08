@@ -2,26 +2,45 @@
 Join Path Finder using Jena/RDF Knowledge Graph.
 
 Automatically discovers join paths between tables based on the RDF metadata.
+Includes Redis caching for performance optimization.
 """
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
+import json
 import structlog
+
+if TYPE_CHECKING:
+    from src.core.cache_manager import CacheManager
 
 logger = structlog.get_logger()
 
 
 @dataclass
 class JoinPath:
-    """Represents a join path between two tables."""
+    """Represents a join path between two tables with confidence scoring."""
     source_table: str
     target_table: str
     join_column: str
     column_type: str
     join_type: str = "LEFT"  # Default to LEFT JOIN
+    confidence: float = 0.5  # Confidence score (0.0 - 1.0)
+    confidence_reason: str = ""  # Explanation for the confidence score
 
     def to_sql(self) -> str:
         """Generate SQL JOIN clause."""
         return f"{self.join_type} JOIN {self.target_table} ON {self.source_table}.{self.join_column} = {self.target_table}.{self.join_column}"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "source_table": self.source_table,
+            "target_table": self.target_table,
+            "join_column": self.join_column,
+            "column_type": self.column_type,
+            "join_type": self.join_type,
+            "confidence": self.confidence,
+            "confidence_reason": self.confidence_reason
+        }
 
 
 @dataclass
@@ -39,7 +58,17 @@ class MultiHopPath:
 class JoinPathFinder:
     """Find join paths between tables using Jena knowledge graph."""
 
-    def __init__(self, knowledge_graph, organization_id: str = None, database_type: str = None):
+    # Column naming patterns that indicate high-confidence relationships
+    FK_PATTERNS = ['_id', '_key', '_code', '_num', '_no', 'id_', 'fk_']
+    PK_PATTERNS = ['id', 'key', 'code', 'number']
+
+    def __init__(
+        self,
+        knowledge_graph,
+        organization_id: str = None,
+        database_type: str = None,
+        cache_manager: Optional["CacheManager"] = None
+    ):
         """
         Initialize join path finder.
 
@@ -47,11 +76,140 @@ class JoinPathFinder:
             knowledge_graph: JenaKnowledgeGraph instance
             organization_id: Organization ID for filtering
             database_type: Database type for filtering
+            cache_manager: Optional CacheManager for Redis caching of JOIN paths
         """
         self.kg = knowledge_graph
         self.FIN = knowledge_graph.FIN
         self.organization_id = organization_id or 'default'
         self.database_type = database_type
+        self.cache_manager = cache_manager
+
+    def _get_cache_key(self, tables: List[str]) -> str:
+        """Generate a cache key for a set of tables."""
+        # Sort tables to ensure consistent cache keys regardless of input order
+        sorted_tables = sorted(tables)
+        tables_str = ":".join(sorted_tables)
+        return f"join_path:{self.organization_id}:{self.database_type or 'default'}:{tables_str}"
+
+    def _cache_join_paths(self, cache_key: str, join_paths: List[JoinPath]) -> None:
+        """Cache join paths in Redis."""
+        if not self.cache_manager:
+            return
+
+        try:
+            # Convert JoinPath objects to dictionaries for JSON serialization
+            paths_data = [jp.to_dict() for jp in join_paths]
+            self.cache_manager.redis.setex(
+                cache_key,
+                self.cache_manager.TTL_JOIN_PATH,
+                json.dumps(paths_data)
+            )
+            logger.debug(f"Cached {len(join_paths)} JOIN paths", cache_key=cache_key)
+        except Exception as e:
+            logger.warning(f"Failed to cache JOIN paths: {e}")
+
+    def _get_cached_join_paths(self, cache_key: str) -> Optional[List[JoinPath]]:
+        """Retrieve cached join paths from Redis."""
+        if not self.cache_manager:
+            return None
+
+        try:
+            cached = self.cache_manager.redis.get(cache_key)
+            if cached:
+                paths_data = json.loads(cached)
+                join_paths = [
+                    JoinPath(
+                        source_table=p["source_table"],
+                        target_table=p["target_table"],
+                        join_column=p["join_column"],
+                        column_type=p["column_type"],
+                        join_type=p.get("join_type", "LEFT"),
+                        confidence=p.get("confidence", 0.5),
+                        confidence_reason=p.get("confidence_reason", "")
+                    )
+                    for p in paths_data
+                ]
+                logger.info(f"Cache HIT for JOIN paths", cache_key=cache_key, paths=len(join_paths))
+                return join_paths
+        except Exception as e:
+            logger.warning(f"Failed to retrieve cached JOIN paths: {e}")
+
+        return None
+
+    def _calculate_join_confidence(
+        self,
+        source_table: str,
+        target_table: str,
+        join_column: str,
+        column_type: str,
+        has_fk_constraint: bool = False
+    ) -> Tuple[float, str]:
+        """
+        Calculate confidence score for a JOIN relationship.
+
+        Confidence is based on:
+        - Foreign key constraints (highest confidence)
+        - Column naming conventions (e.g., customer_id, product_key)
+        - Column type matching
+        - Table naming patterns
+
+        Args:
+            source_table: Source table name
+            target_table: Target table name
+            join_column: Column used for joining
+            column_type: Data type of the join column
+            has_fk_constraint: Whether there's an explicit FK constraint
+
+        Returns:
+            Tuple of (confidence_score, reason_string)
+        """
+        confidence = 0.0
+        reasons = []
+
+        # 1. Foreign key constraint (highest confidence)
+        if has_fk_constraint:
+            confidence += 0.40
+            reasons.append("FK constraint")
+
+        # 2. Column naming conventions
+        column_lower = join_column.lower()
+
+        # Check for explicit ID patterns
+        if any(pattern in column_lower for pattern in self.FK_PATTERNS):
+            confidence += 0.25
+            reasons.append("FK naming pattern")
+        elif any(column_lower.endswith(pattern) or column_lower == pattern for pattern in self.PK_PATTERNS):
+            confidence += 0.20
+            reasons.append("ID column")
+
+        # 3. Column references table name (e.g., customer_id in orders table)
+        target_lower = target_table.lower().replace('_', '')
+        if target_lower in column_lower.replace('_', ''):
+            confidence += 0.20
+            reasons.append(f"references {target_table}")
+        elif source_table.lower().replace('_', '') in column_lower.replace('_', ''):
+            confidence += 0.15
+            reasons.append(f"references {source_table}")
+
+        # 4. Column type is appropriate for JOINs
+        type_lower = column_type.lower() if column_type else ""
+        if any(t in type_lower for t in ['int', 'bigint', 'string', 'varchar', 'text']):
+            confidence += 0.10
+            reasons.append("joinable type")
+        elif 'float' in type_lower or 'double' in type_lower or 'decimal' in type_lower:
+            confidence -= 0.10  # Floating point JOINs are risky
+            reasons.append("float type (risky)")
+
+        # 5. Base confidence if nothing else matched
+        if confidence == 0.0:
+            confidence = 0.30
+            reasons.append("inferred relationship")
+
+        # Cap confidence at 1.0
+        confidence = min(confidence, 1.0)
+
+        reason_str = "; ".join(reasons) if reasons else "unknown"
+        return round(confidence, 2), reason_str
 
     def find_direct_join(self, table1: str, table2: str) -> List[JoinPath]:
         """
@@ -103,19 +261,38 @@ class JoinPathFinder:
 
         join_paths = []
         for row in results:
+            join_column = str(row['joinColumn'])
+            column_type = str(row['columnType'])
+            join_type = str(row.get('joinType', 'LEFT'))
+
+            # Calculate confidence score for this JOIN
+            confidence, reason = self._calculate_join_confidence(
+                source_table=table1,
+                target_table=table2,
+                join_column=join_column,
+                column_type=column_type,
+                has_fk_constraint=False  # TODO: Check RDF for FK constraint info
+            )
+
             join_paths.append(JoinPath(
                 source_table=table1,
                 target_table=table2,
-                join_column=str(row['joinColumn']),
-                column_type=str(row['columnType']),
-                join_type=str(row.get('joinType', 'LEFT'))
+                join_column=join_column,
+                column_type=column_type,
+                join_type=join_type,
+                confidence=confidence,
+                confidence_reason=reason
             ))
+
+        # Sort by confidence (highest first)
+        join_paths.sort(key=lambda p: p.confidence, reverse=True)
 
         logger.info(
             "Direct join paths found",
             table1=table1,
             table2=table2,
-            count=len(join_paths)
+            count=len(join_paths),
+            best_confidence=join_paths[0].confidence if join_paths else 0.0
         )
 
         return join_paths
@@ -243,6 +420,8 @@ class JoinPathFinder:
         1. Start with the largest fact table
         2. Join dimension tables in order of smallest to largest
 
+        Results are cached in Redis for 24 hours (invalidated on schema sync).
+
         Args:
             tables: List of table names to join
 
@@ -251,6 +430,12 @@ class JoinPathFinder:
         """
         if len(tables) < 2:
             return []
+
+        # Check cache first
+        cache_key = self._get_cache_key(tables)
+        cached_paths = self._get_cached_join_paths(cache_key)
+        if cached_paths is not None:
+            return cached_paths
 
         # Get table metadata (row counts, fact vs dimension)
         table_info = {}
@@ -307,8 +492,12 @@ class JoinPathFinder:
             "Join order recommended",
             base_table=base_table,
             total_joins=len(join_order),
-            tables=len(tables)
+            tables=len(tables),
+            cached=False
         )
+
+        # Cache the result for future queries
+        self._cache_join_paths(cache_key, join_order)
 
         return join_order
 

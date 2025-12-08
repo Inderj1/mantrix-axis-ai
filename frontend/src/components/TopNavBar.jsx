@@ -37,6 +37,7 @@ import {
   AutoAwesome as AIIcon,
   Menu as MenuIcon,
 } from '@mui/icons-material';
+import QueryHistoryDropdown from './QueryHistoryDropdown';
 
 const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, user }) => {
   const { logout } = useAuth();
@@ -149,6 +150,15 @@ const TopNavBar = ({ useSapTheme, setSelectedTab, drawerOpen, setDrawerOpen, use
 
         {/* Right: Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200, justifyContent: 'flex-end' }}>
+          {/* Query History Dropdown - Background query notifications */}
+          <QueryHistoryDropdown
+            onViewResults={(query) => {
+              // Navigate to chat and show results
+              setSelectedTab('chat');
+              console.log('[TopNavBar] View results for query:', query.executionId);
+            }}
+          />
+
           {/* User Name */}
           {user && (
             <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>
