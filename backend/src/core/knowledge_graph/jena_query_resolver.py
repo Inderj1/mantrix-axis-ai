@@ -60,14 +60,14 @@ class JenaQueryResolver:
 
         Returns a dictionary mapping user terms to column information.
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?table schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?table schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         sparql = f"""
         PREFIX fin: <http://example.com/finance#>
@@ -82,7 +82,7 @@ class JenaQueryResolver:
             ?column schema:columnName ?column_name ;
                     schema:belongsToTable ?table .
             ?table schema:tableName ?table_name .
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         ORDER BY DESC(?confidence)
         """
@@ -707,14 +707,15 @@ GROUP BY gl_account, gl_description
         Returns:
             Row count if available, None otherwise
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        # These are WHERE clause patterns, not FILTER expressions
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?table schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?table schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         sparql = f"""
         PREFIX fin: <http://example.com/finance#>
@@ -725,7 +726,7 @@ GROUP BY gl_account, gl_description
             ?table a fin:Table ;
                    fin:tableName "{table_name}" ;
                    schema:rowCount ?rowCount .
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         LIMIT 1
         """
@@ -754,16 +755,16 @@ GROUP BY gl_account, gl_description
         if not table_names:
             return {}
 
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?table schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?table schema:databaseType "{self.database_type}" .')
 
         # Build VALUES clause for table names
         values_clause = " ".join([f'"{t}"' for t in table_names])
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         sparql = f"""
         PREFIX fin: <http://example.com/finance#>
@@ -775,7 +776,7 @@ GROUP BY gl_account, gl_description
             ?table a fin:Table ;
                    fin:tableName ?tableName ;
                    schema:rowCount ?rowCount .
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         """
 
@@ -806,14 +807,14 @@ GROUP BY gl_account, gl_description
         Returns:
             Selectivity value (0.0 - 1.0) if available, None otherwise
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?table schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?table schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         sparql = f"""
         PREFIX fin: <http://example.com/finance#>
@@ -828,7 +829,7 @@ GROUP BY gl_account, gl_description
                     fin:columnName "{column_name}" ;
                     fin:belongsTo ?table ;
                     stats:selectivity ?selectivity .
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         LIMIT 1
         """
@@ -855,14 +856,14 @@ GROUP BY gl_account, gl_description
         Returns:
             List of column info dicts with name, selectivity, cardinality
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?table schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?table schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         sparql = f"""
         PREFIX fin: <http://example.com/finance#>
@@ -880,7 +881,7 @@ GROUP BY gl_account, gl_description
             OPTIONAL {{ ?column stats:cardinality ?cardinality }}
             OPTIONAL {{ ?column stats:hasIndex ?hasIndex }}
             FILTER(?selectivity >= {min_selectivity})
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         ORDER BY DESC(?selectivity)
         """
@@ -934,14 +935,14 @@ GROUP BY gl_account, gl_description
             )
             # Returns: {"mv_name": "SALES_BY_STORE", "group_by_columns": ["STORE_ID"], ...}
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?mv <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?mv schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?mv <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?mv schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         # First, get all MVs for this base table
         sparql = f"""
@@ -962,7 +963,7 @@ GROUP BY gl_account, gl_description
             OPTIONAL {{ ?mv schema:groupByColumn ?groupCol }}
             OPTIONAL {{ ?mv schema:rowCount ?rowCount }}
             OPTIONAL {{ ?mv schema:refreshSchedule ?refreshSchedule }}
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         GROUP BY ?mvName ?rowCount ?refreshSchedule
         """
@@ -1047,14 +1048,15 @@ GROUP BY gl_account, gl_description
         Returns:
             Selectivity factor if known, None otherwise
         """
-        # Build filter for organization and database
-        filters = []
+        # Build additional triple patterns for organization and database filtering
+        # Note: For join relationships, we filter on the relationship itself
+        extra_patterns = []
         if self.organization_id:
-            filters.append(f'?table <http://example.com/schema#organizationId> "{self.organization_id}"')
+            extra_patterns.append(f'?rel schema:organizationId "{self.organization_id}" .')
         if self.database_type:
-            filters.append(f'?table <http://example.com/schema#databaseType> "{self.database_type}"')
+            extra_patterns.append(f'?rel schema:databaseType "{self.database_type}" .')
 
-        filter_clause = f"FILTER({' && '.join(filters)})" if filters else ""
+        extra_patterns_clause = "\n            ".join(extra_patterns) if extra_patterns else ""
 
         # Look for FK relationship that indicates join pattern
         sparql = f"""
@@ -1074,7 +1076,7 @@ GROUP BY gl_account, gl_description
                 || (UCASE(?srcColName) = "{right_col.upper()}" && UCASE(?tgtColName) = "{left_col.upper()}")
             )
             OPTIONAL {{ ?rel stats:joinSelectivity ?selectivity }}
-            {filter_clause}
+            {extra_patterns_clause}
         }}
         LIMIT 1
         """

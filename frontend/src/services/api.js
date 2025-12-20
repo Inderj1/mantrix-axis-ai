@@ -779,10 +779,33 @@ export const apiService = {
     api.get('/api/v1/query-history/pending'),
 
   /**
+   * Get status of a specific query execution (for polling)
+   * @param {string} executionId - Query execution ID
+   */
+  getQueryStatus: (executionId) =>
+    api.get(`/api/v1/query/status/${executionId}`).then(res => res.data),
+
+  /**
    * Get count of pending queries (for badge display)
    */
   getPendingQueryCount: () =>
     api.get('/api/v1/query-history/pending/count'),
+
+  /**
+   * Cancel/dismiss a running query
+   * @param {string} executionId - Query execution ID
+   */
+  cancelQuery: (executionId) =>
+    api.delete(`/api/v1/query-history/${executionId}`),
+
+  /**
+   * Clear all stale pending queries (older than specified hours)
+   * @param {number} maxAgeHours - Clear queries older than this many hours (default 24)
+   */
+  clearStalePendingQueries: (maxAgeHours = 24) =>
+    api.delete('/api/v1/query-history/pending/clear-stale', {
+      params: { max_age_hours: maxAgeHours }
+    }),
 
   /**
    * Get a specific query from history with optional full results

@@ -87,6 +87,36 @@ TPCDS_BASE_ROWS = {
     'SHIP_MODE': 20,                    # Fixed dimension
 }
 
+# TPC-DS base bytes at scale factor 1 (SF1 = 1GB total)
+# Used to estimate sizes for SNOWFLAKE_SAMPLE_DATA shared databases
+# where INFORMATION_SCHEMA.TABLES.BYTES returns NULL
+TPCDS_BASE_BYTES = {
+    'STORE_SALES': 280_000_000,         # ~280MB per SF (largest fact table)
+    'STORE_RETURNS': 28_000_000,        # ~28MB per SF
+    'CATALOG_SALES': 150_000_000,       # ~150MB per SF
+    'CATALOG_RETURNS': 15_000_000,      # ~15MB per SF
+    'WEB_SALES': 75_000_000,            # ~75MB per SF
+    'WEB_RETURNS': 7_500_000,           # ~7.5MB per SF
+    'INVENTORY': 90_000_000,            # ~90MB per SF
+    'CUSTOMER': 12_000_000,             # ~12MB per SF
+    'CUSTOMER_ADDRESS': 5_000_000,      # ~5MB per SF
+    'CUSTOMER_DEMOGRAPHICS': 80_000_000, # ~80MB (fixed, large dimension)
+    'ITEM': 4_000_000,                  # ~4MB per SF
+    'DATE_DIM': 10_000_000,             # ~10MB (fixed dimension)
+    'TIME_DIM': 5_000_000,              # ~5MB (fixed dimension)
+    'STORE': 10_000,                    # ~10KB per SF
+    'CALL_CENTER': 5_000,               # ~5KB per SF
+    'CATALOG_PAGE': 1_500_000,          # ~1.5MB per SF
+    'WEB_PAGE': 10_000,                 # ~10KB per SF
+    'WEB_SITE': 5_000,                  # ~5KB per SF
+    'WAREHOUSE': 1_000,                 # ~1KB per SF
+    'HOUSEHOLD_DEMOGRAPHICS': 500_000,  # ~500KB (fixed)
+    'INCOME_BAND': 2_000,               # ~2KB (fixed)
+    'PROMOTION': 50_000,                # ~50KB per SF
+    'REASON': 5_000,                    # ~5KB (fixed)
+    'SHIP_MODE': 2_000,                 # ~2KB (fixed)
+}
+
 
 class SnowflakeConnector(BaseDatabaseConnector):
     """
@@ -366,6 +396,51 @@ class SnowflakeConnector(BaseDatabaseConnector):
         logger.info(
             f"Estimated TPC-DS row count for {database}.{schema}.{table_name}: "
             f"{estimated:,} rows (base={base_rows:,}, scale_factor={scale_factor:,})"
+        )
+        return estimated
+
+    def _estimate_tpcds_bytes(self, database: str, schema: str, table_name: str) -> Optional[int]:
+        """
+        Estimate bytes for TPC-DS tables based on scale factor.
+
+        Snowflake's INFORMATION_SCHEMA.TABLES returns NULL for BYTES on shared
+        databases like SNOWFLAKE_SAMPLE_DATA. This method estimates sizes
+        based on the TPC-DS specification and scale factor encoded in the schema name.
+
+        Args:
+            database: Database name (e.g., 'SNOWFLAKE_SAMPLE_DATA')
+            schema: Schema name (e.g., 'TPCDS_SF10TCL')
+            table_name: Table name (e.g., 'STORE_SALES')
+
+        Returns:
+            Estimated bytes or None if not a recognized TPC-DS table
+        """
+        if not database or database.upper() != 'SNOWFLAKE_SAMPLE_DATA':
+            return None
+
+        if not schema:
+            return None
+
+        # Parse scale factor from schema name (e.g., TPCDS_SF10TCL -> 10 * 1000 = 10000)
+        match = re.match(r'TPCDS_SF(\d+)TCL', schema.upper())
+        if not match:
+            # Also support non-TCL variants (e.g., TPCDS_SF1)
+            match = re.match(r'TPCDS_SF(\d+)$', schema.upper())
+            if not match:
+                return None
+            scale_factor = int(match.group(1))
+        else:
+            # TCL = 1000x multiplier (Tera-scale)
+            scale_factor = int(match.group(1)) * 1000
+
+        base_bytes = TPCDS_BASE_BYTES.get(table_name.upper())
+        if base_bytes is None:
+            return None
+
+        estimated = base_bytes * scale_factor
+        logger.info(
+            f"Estimated TPC-DS bytes for {database}.{schema}.{table_name}: "
+            f"{estimated:,} bytes (base={base_bytes:,}, scale_factor={scale_factor:,})"
         )
         return estimated
 
@@ -702,13 +777,26 @@ class SnowflakeConnector(BaseDatabaseConnector):
             if not row_count:
                 row_count = self._estimate_tpcds_row_count(self.database, target_schema, table_name)
 
+            # If no bytes, try TPC-DS scale-based estimation
+            if not bytes_size:
+                bytes_size = self._estimate_tpcds_bytes(self.database, target_schema, table_name)
+
+            # Fallback: estimate bytes from row_count if still unknown
+            if not bytes_size and row_count:
+                # Estimate ~120 bytes per row (conservative average for columnar storage)
+                bytes_size = row_count * 120
+                logger.info(
+                    f"Estimated bytes for {table_name}: {bytes_size:,} "
+                    f"(from {row_count:,} rows × 120 bytes/row)"
+                )
+
             schema_info = {
                 "table_name": table_name,
                 "schema": target_schema,
                 "database": self.database,
                 "description": table_info.get('COMMENT') if table_info else None,
                 "row_count": row_count,
-                "bytes": bytes_size,
+                "size_bytes": bytes_size,
                 "created": str(table_info.get('CREATED')) if table_info and table_info.get('CREATED') else None,
                 "modified": str(table_info.get('LAST_ALTERED')) if table_info and table_info.get('LAST_ALTERED') else None,
                 "columns": []

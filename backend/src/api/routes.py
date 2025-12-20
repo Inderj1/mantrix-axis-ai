@@ -8,6 +8,9 @@ import json
 import uuid
 from datetime import datetime, date, time, timezone
 from src.config import settings
+
+# Build version for deployment tracking - forces Docker rebuild
+_BUILD_VERSION = "2025-12-08-v2-long-running-fix"
 from src.core.query_status_manager import get_query_status_manager, QueryStatusManager
 
 # Import authentication and permission modules
@@ -460,6 +463,165 @@ async def health_check():
     return HealthResponse(**health_status)
 
 
+async def _execute_long_running_query(
+    execution_id: str,
+    sql: str,
+    database_type: str,
+    generator: "SQLGenerator",
+    status_manager: "QueryStatusManager",
+    user_id: str,
+    org_id: str,
+    question: str,
+    start_time: datetime,
+    mongodb: "MongoDBClient" = None,
+    conversation_id: str = None
+) -> None:
+    """
+    Execute a long-running query in background mode.
+
+    This is called when a query is detected to require async execution
+    (e.g., scanning >1B rows). The status has already been set to 'long_running'.
+    This function executes the actual query and updates status to 'complete' or 'error'.
+    """
+    try:
+        logger.info(
+            "Starting long-running query execution",
+            execution_id=execution_id,
+            database_type=database_type
+        )
+
+        # Update status to show we're actively executing
+        status_manager.update_status(
+            execution_id=execution_id,
+            status="long_running",
+            progress=50,
+            message="Executing query on database...",
+            phase="executing"
+        )
+
+        # Get the connector
+        db_connector = generator._get_connector_for_database(database_type)
+        if not db_connector:
+            raise Exception(f"No connector available for {database_type}")
+
+        # Execute the query
+        exec_result = await asyncio.to_thread(
+            db_connector.execute_query,
+            sql
+        )
+
+        # Convert Decimal and date types to JSON-serializable types
+        rows = convert_dates_to_datetime(exec_result.get("rows", []))
+
+        result = {
+            "sql": sql,
+            "tables_used": [],  # Not available here
+            "explanation": "",
+            "execution": {
+                "results": rows,
+                "row_count": exec_result.get("row_count", 0),
+                "execution_time_seconds": exec_result.get("execution_time_seconds"),
+            },
+            "warnings": [],
+            "from_cache": False
+        }
+
+        # Complete and persist
+        await status_manager.complete_and_persist(
+            execution_id=execution_id,
+            user_id=user_id,
+            organization_id=org_id,
+            question=question,
+            sql=sql,
+            status="complete",
+            result=result,
+            started_at=start_time,
+            is_background=True
+        )
+
+        row_count = exec_result.get("row_count", 0)
+        logger.info(
+            "Long-running query completed successfully",
+            execution_id=execution_id,
+            row_count=row_count
+        )
+
+        # Add success message to conversation if we have the context
+        if mongodb and conversation_id:
+            try:
+                from src.models.conversation import Message
+                success_message = Message(
+                    id=f"msg-{int(datetime.now(timezone.utc).timestamp())}-assistant",
+                    type="assistant",
+                    content=f"Your background query completed successfully! It returned {row_count:,} rows.",
+                    timestamp=datetime.now(timezone.utc),
+                    metadata={
+                        "execution_id": execution_id,
+                        "sql": sql,
+                        "row_count": row_count,
+                        "is_background_result": True
+                    }
+                )
+                await mongodb.add_message(conversation_id, success_message.model_dump())
+                logger.info(
+                    "Added success message to conversation",
+                    execution_id=execution_id,
+                    conversation_id=conversation_id
+                )
+            except Exception as msg_error:
+                logger.warning(f"Failed to add success message to conversation: {msg_error}")
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(
+            f"Long-running query execution failed: {e}",
+            execution_id=execution_id,
+            exc_info=True
+        )
+
+        # Update Redis status to error
+        status_manager.update_status(
+            execution_id=execution_id,
+            status="error",
+            progress=0,
+            message=f"Query execution failed: {error_msg}",
+            error=error_msg
+        )
+
+        # Also persist error to MongoDB for query history
+        await status_manager.complete_and_persist(
+            execution_id=execution_id,
+            user_id=user_id,
+            organization_id=org_id,
+            question=question,
+            sql=sql,
+            status="error",
+            error=error_msg,
+            started_at=start_time,
+            is_background=True
+        )
+
+        # Add error message to conversation if we have the context
+        if mongodb and conversation_id:
+            try:
+                from src.models.conversation import Message
+                error_message = Message(
+                    id=f"msg-{int(datetime.now(timezone.utc).timestamp())}-assistant",
+                    type="assistant",
+                    content=f"I'm sorry, but there was an error executing your query: {error_msg}",
+                    timestamp=datetime.now(timezone.utc),
+                    metadata={"error": True, "execution_id": execution_id}
+                )
+                await mongodb.add_message(conversation_id, error_message.model_dump())
+                logger.info(
+                    "Added error message to conversation",
+                    execution_id=execution_id,
+                    conversation_id=conversation_id
+                )
+            except Exception as msg_error:
+                logger.warning(f"Failed to add error message to conversation: {msg_error}")
+
+
 async def _execute_query_logic(
     request: "QueryRequest",
     execution_id: str,
@@ -601,6 +763,78 @@ async def _execute_query_logic(
             persona_context
         )
 
+        # ANALYZE SQL for execution strategy using QueryOrchestrator
+        # This determines if the query requires async execution (>1B rows)
+        from src.core.query_orchestrator import QueryOrchestrator
+        orchestrator = QueryOrchestrator(
+            sql_generator=generator,
+            organization_id=user.get('organization_id', 'default') if user else 'default',
+            database_type=database_type
+        )
+
+        # Analyze the generated SQL
+        sql_text = sql_result.get("sql")
+        analysis_result = None
+        requires_async = False
+        largest_table_rows = 0
+
+        if sql_text:
+            analysis_result = orchestrator.analyze_for_preview(sql_text, database_type)
+            requires_async = analysis_result.get("requires_async", False)
+            largest_table_rows = analysis_result.get("largest_table_rows", 0)
+
+            logger.info(
+                "Query analysis complete",
+                requires_async=requires_async,
+                largest_table_rows=f"{largest_table_rows:,}" if largest_table_rows else "0",
+                tables=analysis_result.get("tables", []),
+                strategy=analysis_result.get("strategy", "unknown")
+            )
+
+        # Check if query requires async execution (very large tables >1B rows)
+        # This returns immediately with long_running status so frontend can switch to background mode
+        if requires_async:
+            row_count = largest_table_rows  # From analysis_result
+            estimated_minutes = max(5, int(row_count / 5_000_000_000) * 5)  # At least 5 min, +5 min per 5B rows
+
+            logger.info(
+                "ASYNC REQUIRED: Very large table query - returning long_running status",
+                largest_table_rows=row_count,
+                estimated_minutes=estimated_minutes,
+                tables_used=sql_result.get("tables_used"),
+                execution_id=execution_id
+            )
+
+            # Update status to long_running
+            if status_manager:
+                status_manager.update_status(
+                    execution_id=execution_id,
+                    status="long_running",
+                    progress=10,
+                    message=f"Query scans ~{row_count:,} rows. Estimated time: {estimated_minutes}+ minutes.",
+                    phase="executing",
+                    sql=sql_result.get("sql"),
+                    is_long_running=True,
+                    estimated_minutes=estimated_minutes,
+                    largest_table_rows=row_count
+                )
+
+            # Return the requires_async response - the caller will handle it
+            return {
+                "execution_id": execution_id,
+                "status": "long_running",
+                "is_long_running": True,
+                "estimated_minutes": estimated_minutes,
+                "largest_table_rows": row_count,
+                "message": f"This query scans ~{row_count:,} rows and may take {estimated_minutes}+ minutes. "
+                           f"You can wait or close this and be notified when it completes.",
+                "sql": sql_result.get("sql"),
+                "tables_used": sql_result.get("tables_used", []),
+                "warnings": sql_result.get("warnings", []),
+                "requires_async": True,
+                "database_type": database_type  # Include so caller knows which connector to use
+            }
+
         # Handle cross-connector queries
         if sql_result.get("requires_cross_connector"):
             update_status(60, "Executing cross-database query...", "executing")
@@ -733,7 +967,9 @@ async def _execute_query_logic(
 
             # Execute the query - run in thread pool to avoid blocking event loop
             update_status(75, "Running query on your database...", "executing")
-            execution_result = await asyncio.to_thread(generator.execute_query, current_sql)
+            # Pass target_database_type from SQL generation result for multi-connector routing
+            target_db_type = sql_result.get("target_database_type", database_type)
+            execution_result = await asyncio.to_thread(generator.execute_query, current_sql, target_db_type)
 
             # Post-execution error correction
             if execution_result.get("error") and not correction_info and not sql_result.get("from_cache"):
@@ -743,7 +979,7 @@ async def _execute_query_logic(
                     attempt_error_correction, execution_error, current_sql, "execution"
                 )
                 if corrected_sql:
-                    retry_result = await asyncio.to_thread(generator.execute_query, corrected_sql)
+                    retry_result = await asyncio.to_thread(generator.execute_query, corrected_sql, target_db_type)
                     if not retry_result.get("error"):
                         correction_info = {
                             "auto_corrected": True,
@@ -763,7 +999,8 @@ async def _execute_query_logic(
             if execution_result.get("pagination"):
                 result["pagination"] = execution_result["pagination"]
             # Include database_type and connector_id for pagination "Load More" requests
-            result["database_type"] = database_type
+            # Use target_db_type which reflects the actual database used (may differ from initial database_type)
+            result["database_type"] = target_db_type
             result["connector_id"] = connector_id
             if correction_info:
                 result["correction_info"] = correction_info
@@ -951,6 +1188,33 @@ async def process_query(
                     status_manager=status_manager,
                     start_time=start_time
                 )
+
+                # Check if this is a long_running response (very large table detected)
+                # Don't try to complete_and_persist - the status is already set to long_running
+                # and the actual execution should happen separately
+                if result.get("requires_async") or result.get("is_long_running"):
+                    logger.info(
+                        "Background task detected long_running query - skipping completion",
+                        execution_id=execution_id,
+                        largest_table_rows=result.get("largest_table_rows")
+                    )
+                    # The _execute_query_logic already set status to long_running
+                    # Now we need to actually execute the query in the background
+                    # Use database_type from result (determined by enabled connector)
+                    await _execute_long_running_query(
+                        execution_id=execution_id,
+                        sql=result.get("sql"),
+                        database_type=result.get("database_type") or request.database_type or "snowflake",
+                        generator=generator,
+                        status_manager=status_manager,
+                        user_id=user_id,
+                        org_id=org_id,
+                        question=request.question,
+                        start_time=start_time,
+                        mongodb=mongodb,
+                        conversation_id=request.conversationId
+                    )
+                    return
 
                 # Store final result and persist to MongoDB for query history
                 await status_manager.complete_and_persist(
@@ -1253,22 +1517,52 @@ async def process_query(
             )
 
             # ============================================================
+            # ANALYZE SQL for execution strategy using QueryOrchestrator
+            # This is the SYNC PATH - must check for large tables here too!
+            # ============================================================
+            from src.core.query_orchestrator import QueryOrchestrator
+            orchestrator = QueryOrchestrator(
+                sql_generator=generator,
+                organization_id=user.get('organization_id', 'default') if user else 'default',
+                database_type=database_type
+            )
+
+            # Analyze the generated SQL for requires_async
+            sql_text = sql_result.get("sql")
+            requires_async = False
+            largest_table_rows = 0
+
+            if sql_text:
+                analysis_result = orchestrator.analyze_for_preview(sql_text, database_type)
+                requires_async = analysis_result.get("requires_async", False)
+                largest_table_rows = analysis_result.get("largest_table_rows", 0)
+
+                logger.info(
+                    "SYNC PATH: Query analysis complete",
+                    requires_async=requires_async,
+                    largest_table_rows=f"{largest_table_rows:,}" if largest_table_rows else "0",
+                    tables=analysis_result.get("tables", []),
+                    strategy=analysis_result.get("strategy", "unknown")
+                )
+
+            # ============================================================
             # CROSS-CONNECTOR EXECUTION
             # If generate_sql returned a cross-connector query, execute it
             # using the CrossDatabaseExecutor instead of single-connector
             # ============================================================
             # Check if query requires async execution (very large tables)
-            if sql_result.get("requires_async"):
+            # Use the analysis result, not sql_result (which doesn't have requires_async)
+            if requires_async:
                 logger.info(
                     "ASYNC REQUIRED: Very large table query - forcing background execution",
-                    largest_table_rows=sql_result.get("largest_table_rows"),
+                    largest_table_rows=largest_table_rows,  # Use analysis result, not sql_result
                     tables_used=sql_result.get("tables_used"),
                     execution_id=execution_id
                 )
 
                 # Estimate execution time based on row count
                 # Rough estimate: 1 billion rows ≈ 2-5 minutes with aggregation
-                row_count = sql_result.get('largest_table_rows', 0)
+                row_count = largest_table_rows  # Use analysis result, not sql_result
                 estimated_minutes = max(5, int(row_count / 5_000_000_000) * 5)  # At least 5 min, +5 min per 5B rows
 
                 # Store query details for background execution
@@ -1524,7 +1818,9 @@ async def process_query(
                         }
 
                 # PHASE 2: Execute the (possibly corrected) SQL
-                execution_result = generator.execute_query(current_sql)
+                # Pass target_database_type to ensure correct connector is used
+                target_db_type = sql_result.get("target_database_type")
+                execution_result = generator.execute_query(current_sql, target_db_type)
 
                 # DEBUG: Log execution result for error correction debugging
                 logger.info(
@@ -1543,7 +1839,7 @@ async def process_query(
 
                     if corrected_sql:
                         logger.info("Error correction agent: Retrying with corrected SQL")
-                        retry_result = generator.execute_query(corrected_sql)
+                        retry_result = generator.execute_query(corrected_sql, target_db_type)
 
                         if not retry_result.get("error"):
                             correction_info = {

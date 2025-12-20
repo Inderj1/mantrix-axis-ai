@@ -793,12 +793,11 @@ Rules:
     - Before adding a JOIN, ask yourself: "Do I really need data from the second table, or does the first table have everything?"
     - IMPORTANT: Use ONLY tables provided in the schema context below - do NOT reference any tables not explicitly listed
 5. Use CTEs for complex queries to improve readability
-6. ⚠️ CRITICAL - HANDLING LARGE TABLES (billions of rows):
-    - AGGREGATION QUERIES ARE SAFE: SUM(), COUNT(), AVG(), MIN(), MAX() with GROUP BY are efficient on ANY table size - do NOT add LIMIT
-    - LIMIT IS ONLY NEEDED FOR: SELECT * or SELECT columns WITHOUT aggregation - add LIMIT 1000 for row-level queries
-    - When user asks for "total", "sum", "count", "average" → Use aggregation, NO LIMIT needed
-    - When user asks for "list", "show rows", "details" → Add LIMIT for safety
-    - The database optimizer handles aggregations efficiently even on billion-row tables
+6. HANDLING LARGE TABLES:
+    - Do NOT add LIMIT clauses unless the user explicitly asks for a specific number of results (e.g., "top 10", "first 100")
+    - The system handles large queries automatically via background execution
+    - Focus on generating the correct SQL to answer the user's question, not on limiting results
+    - Aggregation queries (SUM, COUNT, AVG, etc.) are efficient on any table size
 7. Use proper date/timestamp functions for time-based queries
 8. Include WHERE clauses when filtering makes sense for the business question
 9. Do not include backticks or triple quotes around the SQL - just provide the raw SQL query

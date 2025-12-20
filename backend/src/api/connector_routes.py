@@ -265,6 +265,20 @@ async def trigger_pipeline_for_connector(connector_id: str, connector_type: str,
                     logger.error(f"Failed to build vectors: {e}")
                     # Continue - don't fail entire pipeline for vector errors
 
+            # Calculate total_size from extracted tables
+            total_bytes = sum(table.get('size_bytes', 0) or 0 for table in tables)
+            if total_bytes > 0:
+                # Format bytes to human-readable string
+                for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                    if total_bytes < 1024:
+                        total_size = f"{total_bytes:.1f} {unit}" if unit != 'B' else f"{total_bytes} {unit}"
+                        break
+                    total_bytes /= 1024
+                else:
+                    total_size = f"{total_bytes:.1f} PB"
+            else:
+                total_size = "Unknown"
+
             # Update connector metadata with success
             await collection.update_one(
                 {'_id': ObjectId(connector_id)},
@@ -274,6 +288,7 @@ async def trigger_pipeline_for_connector(connector_id: str, connector_type: str,
                     'sync_error': None,
                     'metadata.last_sync': datetime.now().isoformat(),
                     'metadata.table_count': tables_extracted,
+                    'metadata.total_size': total_size,
                     'updated_at': datetime.now().isoformat()
                 }}
             )
@@ -928,6 +943,30 @@ async def toggle_connector_for_chat(
         was_enabled = connector.get('enabled_for_chat', False)
         is_enabling = enabled and not was_enabled
 
+        # Per-type uniqueness: Only one connector per database type can be enabled
+        # Auto-deactivate any other connector of same type when enabling
+        deactivated_connector_name = None
+        if is_enabling:
+            connector_type = connector.get('connector_type')
+            existing_enabled = await collection.find_one({
+                "organization_id": organization_id,
+                "connector_type": connector_type,
+                "enabled_for_chat": True,
+                "_id": {"$ne": ObjectId(connector_id)}  # Exclude self
+            })
+
+            if existing_enabled:
+                # Auto-deactivate the existing connector of same type
+                await collection.update_one(
+                    {"_id": existing_enabled["_id"]},
+                    {"$set": {"enabled_for_chat": False, "updated_at": datetime.now().isoformat()}}
+                )
+                deactivated_connector_name = existing_enabled.get("name", str(existing_enabled["_id"]))
+                logger.info(
+                    f"Auto-deactivated connector '{deactivated_connector_name}' ({connector_type}) "
+                    f"to enable connector '{connector.get('name', connector_id)}'"
+                )
+
         # Update the enabled_for_chat flag
         await collection.update_one(
             {'_id': ObjectId(connector_id)},
@@ -962,7 +1001,11 @@ async def toggle_connector_for_chat(
         # Fetch updated connector
         updated_connector = await collection.find_one({'_id': ObjectId(connector_id)})
 
-        return serialize_connector(updated_connector)
+        # Include deactivated connector info in response
+        response = serialize_connector(updated_connector)
+        if deactivated_connector_name:
+            response["deactivated_connector"] = deactivated_connector_name
+        return response
 
     except HTTPException:
         raise

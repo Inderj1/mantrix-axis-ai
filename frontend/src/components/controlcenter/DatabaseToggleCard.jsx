@@ -13,6 +13,7 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
+  Snackbar,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -28,6 +29,7 @@ import { apiService } from '../../services/api';
 const DatabaseToggleCard = ({ database, onToggle, enabledCount, maxAllowed }) => {
   const theme = useTheme();
   const [toggling, setToggling] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '' });
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -54,7 +56,16 @@ const DatabaseToggleCard = ({ database, onToggle, enabledCount, maxAllowed }) =>
     setToggling(true);
 
     try {
-      await apiService.toggleChatDatabase(database.id, newValue);
+      const response = await apiService.toggleChatDatabase(database.id, newValue);
+
+      // Show warning if another connector of same type was auto-deactivated
+      if (response.data?.deactivated_connector) {
+        setSnackbar({
+          open: true,
+          message: `"${response.data.deactivated_connector}" was automatically disabled (only one ${database.type} connector can be active at a time)`
+        });
+      }
+
       if (onToggle) {
         await onToggle();
       }
@@ -63,6 +74,10 @@ const DatabaseToggleCard = ({ database, onToggle, enabledCount, maxAllowed }) =>
     } finally {
       setToggling(false);
     }
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ open: false, message: '' });
   };
 
   const isDisabledForToggleOn = database.status !== 'connected' ||
@@ -231,6 +246,22 @@ const DatabaseToggleCard = ({ database, onToggle, enabledCount, maxAllowed }) =>
           )}
         </Box>
       </CardContent>
+
+      {/* Snackbar for auto-deactivation warning */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity="warning"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Card>
   );
 };

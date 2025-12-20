@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiService, getAuthToken, getApiBaseUrl } from '../services/api';
+import { backgroundQueryService } from '../services/backgroundQueryService';
 
 // Welcome message shown at start of new conversations
 const WELCOME_MESSAGE = {
@@ -47,6 +48,7 @@ export const useConversationStore = create(
 
       // Query execution state
       isLoading: false,
+      _backgroundQueryListenerSet: false, // Tracks if we've set up the background query listener
       isLoadingMore: false, // For pagination load more
 
       // Database selection (null = let backend use enabled connector)
@@ -82,6 +84,88 @@ export const useConversationStore = create(
         if (state.isInitialized && state.userId === userId) {
           console.log('[ConversationStore] Already initialized for user:', userId);
           return;
+        }
+
+        // Set up background query event listener (only once)
+        if (!state._backgroundQueryListenerSet) {
+          console.log('[ConversationStore] Setting up background query event listener');
+          backgroundQueryService.addEventListener((eventType, data) => {
+            if (eventType === 'queryComplete') {
+              console.log('[ConversationStore] Background query completed:', data.executionId);
+              const { metadata, result } = data;
+
+              // Reload the conversation to get the new message added by backend
+              const currentConvId = get().conversationId;
+              if (currentConvId) {
+                get().loadConversation(currentConvId);
+              }
+
+              // Clear the loading/background state
+              set(state => ({
+                queryProgress: {
+                  ...state.queryProgress,
+                  phase: 'complete',
+                  progress: 100,
+                  isStreaming: false,
+                  isLongRunning: false,
+                  message: `Query completed with ${result?.result?.execution?.row_count || 0} rows`,
+                },
+              }));
+
+              // Clear progress after a short delay so user can see completion
+              setTimeout(() => {
+                set({
+                  queryProgress: {
+                    isStreaming: false,
+                    phase: null,
+                    progress: 0,
+                    message: '',
+                    detail: '',
+                    sql: null,
+                    streamingResults: [],
+                    totalRows: 0,
+                  },
+                });
+              }, 1500);
+            } else if (eventType === 'queryError') {
+              console.log('[ConversationStore] Background query failed:', data.executionId, data.error);
+
+              // Reload the conversation to get the error message added by backend
+              const currentConvId = get().conversationId;
+              if (currentConvId) {
+                get().loadConversation(currentConvId);
+              }
+
+              // Clear the loading state
+              set(state => ({
+                queryProgress: {
+                  ...state.queryProgress,
+                  phase: 'error',
+                  progress: 0,
+                  isStreaming: false,
+                  isLongRunning: false,
+                  message: data.error || 'Query failed',
+                },
+              }));
+
+              // Clear error progress after longer delay so user can read the error
+              setTimeout(() => {
+                set({
+                  queryProgress: {
+                    isStreaming: false,
+                    phase: null,
+                    progress: 0,
+                    message: '',
+                    detail: '',
+                    sql: null,
+                    streamingResults: [],
+                    totalRows: 0,
+                  },
+                });
+              }, 3000);
+            }
+          });
+          set({ _backgroundQueryListenerSet: true });
         }
 
         // IMPORTANT: Capture temp conversation BEFORE any async operations
@@ -202,7 +286,17 @@ export const useConversationStore = create(
           set({
             conversationId,
             messages: formattedMessages,
-            error: null
+            error: null,
+            queryProgress: {
+              isStreaming: false,
+              phase: null,
+              progress: 0,
+              message: '',
+              detail: '',
+              sql: null,
+              streamingResults: [],
+              totalRows: 0,
+            },
           });
 
           // Save to localStorage
@@ -233,6 +327,16 @@ export const useConversationStore = create(
           conversationId: tempConvId,
           messages: [],
           error: null,
+          queryProgress: {
+            isStreaming: false,
+            phase: null,
+            progress: 0,
+            message: '',
+            detail: '',
+            sql: null,
+            streamingResults: [],
+            totalRows: 0,
+          },
         });
 
         // Save to localStorage
@@ -598,10 +702,10 @@ export const useConversationStore = create(
           const token = await getAuthToken();
           const baseUrl = getApiBaseUrl();
 
-          // Start async query processing
+          // Start query processing (sync by default, backend returns long_running for slow queries)
           const postStartTime = Date.now();
           console.log('[ConversationStore] Starting POST request at:', new Date().toISOString());
-          const startResponse = await fetch(`${baseUrl}/api/v1/query?async_mode=true`, {
+          const startResponse = await fetch(`${baseUrl}/api/v1/query`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -615,11 +719,117 @@ export const useConversationStore = create(
             throw new Error(errorData.detail || `HTTP error! status: ${startResponse.status}`);
           }
 
-          const { execution_id } = await startResponse.json();
+          const responseData = await startResponse.json();
           const postDuration = Date.now() - postStartTime;
           console.log('[ConversationStore] POST completed in', postDuration, 'ms at:', new Date().toISOString());
-          console.log('[ConversationStore] Query started with execution_id:', execution_id);
-          console.log('[ConversationStore] About to enter polling loop at:', new Date().toISOString());
+          console.log('[ConversationStore] Response type:', responseData.status || 'sync', responseData.execution_id ? `(execution_id: ${responseData.execution_id})` : '');
+
+          // CASE 1: Sync response - results returned immediately (fast query)
+          if (responseData.execution?.results || (responseData.sql && !responseData.execution_id && !responseData.status)) {
+            console.log('[ConversationStore] Sync response - displaying results immediately');
+            set(state => ({
+              queryProgress: {
+                ...state.queryProgress,
+                phase: 'complete',
+                progress: 100,
+                message: 'Done!',
+                sql: responseData.sql,
+                isStreaming: false,
+                isLongRunning: false,
+              },
+            }));
+
+            // Add assistant response with sync data
+            const assistantMessage = get().addMessage({
+              type: 'assistant',
+              content: responseData.explanation || 'Query executed successfully.',
+              sql: responseData.sql,
+              results: responseData.execution?.results || [],
+              resultCount: responseData.execution?.row_count || 0,
+              followUpSuggestions: responseData.follow_up_suggestions || [],
+              autoCorrected: responseData.auto_corrected,
+              correctionInfo: responseData.correction_info,
+              emptyResultNote: responseData.empty_result_note,
+              isCrossConnector: responseData.is_cross_connector || false,
+              connectorQueries: responseData.connector_queries || null,
+              joinSpec: responseData.join_specification || null,
+              paginationInfo: responseData.execution?.row_count > 100 ? {
+                totalCount: responseData.execution?.row_count,
+                currentPage: 1,
+                pageSize: 100,
+                hasMore: responseData.execution?.row_count > 100,
+              } : null,
+            });
+
+            set({ isLoading: false });
+
+            // Clear progress after a short delay so user can see completion
+            setTimeout(() => {
+              set({
+                queryProgress: {
+                  isStreaming: false,
+                  phase: null,
+                  progress: 0,
+                  message: '',
+                  detail: '',
+                  sql: null,
+                  streamingResults: [],
+                  totalRows: 0,
+                },
+              });
+            }, 1500);
+
+            return { success: true, data: responseData, message: assistantMessage };
+          }
+
+          // CASE 2: Long-running response - query detected as slow (>= 1B rows)
+          if (responseData.status === 'long_running' || responseData.is_long_running) {
+            const execution_id = responseData.execution_id;
+            console.log('[ConversationStore] Long-running query detected - switching to background mode');
+            console.log('[ConversationStore] Estimated time:', responseData.estimated_minutes, 'minutes');
+            console.log('[ConversationStore] Largest table rows:', responseData.largest_table_rows?.toLocaleString());
+
+            // Use backgroundQueryService to track and handle notifications
+            backgroundQueryService.trackQuery(
+              execution_id,
+              question,
+              responseData.sql || '',
+              { browser: true, email: false }
+            );
+            console.log('[ConversationStore] Query tracked with backgroundQueryService:', execution_id);
+
+            // Update UI to background mode
+            set(state => ({
+              isLoading: false,
+              queryProgress: {
+                ...state.queryProgress,
+                phase: 'background',
+                isLongRunning: true,
+                isStreaming: false,
+                estimatedMinutes: responseData.estimated_minutes,
+                largestTableRows: responseData.largest_table_rows,
+                message: 'Query running in background. You will be notified when complete.',
+                executionId: execution_id,
+                sql: responseData.sql,
+              },
+            }));
+
+            // Add system message to conversation
+            get().addMessage({
+              role: 'assistant',
+              type: 'system',
+              content: `This query is scanning ~${responseData.largest_table_rows?.toLocaleString() || 'billions of'} rows and may take ${responseData.estimated_minutes || '5+'}+ minutes. It's now running in the background - you'll receive a notification when it completes. Feel free to continue asking other questions!`,
+            });
+
+            return { success: true, backgroundMode: true, executionId: execution_id };
+          }
+
+          // CASE 3: Async processing response - poll for results
+          const execution_id = responseData.execution_id;
+          if (!execution_id) {
+            throw new Error('Unexpected response format - no execution_id or results');
+          }
+          console.log('[ConversationStore] Async response - entering polling mode with execution_id:', execution_id);
 
           // Poll for status
           const POLL_INTERVAL = 2000; // 2 seconds
@@ -678,24 +888,15 @@ export const useConversationStore = create(
               console.log('[ConversationStore] Estimated time:', status.estimated_minutes, 'minutes');
               console.log('[ConversationStore] Largest table rows:', status.largest_table_rows?.toLocaleString());
 
-              // Request notification permission
-              if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-                Notification.requestPermission();
-              }
-
-              // Save to localStorage for background checking
-              const pendingQueries = JSON.parse(localStorage.getItem('pendingQueries') || '[]');
-              if (!pendingQueries.find(p => p.execution_id === execution_id)) {
-                pendingQueries.push({
-                  execution_id,
-                  started_at: Date.now(),
-                  message: status.message,
-                  estimated_minutes: status.estimated_minutes,
-                  largest_table_rows: status.largest_table_rows,
-                  question: question,
-                });
-                localStorage.setItem('pendingQueries', JSON.stringify(pendingQueries));
-              }
+              // Use backgroundQueryService to track and handle notifications
+              // This handles notification permissions, polling, and browser notifications
+              backgroundQueryService.trackQuery(
+                execution_id,
+                question,
+                status.sql || '',
+                { browser: true, email: false }
+              );
+              console.log('[ConversationStore] Query tracked with backgroundQueryService:', execution_id);
 
               // Update UI to background mode and stop loading
               set(state => ({

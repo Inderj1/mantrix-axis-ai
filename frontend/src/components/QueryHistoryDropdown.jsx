@@ -28,16 +28,21 @@ import {
   Chip,
   Button,
   Tooltip,
-  LinearProgress
+  LinearProgress,
+  Snackbar,
+  Alert,
+  Slide
 } from '@mui/material';
 import {
-  History as HistoryIcon,
+  Notifications as NotificationsIcon,
+  NotificationsActive as NotificationsActiveIcon,
   CheckCircle as CompleteIcon,
   Error as ErrorIcon,
   Schedule as PendingIcon,
   Refresh as RefreshIcon,
   OpenInNew as OpenIcon,
-  Clear as ClearIcon
+  Clear as ClearIcon,
+  FiberNew as NewIcon
 } from '@mui/icons-material';
 import { backgroundQueryService } from '../services/backgroundQueryService';
 import { apiService } from '../services/api';
@@ -65,12 +70,25 @@ const formatDuration = (seconds) => {
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
 };
 
+// Slide transition for snackbar
+const SlideTransition = (props) => <Slide {...props} direction="up" />;
+
 const QueryHistoryDropdown = ({ onViewResults }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [pendingQueries, setPendingQueries] = useState([]);
   const [recentQueries, setRecentQueries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0); // New completions user hasn't seen
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success', query: null });
+  const [seenCompletions, setSeenCompletions] = useState(() => {
+    // Load seen completions from localStorage
+    try {
+      return new Set(JSON.parse(localStorage.getItem('seenQueryCompletions') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
   const open = Boolean(anchorEl);
 
   // Fetch query history
@@ -130,8 +148,31 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
   // Listen for background query events
   useEffect(() => {
     const unsubscribe = backgroundQueryService.addEventListener((eventType, data) => {
-      if (eventType === 'queryComplete' || eventType === 'queryError' ||
-          eventType === 'queryAdded' || eventType === 'queryRemoved') {
+      if (eventType === 'queryComplete') {
+        fetchHistory();
+        // Show toast notification for completed queries
+        const { metadata, result } = data;
+        const rowCount = result?.result?.execution?.row_count || 0;
+        setSnackbar({
+          open: true,
+          message: `Query completed: "${metadata?.question?.slice(0, 40)}${metadata?.question?.length > 40 ? '...' : ''}" returned ${rowCount.toLocaleString()} rows`,
+          severity: 'success',
+          query: { executionId: data.executionId, ...metadata }
+        });
+        // Increment unread count
+        setUnreadCount(prev => prev + 1);
+      } else if (eventType === 'queryError') {
+        fetchHistory();
+        // Show toast notification for failed queries
+        const { metadata } = data;
+        setSnackbar({
+          open: true,
+          message: `Query failed: "${metadata?.question?.slice(0, 40)}${metadata?.question?.length > 40 ? '...' : ''}"`,
+          severity: 'error',
+          query: { executionId: data.executionId, ...metadata }
+        });
+        setUnreadCount(prev => prev + 1);
+      } else if (eventType === 'queryAdded' || eventType === 'queryRemoved') {
         fetchHistory();
       } else if (eventType === 'queryProgress') {
         // Update progress for specific query
@@ -163,10 +204,24 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
   const handleClick = (event) => {
     setAnchorEl(event.currentTarget);
     fetchHistory();
+    // Clear unread count when opening dropdown
+    setUnreadCount(0);
   };
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleSnackbarClose = (event, reason) => {
+    if (reason === 'clickaway') return;
+    setSnackbar(prev => ({ ...prev, open: false }));
+  };
+
+  const handleSnackbarClick = () => {
+    if (snackbar.query && onViewResults) {
+      onViewResults(snackbar.query);
+    }
+    setSnackbar(prev => ({ ...prev, open: false }));
   };
 
   const handleViewResults = (query) => {
@@ -176,9 +231,20 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
     }
   };
 
-  const handleCancelQuery = (executionId) => {
-    backgroundQueryService.removeQuery(executionId);
-    fetchHistory();
+  const handleCancelQuery = async (executionId) => {
+    try {
+      // Cancel on backend
+      await apiService.cancelQuery(executionId);
+      // Remove from local tracking
+      backgroundQueryService.removeQuery(executionId);
+      // Refresh
+      fetchHistory();
+    } catch (error) {
+      console.error('[QueryHistoryDropdown] Failed to cancel query:', error);
+      // Still remove locally even if backend fails
+      backgroundQueryService.removeQuery(executionId);
+      fetchHistory();
+    }
   };
 
   const renderQueryItem = (query, isRecent = false) => {
@@ -274,22 +340,35 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
     );
   };
 
+  const totalBadgeCount = pendingCount + unreadCount;
+  const hasActivity = totalBadgeCount > 0;
+
   return (
     <>
-      <Tooltip title="Query History">
+      <Tooltip title={hasActivity ? `${pendingCount} running, ${unreadCount} new` : "Notifications"}>
         <IconButton
           onClick={handleClick}
           size="large"
           sx={{
-            color: pendingCount > 0 ? 'primary.main' : 'inherit'
+            color: hasActivity ? 'primary.main' : '#5f6368',
+            '&:hover': {
+              color: 'primary.main',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+            },
+            animation: unreadCount > 0 ? 'pulse 2s infinite' : 'none',
+            '@keyframes pulse': {
+              '0%': { transform: 'scale(1)' },
+              '50%': { transform: 'scale(1.1)' },
+              '100%': { transform: 'scale(1)' },
+            },
           }}
         >
           <Badge
-            badgeContent={pendingCount}
-            color="primary"
+            badgeContent={totalBadgeCount}
+            color={unreadCount > 0 ? 'error' : 'primary'}
             max={9}
           >
-            <HistoryIcon />
+            {hasActivity ? <NotificationsActiveIcon /> : <NotificationsIcon />}
           </Badge>
         </IconButton>
       </Tooltip>
@@ -325,10 +404,29 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
           {/* Pending Queries */}
           {pendingQueries.length > 0 && (
             <>
-              <Box sx={{ px: 2, py: 1, bgcolor: 'background.default' }}>
+              <Box sx={{ px: 2, py: 1, bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography variant="caption" color="text.secondary" fontWeight={600}>
                   RUNNING ({pendingQueries.length})
                 </Typography>
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={async () => {
+                    try {
+                      // Clear from backend (marks as expired)
+                      await apiService.clearStalePendingQueries(0); // 0 hours = clear all
+                      // Clear local tracking
+                      backgroundQueryService.clearAll();
+                      // Refresh the list
+                      fetchHistory();
+                    } catch (error) {
+                      console.error('[QueryHistoryDropdown] Failed to clear queries:', error);
+                    }
+                  }}
+                  sx={{ fontSize: '0.65rem', py: 0, minWidth: 'auto' }}
+                >
+                  Clear All
+                </Button>
               </Box>
               <List dense sx={{ py: 0 }}>
                 {pendingQueries.map(q => renderQueryItem(q, false))}
@@ -353,12 +451,12 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
           {/* Empty State */}
           {!loading && pendingQueries.length === 0 && recentQueries.length === 0 && (
             <Box sx={{ py: 4, textAlign: 'center' }}>
-              <HistoryIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+              <NotificationsIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
               <Typography variant="body2" color="text.secondary">
-                No query history yet
+                No notifications yet
               </Typography>
               <Typography variant="caption" color="text.disabled">
-                Long-running queries will appear here
+                Background query updates will appear here
               </Typography>
             </Box>
           )}
@@ -379,6 +477,34 @@ const QueryHistoryDropdown = ({ onViewResults }) => {
           </Button>
         </Box>
       </Menu>
+
+      {/* Toast notification for query completions */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={handleSnackbarClose}
+        TransitionComponent={SlideTransition}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{
+            width: '100%',
+            cursor: 'pointer',
+            '&:hover': { opacity: 0.9 }
+          }}
+          onClick={handleSnackbarClick}
+          action={
+            <Button color="inherit" size="small" onClick={handleSnackbarClick}>
+              VIEW
+            </Button>
+          }
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 };

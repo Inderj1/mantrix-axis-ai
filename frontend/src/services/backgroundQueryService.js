@@ -9,6 +9,8 @@ import { apiService } from './api';
 
 const STORAGE_KEY = 'backgroundQueries';
 const POLL_INTERVAL = 5000; // 5 seconds for background queries (less aggressive)
+const STALE_QUERY_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours - queries older than this are considered stale
+const MAX_POLL_ERRORS = 3; // After this many consecutive errors, mark query as failed
 
 class BackgroundQueryService {
   constructor() {
@@ -47,23 +49,45 @@ class BackgroundQueryService {
 
   /**
    * Load pending queries from localStorage
+   * Filters out stale queries (older than 24 hours)
    */
   loadFromStorage() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const queries = JSON.parse(stored);
+        const now = Date.now();
+        let restoredCount = 0;
+        let staleCount = 0;
+
         Object.entries(queries).forEach(([executionId, metadata]) => {
-          // Only restore running queries
+          // Only restore running queries that aren't stale
           if (metadata.status === 'running') {
-            this.pendingQueries.set(executionId, metadata);
-            this.startPolling(executionId);
+            const queryAge = now - (metadata.startTime || 0);
+            if (queryAge > STALE_QUERY_THRESHOLD) {
+              // Query is stale (older than 24h), skip it
+              staleCount++;
+              console.log(`[BackgroundQueryService] Skipping stale query: ${executionId} (${Math.round(queryAge / 3600000)}h old)`);
+            } else {
+              metadata.pollErrors = 0; // Reset error count
+              this.pendingQueries.set(executionId, metadata);
+              this.startPolling(executionId);
+              restoredCount++;
+            }
           }
         });
-        console.log(`[BackgroundQueryService] Restored ${this.pendingQueries.size} pending queries`);
+
+        // Save cleaned storage (without stale queries)
+        if (staleCount > 0) {
+          this.saveToStorage();
+        }
+
+        console.log(`[BackgroundQueryService] Restored ${restoredCount} pending queries, removed ${staleCount} stale queries`);
       }
     } catch (error) {
       console.error('[BackgroundQueryService] Failed to load from storage:', error);
+      // Clear corrupted storage
+      localStorage.removeItem(STORAGE_KEY);
     }
   }
 
@@ -114,8 +138,17 @@ class BackgroundQueryService {
     }
 
     const pollFn = async () => {
+      const metadata = this.pendingQueries.get(executionId);
+      if (!metadata) {
+        this.stopPolling(executionId);
+        return;
+      }
+
       try {
         const status = await apiService.getQueryStatus(executionId);
+
+        // Reset error count on successful poll
+        metadata.pollErrors = 0;
 
         if (status.status === 'complete') {
           this.onQueryComplete(executionId, status);
@@ -123,24 +156,28 @@ class BackgroundQueryService {
           this.onQueryError(executionId, status);
         } else {
           // Update progress
-          const metadata = this.pendingQueries.get(executionId);
-          if (metadata) {
-            metadata.progress = status.progress;
-            metadata.message = status.message;
-            metadata.phase = status.phase;
-            this.pendingQueries.set(executionId, metadata);
-            this.emitEvent('queryProgress', { executionId, status });
-          }
+          metadata.progress = status.progress;
+          metadata.message = status.message;
+          metadata.phase = status.phase;
+          this.pendingQueries.set(executionId, metadata);
+          this.emitEvent('queryProgress', { executionId, status });
         }
       } catch (error) {
         console.error(`[BackgroundQueryService] Poll error for ${executionId}:`, error);
-        // Don't stop polling on transient errors
+
+        // Track consecutive errors
+        metadata.pollErrors = (metadata.pollErrors || 0) + 1;
+
         if (error.response?.status === 404) {
-          // Query not found - stop polling
-          this.stopPolling(executionId);
-          this.pendingQueries.delete(executionId);
-          this.saveToStorage();
+          // Query not found on backend - mark as expired/failed
+          console.log(`[BackgroundQueryService] Query ${executionId} not found on server, removing`);
+          this.onQueryError(executionId, { error: 'Query expired or not found on server' });
+        } else if (metadata.pollErrors >= MAX_POLL_ERRORS) {
+          // Too many consecutive errors - mark as failed
+          console.log(`[BackgroundQueryService] Query ${executionId} failed after ${MAX_POLL_ERRORS} poll errors`);
+          this.onQueryError(executionId, { error: 'Lost connection to query - please try again' });
         }
+        // Otherwise continue polling (transient error)
       }
     };
 

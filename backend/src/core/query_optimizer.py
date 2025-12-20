@@ -1,3 +1,35 @@
+"""
+DEPRECATED: This module is deprecated and will be removed in a future version.
+
+Use SingleDatabaseQueryOptimizer from single_db_query_optimizer.py instead.
+
+The functionality from this module has been consolidated:
+- CTE conversion: Moved to SingleDatabaseQueryOptimizer._optimize_cte_conversion()
+- COUNT(*) optimization: Moved to SingleDatabaseQueryOptimizer._optimize_aggregations()
+- Auto LIMIT: REMOVED (federation handles large result sets appropriately)
+- BigQuery cost estimation: Use connector.validate_query() directly
+
+SingleDatabaseQueryOptimizer provides:
+- Multi-database support (BigQuery, Snowflake, PostgreSQL, Redshift, Databricks)
+- Modern SQL parsing via sqlglot (not regex)
+- Execution strategy selection (DIRECT/OPTIMIZED/FEDERATED)
+- Row count estimation from Jena/Weaviate metadata
+- Proper pagination support
+
+Migration:
+    # Old usage:
+    # from src.core.query_optimizer import QueryOptimizer
+    # optimizer = QueryOptimizer()
+    # result = optimizer.optimize_query(sql)
+
+    # New usage:
+    from src.core.single_db_query_optimizer import (
+        SingleDatabaseQueryOptimizer,
+        get_dialect_for_database
+    )
+    optimizer = SingleDatabaseQueryOptimizer(database_type="snowflake")
+    optimized_sql, analysis = optimizer.optimize_query(sql, dialect="snowflake")
+"""
 from typing import Dict, Any, List, Tuple, Optional
 import re
 import sqlparse
@@ -10,8 +42,13 @@ logger = structlog.get_logger()
 
 
 class QueryOptimizer:
-    """Optimizer for SQL queries to improve performance and reduce costs."""
-    
+    """
+    DEPRECATED: Optimizer for SQL queries to improve performance and reduce costs.
+
+    This class is deprecated. Use SingleDatabaseQueryOptimizer instead.
+    See module docstring for migration instructions.
+    """
+
     def __init__(self):
         self.bq_client = BigQueryClient()
         self.llm_client = LLMClient()

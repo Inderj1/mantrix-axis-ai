@@ -937,5 +937,553 @@ class TestLoadOrgConnectorConfigNoFallback:
             assert result["dataset_id"] == "my-dataset"
 
 
+# ============================================================================
+# TEST PRE-DETECT TARGET DATABASE
+# ============================================================================
+
+class TestPreDetectTargetDatabase:
+    """Test pre-detection of target database from schemas."""
+
+    @pytest.fixture
+    def sql_generator(self):
+        """Create SQL generator for testing."""
+        with patch('src.core.sql_generator.LLMClient'), \
+             patch('src.core.sql_generator.WeaviateClient'), \
+             patch('src.core.sql_generator.QueryOptimizer'), \
+             patch('src.core.sql_generator.QuerySuggestionService'), \
+             patch('src.core.sql_generator.CacheManager'), \
+             patch('src.core.sql_generator.FormatNormalizer'), \
+             patch('src.core.sql_generator.ConnectorFactory') as mock_factory, \
+             patch('src.core.sql_generator.settings') as mock_settings, \
+             patch('src.core.sql_generator.SQLGenerator._load_org_connector_config', return_value={"project_id": "test", "dataset_id": "test"}), \
+             patch('src.core.sql_generator.SQLGenerator._refresh_connector_ids', return_value=['test-connector-id']):
+
+            mock_settings.cache_enabled = False
+            mock_settings.enable_industry_features = False
+            mock_settings.google_cloud_project = "test-project"
+            mock_settings.bigquery_dataset = "test-dataset"
+            mock_settings.default_org_id = "test-org"
+
+            mock_connector = MagicMock()
+            mock_capabilities = MagicMock()
+            mock_capabilities.database_name = "BigQuery"
+            mock_connector.get_capabilities.return_value = mock_capabilities
+            mock_factory.create_connector.return_value = mock_connector
+            mock_factory.get_supported_types.return_value = ['bigquery', 'postgresql', 'snowflake', 'redshift', 'databricks']
+
+            from src.core.sql_generator import SQLGenerator
+            generator = SQLGenerator(database_type='bigquery')
+            generator.connector_ids = ['test-connector-id']
+            return generator
+
+    def test_returns_snowflake_when_all_schemas_are_snowflake(self, sql_generator):
+        """Test that Snowflake is detected when all schemas are from Snowflake."""
+        schemas = [
+            {"table_name": "SALES_TRANSACTIONS", "database_type": "snowflake"},
+            {"table_name": "CUSTOMER_REGION", "database_type": "snowflake"},
+        ]
+        result = sql_generator._pre_detect_target_database(schemas)
+        assert result == "snowflake"
+
+    def test_returns_bigquery_when_all_schemas_are_bigquery(self, sql_generator):
+        """Test that BigQuery is detected when all schemas are from BigQuery."""
+        schemas = [
+            {"table_name": "customer_master", "database_type": "bigquery"},
+            {"table_name": "sales_data", "database_type": "bigquery"},
+        ]
+        result = sql_generator._pre_detect_target_database(schemas)
+        assert result == "bigquery"
+
+    def test_returns_federated_when_schemas_are_mixed(self, sql_generator):
+        """Test that 'federated' is returned when schemas are from different databases."""
+        schemas = [
+            {"table_name": "CUSTOMER_REGION", "database_type": "snowflake"},
+            {"table_name": "customer_master", "database_type": "bigquery"},
+        ]
+        result = sql_generator._pre_detect_target_database(schemas)
+        assert result == "federated"
+
+    def test_returns_primary_type_when_schemas_empty(self, sql_generator):
+        """Test that primary database type is returned when schemas list is empty."""
+        schemas = []
+        result = sql_generator._pre_detect_target_database(schemas)
+        assert result == sql_generator.database_type  # "bigquery"
+
+    def test_returns_single_type_when_only_one_schema(self, sql_generator):
+        """Test single schema detection."""
+        schemas = [{"table_name": "PRODUCTS", "database_type": "postgresql"}]
+        result = sql_generator._pre_detect_target_database(schemas)
+        assert result == "postgresql"
+
+    def test_handles_missing_database_type_in_schema(self, sql_generator):
+        """Test fallback when schema doesn't have database_type."""
+        schemas = [
+            {"table_name": "some_table"},  # No database_type
+            {"table_name": "another_table"},  # No database_type
+        ]
+        result = sql_generator._pre_detect_target_database(schemas)
+        # Should fallback to primary database type
+        assert result == sql_generator.database_type
+
+
+# ============================================================================
+# TEST GET DIALECT GUIDE FOR TYPE
+# ============================================================================
+
+class TestGetDialectGuideForType:
+    """Test getting dialect guide for specific database type."""
+
+    @pytest.fixture
+    def sql_generator(self):
+        """Create SQL generator for testing."""
+        with patch('src.core.sql_generator.LLMClient'), \
+             patch('src.core.sql_generator.WeaviateClient'), \
+             patch('src.core.sql_generator.QueryOptimizer'), \
+             patch('src.core.sql_generator.QuerySuggestionService'), \
+             patch('src.core.sql_generator.CacheManager'), \
+             patch('src.core.sql_generator.FormatNormalizer'), \
+             patch('src.core.sql_generator.ConnectorFactory') as mock_factory, \
+             patch('src.core.sql_generator.settings') as mock_settings, \
+             patch('src.core.sql_generator.SQLGenerator._load_org_connector_config', return_value={"project_id": "test", "dataset_id": "test"}), \
+             patch('src.core.sql_generator.SQLGenerator._refresh_connector_ids', return_value=['test-connector-id']):
+
+            mock_settings.cache_enabled = False
+            mock_settings.enable_industry_features = False
+            mock_settings.google_cloud_project = "test-project"
+            mock_settings.bigquery_dataset = "test-dataset"
+            mock_settings.default_org_id = "test-org"
+
+            mock_connector = MagicMock()
+            mock_capabilities = MagicMock()
+            mock_capabilities.database_name = "BigQuery"
+            mock_connector.get_capabilities.return_value = mock_capabilities
+            mock_factory.create_connector.return_value = mock_connector
+            mock_factory.get_supported_types.return_value = ['bigquery', 'postgresql', 'snowflake', 'redshift', 'databricks']
+
+            from src.core.sql_generator import SQLGenerator
+            generator = SQLGenerator(database_type='bigquery')
+            generator.connector_ids = ['test-connector-id']
+            return generator
+
+    def test_get_snowflake_guide_when_bigquery_primary(self, sql_generator):
+        """Test getting Snowflake guide when BigQuery is primary."""
+        guide = sql_generator._get_dialect_guide_for_type("snowflake")
+        assert "Snowflake" in guide
+        assert "backticks" not in guide.lower() or "no backticks" in guide.lower()
+
+    def test_get_bigquery_guide_explicitly(self, sql_generator):
+        """Test getting BigQuery guide explicitly."""
+        guide = sql_generator._get_dialect_guide_for_type("bigquery")
+        assert "BigQuery" in guide
+        assert "backticks" in guide
+
+    def test_get_postgresql_guide(self, sql_generator):
+        """Test getting PostgreSQL guide."""
+        guide = sql_generator._get_dialect_guide_for_type("postgresql")
+        assert "PostgreSQL" in guide
+
+    def test_returns_empty_for_unknown_type(self, sql_generator):
+        """Test that empty string is returned for unknown database type."""
+        guide = sql_generator._get_dialect_guide_for_type("unknown_db")
+        assert guide == ""
+
+
+# ============================================================================
+# TEST DIALECT GUIDE PASSED TO LLM
+# ============================================================================
+
+class TestDialectGuidePassedToLLM:
+    """Test that correct dialect guide is passed to LLM based on schemas."""
+
+    @pytest.fixture
+    def sql_generator(self):
+        """Create SQL generator with mocked dependencies."""
+        with patch('src.core.sql_generator.LLMClient') as mock_llm_class, \
+             patch('src.core.sql_generator.WeaviateClient') as mock_weaviate_class, \
+             patch('src.core.sql_generator.QueryOptimizer'), \
+             patch('src.core.sql_generator.QuerySuggestionService'), \
+             patch('src.core.sql_generator.CacheManager'), \
+             patch('src.core.sql_generator.FormatNormalizer'), \
+             patch('src.core.sql_generator.ConnectorFactory') as mock_factory, \
+             patch('src.core.sql_generator.settings') as mock_settings, \
+             patch('src.core.sql_generator.SQLGenerator._load_org_connector_config', return_value={"project_id": "test-project", "dataset_id": "test-dataset"}), \
+             patch('src.core.sql_generator.SQLGenerator._refresh_connector_ids', return_value=['test-connector-id']):
+
+            mock_settings.cache_enabled = False
+            mock_settings.enable_industry_features = False
+            mock_settings.google_cloud_project = "test-project"
+            mock_settings.bigquery_dataset = "test-dataset"
+            mock_settings.default_org_id = "test-org"
+
+            mock_connector = MagicMock()
+            mock_capabilities = MagicMock()
+            mock_capabilities.database_name = "BigQuery"
+            mock_connector.get_capabilities.return_value = mock_capabilities
+            mock_connector.get_dataset_schema.return_value = []
+            mock_factory.create_connector.return_value = mock_connector
+            mock_factory.get_supported_types.return_value = ['bigquery', 'postgresql', 'snowflake', 'redshift', 'databricks']
+
+            mock_llm = MagicMock()
+            mock_llm.generate_sql.return_value = {
+                "sql": "SELECT * FROM SALES_TRANSACTIONS",
+                "explanation": "Query sales transactions",
+                "tables_used": ["SALES_TRANSACTIONS"],
+                "estimated_complexity": "low"
+            }
+            mock_llm.generate_embedding.return_value = [0.1] * 1536
+            mock_llm_class.return_value = mock_llm
+
+            mock_weaviate = MagicMock()
+            # Return SNOWFLAKE tables from vector search
+            mock_weaviate.search_similar_tables.return_value = [
+                {
+                    "table_name": "SALES_TRANSACTIONS",
+                    "database_type": "snowflake",
+                    "dataset": "CROSS_DB_TEST",
+                    "project": "SNOWFLAKE_LEARNING_DB",
+                    "columns": [{"name": "TRANSACTION_ID", "type": "VARCHAR"}],
+                    "distance": 0.1
+                },
+                {
+                    "table_name": "CUSTOMER_REGION",
+                    "database_type": "snowflake",
+                    "dataset": "CROSS_DB_TEST",
+                    "project": "SNOWFLAKE_LEARNING_DB",
+                    "columns": [{"name": "CUSTOMER_ID", "type": "VARCHAR"}],
+                    "distance": 0.2
+                }
+            ]
+            mock_weaviate_class.return_value = mock_weaviate
+
+            from src.core.sql_generator import SQLGenerator
+            generator = SQLGenerator(database_type='bigquery')
+            generator.llm_client = mock_llm
+            generator.vector_client = mock_weaviate
+            generator.db_client = mock_connector
+            generator.bq_client = mock_connector
+            generator.enable_financial_features = False
+            generator.knowledge_graph = None
+            generator.kg_query_resolver = None
+            generator.connector_ids = ['test-connector-id']
+
+            return generator
+
+    def test_snowflake_dialect_passed_when_schemas_are_snowflake(self, sql_generator):
+        """Test that Snowflake dialect guide is passed to LLM when all schemas are Snowflake."""
+        sql_generator.generate_sql("Show transactions by region")
+
+        call_args = sql_generator.llm_client.generate_sql.call_args
+        dialect_guide = call_args.kwargs.get('dialect_guide', '')
+        database_type = call_args.kwargs.get('database_type', '')
+
+        # Should pass Snowflake dialect, not BigQuery
+        assert "Snowflake" in dialect_guide
+        assert database_type == "snowflake"
+
+
+# ============================================================================
+# TEST TARGET DATABASE TYPE IN RESULT (FIX FOR BACKTICK ISSUE)
+# ============================================================================
+
+class TestTargetDatabaseTypeInResult:
+    """
+    Test that result["target_database_type"] uses pre-detected value.
+
+    This tests the fix for the backtick issue where:
+    - Vector search returns Snowflake tables
+    - Pre-detection correctly identifies Snowflake
+    - Previously, _determine_target_database would override with 'bigquery'
+      because table name matching failed (simple name vs qualified name)
+    - Now we use the pre-detected value directly
+    """
+
+    @pytest.fixture
+    def sql_generator(self):
+        """Create SQL generator with mocked dependencies."""
+        with patch('src.core.sql_generator.LLMClient') as mock_llm_class, \
+             patch('src.core.sql_generator.WeaviateClient') as mock_weaviate_class, \
+             patch('src.core.sql_generator.QueryOptimizer'), \
+             patch('src.core.sql_generator.QuerySuggestionService'), \
+             patch('src.core.sql_generator.CacheManager'), \
+             patch('src.core.sql_generator.FormatNormalizer'), \
+             patch('src.core.sql_generator.ConnectorFactory') as mock_factory, \
+             patch('src.core.sql_generator.settings') as mock_settings, \
+             patch('src.core.sql_generator.SQLGenerator._load_org_connector_config', return_value={"project_id": "test-project", "dataset_id": "test-dataset"}), \
+             patch('src.core.sql_generator.SQLGenerator._refresh_connector_ids', return_value=['test-connector-id']):
+
+            mock_settings.cache_enabled = False
+            mock_settings.cache_sql_enabled = False
+            mock_settings.cache_validation_enabled = False
+            mock_settings.cache_execution_test_required = False
+            mock_settings.enable_industry_features = False
+            mock_settings.google_cloud_project = "test-project"
+            mock_settings.bigquery_dataset = "test-dataset"
+            mock_settings.default_org_id = "test-org"
+
+            mock_connector = MagicMock()
+            mock_capabilities = MagicMock()
+            mock_capabilities.database_name = "BigQuery"
+            mock_connector.get_capabilities.return_value = mock_capabilities
+            mock_connector.get_dataset_schema.return_value = []
+            mock_connector.validate_query.return_value = {"valid": True}
+            mock_factory.create_connector.return_value = mock_connector
+            mock_factory.get_supported_types.return_value = ['bigquery', 'postgresql', 'snowflake', 'redshift', 'databricks']
+
+            # Create a mock Snowflake connector for _get_connector_for_database
+            mock_snowflake_connector = MagicMock()
+            mock_snowflake_connector.validate_query.return_value = {"valid": True}
+
+            mock_llm = MagicMock()
+            mock_llm.generate_sql.return_value = {
+                "sql": "SELECT SUM(t.TRANSACTION_AMOUNT) AS total_amount, r.REGION "
+                       "FROM SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.SALES_TRANSACTIONS t "
+                       "JOIN SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.CUSTOMER_REGION r ON t.CUSTOMER_ID = r.CUSTOMER_ID "
+                       "GROUP BY r.REGION",
+                "explanation": "Query total transaction amount by region",
+                "tables_used": ["SALES_TRANSACTIONS", "CUSTOMER_REGION"],  # Simple names (not qualified)
+                "estimated_complexity": "medium"
+            }
+            mock_llm.generate_embedding.return_value = [0.1] * 1536
+            mock_llm_class.return_value = mock_llm
+
+            mock_weaviate = MagicMock()
+            # Return SNOWFLAKE tables with QUALIFIED names (schema.table format)
+            mock_weaviate.search_similar_tables.return_value = [
+                {
+                    "table_name": "CROSS_DB_TEST.SALES_TRANSACTIONS",  # Qualified name
+                    "database_type": "snowflake",
+                    "dataset": "CROSS_DB_TEST",
+                    "project": "SNOWFLAKE_LEARNING_DB",
+                    "columns": [{"name": "TRANSACTION_ID", "type": "VARCHAR"}],
+                    "distance": 0.1
+                },
+                {
+                    "table_name": "CROSS_DB_TEST.CUSTOMER_REGION",  # Qualified name
+                    "database_type": "snowflake",
+                    "dataset": "CROSS_DB_TEST",
+                    "project": "SNOWFLAKE_LEARNING_DB",
+                    "columns": [{"name": "CUSTOMER_ID", "type": "VARCHAR"}],
+                    "distance": 0.2
+                }
+            ]
+            mock_weaviate_class.return_value = mock_weaviate
+
+            from src.core.sql_generator import SQLGenerator
+            generator = SQLGenerator(database_type='bigquery')
+            generator.llm_client = mock_llm
+            generator.vector_client = mock_weaviate
+            generator.db_client = mock_connector
+            generator.bq_client = mock_connector
+            generator.enable_financial_features = False
+            generator.knowledge_graph = None
+            generator.kg_query_resolver = None
+            generator.connector_ids = ['test-connector-id']
+            generator.format_normalizer = None
+            generator.optimizer = MagicMock()
+            generator.optimizer.optimize_query.return_value = {"optimized_sql": None}
+            generator.suggestion_service = MagicMock()
+            generator.suggestion_service.suggest_query_improvements.return_value = []
+            # Mock _get_connector_for_database to return a Snowflake connector
+            generator._get_connector_for_database = MagicMock(
+                return_value=(mock_snowflake_connector, "snowflake-connector-id")
+            )
+
+            return generator
+
+    def test_result_has_snowflake_type_when_schemas_are_snowflake(self, sql_generator):
+        """
+        Test that result["target_database_type"] is "snowflake" when all schemas are Snowflake.
+
+        This verifies the fix for the issue where:
+        - LLM returns tables_used: ["SALES_TRANSACTIONS"] (simple name)
+        - Schema has table_name: "CROSS_DB_TEST.SALES_TRANSACTIONS" (qualified)
+        - Old code: _determine_target_database failed to match, returned "bigquery"
+        - New code: Uses pre-detected value ("snowflake") directly
+        """
+        result = sql_generator.generate_sql("Show total transaction amount by region")
+
+        assert result.get("target_database_type") == "snowflake", \
+            f"Expected 'snowflake' but got '{result.get('target_database_type')}'. " \
+            "This indicates the pre-detected database type is not being used correctly."
+
+    def test_requires_alternate_connector_when_target_differs(self, sql_generator):
+        """Test that requires_alternate_connector is set when target differs from primary."""
+        result = sql_generator.generate_sql("Show transactions by region")
+
+        # Since primary is BigQuery and target is Snowflake, should require alternate connector
+        assert result.get("requires_alternate_connector") == True
+
+    def test_pre_detected_type_not_overwritten_by_failed_table_matching(self, sql_generator):
+        """
+        Test that pre-detected type is preserved even when table name matching fails.
+
+        The old _determine_target_database would:
+        1. Try to match "SALES_TRANSACTIONS" (from LLM) with "CROSS_DB_TEST.SALES_TRANSACTIONS" (from schema)
+        2. Fail because exact match fails
+        3. Return self.database_type ("bigquery") as fallback
+
+        The new code should use pre-detected value directly.
+        """
+        # Verify the generator's primary type is BigQuery (different from target)
+        assert sql_generator.database_type == "bigquery"
+
+        result = sql_generator.generate_sql("Show total amount by region from sales")
+
+        # Pre-detection should have detected Snowflake from schemas
+        # This should NOT be overwritten to BigQuery
+        assert result.get("target_database_type") != "bigquery", \
+            "target_database_type was incorrectly set to primary database type (bigquery). " \
+            "The pre-detected type (snowflake) should have been used."
+
+
+# ============================================================================
+# TEST DATABASE TYPE MUTATION (FIX FOR CONNECTOR MISMATCH BUG)
+# ============================================================================
+
+class TestDatabaseTypeMutation:
+    """
+    Test that self.database_type is NOT mutated during query processing.
+
+    This tests the fix for the bug where:
+    - self.database_type was changed to 'snowflake' during multi-connector query
+    - But self.db_client and self.connector_ids[0] stayed as BigQuery
+    - This caused _get_connector_for_database('snowflake') to return BigQuery connector
+    """
+
+    @pytest.fixture
+    def sql_generator(self):
+        """Create SQL generator with mocked dependencies."""
+        with patch('src.core.sql_generator.LLMClient') as mock_llm_class, \
+             patch('src.core.sql_generator.WeaviateClient') as mock_weaviate_class, \
+             patch('src.core.sql_generator.QueryOptimizer'), \
+             patch('src.core.sql_generator.QuerySuggestionService'), \
+             patch('src.core.sql_generator.CacheManager'), \
+             patch('src.core.sql_generator.FormatNormalizer'), \
+             patch('src.core.sql_generator.ConnectorFactory') as mock_factory, \
+             patch('src.core.sql_generator.settings') as mock_settings, \
+             patch('src.core.sql_generator.SQLGenerator._load_org_connector_config', return_value={"project_id": "test-project", "dataset_id": "test-dataset"}), \
+             patch('src.core.sql_generator.SQLGenerator._refresh_connector_ids', return_value=['test-connector-id']):
+
+            mock_settings.cache_enabled = False
+            mock_settings.cache_sql_enabled = False
+            mock_settings.cache_validation_enabled = False
+            mock_settings.cache_execution_test_required = False
+            mock_settings.enable_industry_features = False
+            mock_settings.google_cloud_project = "test-project"
+            mock_settings.bigquery_dataset = "test-dataset"
+            mock_settings.default_org_id = "test-org"
+
+            mock_connector = MagicMock()
+            mock_capabilities = MagicMock()
+            mock_capabilities.database_name = "BigQuery"
+            mock_connector.get_capabilities.return_value = mock_capabilities
+            mock_connector.get_dataset_schema.return_value = []
+            mock_connector.validate_query.return_value = {"valid": True}
+            mock_factory.create_connector.return_value = mock_connector
+            mock_factory.get_supported_types.return_value = ['bigquery', 'postgresql', 'snowflake', 'redshift', 'databricks']
+
+            mock_snowflake_connector = MagicMock()
+            mock_snowflake_connector.validate_query.return_value = {"valid": True}
+
+            mock_llm = MagicMock()
+            mock_llm.generate_sql.return_value = {
+                "sql": "SELECT * FROM SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.SALES_TRANSACTIONS",
+                "explanation": "Query sales transactions",
+                "tables_used": ["SALES_TRANSACTIONS"],
+                "estimated_complexity": "low"
+            }
+            mock_llm.generate_embedding.return_value = [0.1] * 1536
+            mock_llm_class.return_value = mock_llm
+
+            mock_weaviate = MagicMock()
+            mock_weaviate.search_similar_tables.return_value = [
+                {
+                    "table_name": "SALES_TRANSACTIONS",
+                    "database_type": "snowflake",
+                    "dataset": "CROSS_DB_TEST",
+                    "project": "SNOWFLAKE_LEARNING_DB",
+                    "columns": [{"name": "TRANSACTION_ID", "type": "VARCHAR"}],
+                    "distance": 0.1
+                }
+            ]
+            mock_weaviate_class.return_value = mock_weaviate
+
+            from src.core.sql_generator import SQLGenerator
+            generator = SQLGenerator(database_type='bigquery')
+            generator.llm_client = mock_llm
+            generator.vector_client = mock_weaviate
+            generator.db_client = mock_connector
+            generator.bq_client = mock_connector
+            generator.enable_financial_features = False
+            generator.knowledge_graph = None
+            generator.kg_query_resolver = None
+            generator.connector_ids = ['bq-connector-id', 'sf-connector-id']
+            generator.connector_db_types = {
+                'bq-connector-id': 'bigquery',
+                'sf-connector-id': 'snowflake'
+            }
+            generator.format_normalizer = None
+            generator.optimizer = MagicMock()
+            generator.optimizer.optimize_query.return_value = {"optimized_sql": None}
+            generator.suggestion_service = MagicMock()
+            generator.suggestion_service.suggest_query_improvements.return_value = []
+            generator._get_connector_for_database = MagicMock(
+                return_value=(mock_snowflake_connector, "sf-connector-id")
+            )
+
+            return generator
+
+    def test_database_type_not_mutated_when_target_is_snowflake(self, sql_generator):
+        """
+        Test that self.database_type remains 'bigquery' even when target is Snowflake.
+
+        The target database type should be tracked in result["target_database_type"],
+        NOT by mutating self.database_type.
+        """
+        # Store original database_type
+        original_db_type = sql_generator.database_type
+        assert original_db_type == "bigquery", "Primary DB should be BigQuery"
+
+        # Generate SQL for Snowflake target
+        result = sql_generator.generate_sql("Show total sales")
+
+        # self.database_type should NOT have changed
+        assert sql_generator.database_type == original_db_type, \
+            f"self.database_type was mutated from 'bigquery' to '{sql_generator.database_type}'. " \
+            "This mutation causes _get_connector_for_database to return the wrong connector."
+
+    def test_primary_connector_preserved_after_snowflake_query(self, sql_generator):
+        """
+        Test that primary connector (BigQuery) is still accessible after Snowflake query.
+
+        The issue was that mutating self.database_type made the primary connector
+        inaccessible because _get_connector_for_database would return wrong connector.
+        """
+        # Generate Snowflake query
+        sql_generator.generate_sql("Show sales data")
+
+        # db_client should still be the original BigQuery connector
+        assert sql_generator.db_client is not None
+        # And database_type should still be 'bigquery'
+        assert sql_generator.database_type == "bigquery"
+
+
+# ============================================================================
+# TEST FIXTURES
+# ============================================================================
+
+@pytest.fixture
+def sample_table_schema():
+    """Sample table schema for tests."""
+    return {
+        "table_name": "customers",
+        "columns": [
+            {"name": "customer_id", "type": "STRING", "description": "Customer identifier"},
+            {"name": "name", "type": "STRING", "description": "Customer name"},
+            {"name": "created_at", "type": "TIMESTAMP", "description": "Creation timestamp"}
+        ]
+    }
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -400,7 +400,7 @@ class PostgreSQLConnector(BaseDatabaseConnector):
                 "database": self.database,
                 "description": table_info['table_comment'] if table_info else None,
                 "row_count": table_info['row_count'] if table_info else None,
-                "bytes": table_info['total_bytes'] if table_info else None,
+                "size_bytes": table_info['total_bytes'] if table_info else None,
                 "columns": []
             }
 

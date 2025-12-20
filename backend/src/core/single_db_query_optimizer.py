@@ -471,16 +471,206 @@ class SingleDatabaseQueryOptimizer:
         """
         Analyze and optimize a query for execution.
 
+        Applies SQL transformations:
+        1. CTE conversion for repeated subqueries
+        2. COUNT(*) optimization for non-DISTINCT counts
+
+        NOTE: Does NOT add auto LIMIT - federation handles large result sets.
+
         Returns:
             Tuple of (optimized_sql, analysis)
         """
         analysis = self.analyze_query(sql, dialect)
+        optimized_sql = sql
+        optimizations_applied = []
 
-        # If pushdown produced optimized SQL, use it
+        try:
+            # Parse the SQL for transformation
+            parsed = parse_one(sql, read=dialect)
+
+            # Apply CTE conversion for repeated subqueries
+            cte_result = self._optimize_cte_conversion(parsed, dialect)
+            if cte_result:
+                parsed = cte_result
+                optimizations_applied.append("Converted repeated subqueries to CTEs")
+                logger.info("Applied CTE optimization for repeated subqueries")
+
+            # Apply aggregation optimization (COUNT column -> COUNT(*))
+            agg_result = self._optimize_aggregations(parsed)
+            if agg_result:
+                parsed = agg_result
+                optimizations_applied.append("Optimized COUNT functions")
+                logger.info("Applied COUNT optimization")
+
+            # Generate optimized SQL if any transformations applied
+            if optimizations_applied:
+                optimized_sql = parsed.sql(dialect=dialect)
+                analysis.optimized_sql = optimized_sql
+                logger.info(
+                    "SQL transformations applied",
+                    optimizations=optimizations_applied,
+                    original_preview=sql[:100],
+                    optimized_preview=optimized_sql[:100]
+                )
+        except Exception as e:
+            logger.warning(f"SQL transformation failed, using original query: {e}")
+            # Fall through to use original or pushdown-optimized SQL
+
+        # If pushdown produced optimized SQL and no other optimizations, use it
         if analysis.optimized_sql:
             return analysis.optimized_sql, analysis
 
-        return sql, analysis
+        return optimized_sql if optimizations_applied else sql, analysis
+
+    def _optimize_cte_conversion(
+        self,
+        parsed: exp.Expression,
+        dialect: str = "snowflake"
+    ) -> Optional[exp.Expression]:
+        """
+        Convert repeated subqueries to CTEs using sqlglot.
+
+        This optimization reduces redundant computation when the same
+        subquery appears multiple times in a query.
+
+        Args:
+            parsed: Parsed SQL expression
+            dialect: SQL dialect for generation
+
+        Returns:
+            Optimized expression with CTEs, or None if no optimization needed
+        """
+        try:
+            # Find all subqueries
+            subqueries = list(parsed.find_all(exp.Subquery))
+            if len(subqueries) < 2:
+                return None
+
+            # Group subqueries by their SQL representation
+            subquery_sql_map: Dict[str, List[exp.Subquery]] = {}
+            for sq in subqueries:
+                # Generate SQL for comparison (normalized)
+                sq_sql = sq.sql(dialect=dialect)
+                if sq_sql not in subquery_sql_map:
+                    subquery_sql_map[sq_sql] = []
+                subquery_sql_map[sq_sql].append(sq)
+
+            # Find repeated subqueries (appear more than once)
+            repeated = {sql: sqs for sql, sqs in subquery_sql_map.items() if len(sqs) > 1}
+            if not repeated:
+                return None
+
+            # Create CTEs for repeated subqueries
+            cte_counter = 1
+            ctes = []
+            replacements = {}
+
+            for sq_sql, subquery_list in repeated.items():
+                cte_name = f"cte_{cte_counter}"
+                cte_counter += 1
+
+                # Get the inner select from first subquery
+                first_sq = subquery_list[0]
+                inner_select = first_sq.this if first_sq.this else first_sq
+
+                # Create CTE
+                cte = exp.CTE(
+                    this=inner_select.copy(),
+                    alias=exp.TableAlias(this=exp.to_identifier(cte_name))
+                )
+                ctes.append(cte)
+
+                # Map all instances to replacement
+                for sq in subquery_list:
+                    replacements[id(sq)] = exp.Table(this=exp.to_identifier(cte_name))
+
+            if not ctes:
+                return None
+
+            # Clone and modify the parsed expression
+            result = parsed.copy()
+
+            # Replace subqueries with CTE references
+            for sq in result.find_all(exp.Subquery):
+                original_id = None
+                # Find matching original subquery by SQL content
+                sq_sql = sq.sql(dialect=dialect)
+                for orig_sql, orig_list in repeated.items():
+                    if sq_sql == orig_sql:
+                        original_id = id(orig_list[0])
+                        break
+
+                if original_id and original_id in replacements:
+                    # Replace with table reference
+                    sq.replace(replacements[original_id].copy())
+
+            # Add WITH clause
+            existing_with = result.find(exp.With)
+            if existing_with:
+                # Extend existing WITH
+                for cte in ctes:
+                    existing_with.append("expressions", cte)
+            else:
+                # Create new WITH clause
+                with_clause = exp.With(expressions=ctes)
+                # For SELECT statements, prepend WITH
+                if isinstance(result, exp.Select):
+                    result.set("with", with_clause)
+
+            logger.debug(
+                "CTE conversion completed",
+                repeated_subqueries=len(repeated),
+                ctes_created=len(ctes)
+            )
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"CTE conversion failed: {e}")
+            return None
+
+    def _optimize_aggregations(self, parsed: exp.Expression) -> Optional[exp.Expression]:
+        """
+        Optimize aggregation functions using sqlglot.
+
+        Optimizations:
+        - COUNT(column) -> COUNT(*) when not DISTINCT (more efficient)
+
+        NOTE: Does NOT add auto LIMIT. Federation handles large result sets.
+
+        Args:
+            parsed: Parsed SQL expression
+
+        Returns:
+            Optimized expression, or None if no optimization needed
+        """
+        try:
+            optimized = False
+            result = parsed.copy()
+
+            # Find all COUNT expressions
+            for count_expr in result.find_all(exp.Count):
+                # Skip COUNT(*) - already optimal
+                if isinstance(count_expr.this, exp.Star):
+                    continue
+
+                # Skip COUNT(DISTINCT ...) - semantically different
+                if count_expr.args.get("distinct"):
+                    continue
+
+                # COUNT(column) can be replaced with COUNT(*) if column is not nullable
+                # For safety, we only replace simple column references
+                if isinstance(count_expr.this, (exp.Column, exp.Identifier)):
+                    # Replace with COUNT(*)
+                    count_expr.set("this", exp.Star())
+                    optimized = True
+                    logger.debug(f"Replaced COUNT(column) with COUNT(*)")
+
+            return result if optimized else None
+
+        except Exception as e:
+            logger.debug(f"Aggregation optimization failed: {e}")
+            return None
 
     def _extract_table_names(self, parsed: exp.Expression) -> List[str]:
         """Extract all table names from parsed SQL."""

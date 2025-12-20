@@ -153,6 +153,69 @@ async def get_pending_count(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/pending/clear-stale")
+async def clear_stale_pending_queries(
+    max_age_hours: int = Query(default=24, description="Clear queries older than this many hours"),
+    user: Optional[Dict] = Depends(get_current_user),
+    db: MongoDBClient = Depends(get_mongodb_client)
+):
+    """Clear all stale pending queries for the current user (older than max_age_hours)."""
+    from datetime import datetime, timedelta
+
+    try:
+        user_id = user.get("sub", "default") if user else "default"
+
+        logger.info(
+            "Clearing stale pending queries",
+            user_id=user_id,
+            max_age_hours=max_age_hours
+        )
+
+        # Get all pending queries
+        pending_docs = await db.get_pending_queries(user_id)
+
+        # If max_age_hours is 0, clear ALL pending queries
+        if max_age_hours == 0:
+            cleared_count = 0
+            for doc in pending_docs:
+                await db.update_query_history(
+                    execution_id=doc.get("execution_id"),
+                    updates={
+                        "status": "cancelled",
+                        "error": "Cleared by user"
+                    }
+                )
+                cleared_count += 1
+        else:
+            cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+            cleared_count = 0
+
+            for doc in pending_docs:
+                started_at = doc.get("started_at")
+                if started_at and started_at < cutoff_time:
+                    # Mark as expired
+                    await db.update_query_history(
+                        execution_id=doc.get("execution_id"),
+                        updates={
+                            "status": "expired",
+                            "error": f"Query expired after {max_age_hours} hours"
+                        }
+                    )
+                    cleared_count += 1
+
+        logger.info(f"Cleared {cleared_count} pending queries")
+
+        return {
+            "success": True,
+            "cleared_count": cleared_count,
+            "message": f"Cleared {cleared_count} queries" if max_age_hours == 0 else f"Cleared {cleared_count} stale queries older than {max_age_hours} hours"
+        }
+
+    except Exception as e:
+        logger.error("Failed to clear stale queries", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{execution_id}", response_model=QueryHistoryFullResponse)
 async def get_query_history(
     execution_id: str,
@@ -267,6 +330,55 @@ async def mark_query_as_background(
         raise
     except Exception as e:
         logger.error("Failed to mark query as background", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{execution_id}")
+async def cancel_query(
+    execution_id: str,
+    user: Optional[Dict] = Depends(get_current_user),
+    db: MongoDBClient = Depends(get_mongodb_client)
+):
+    """Cancel/dismiss a running query - marks it as cancelled in the database."""
+    try:
+        user_id = user.get("sub", "default") if user else "default"
+
+        logger.info(
+            "Cancelling query",
+            execution_id=execution_id,
+            user_id=user_id
+        )
+
+        # Get query to verify ownership
+        doc = await db.get_query_history(execution_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Query {execution_id} not found")
+
+        if doc.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Mark as cancelled
+        success = await db.update_query_history(
+            execution_id=execution_id,
+            updates={
+                "status": "cancelled",
+                "error": "Cancelled by user"
+            }
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to cancel query")
+
+        return {
+            "success": True,
+            "message": "Query cancelled",
+            "execution_id": execution_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to cancel query", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

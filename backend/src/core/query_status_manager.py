@@ -108,7 +108,13 @@ class QueryStatusManager:
                 # Store result as JSON string (can be large)
                 data["result"] = json.dumps(result, default=str)
 
-            data.update(extra_data)
+            # Convert boolean values to strings for Redis compatibility
+            # Redis hset doesn't accept booleans directly
+            for key_name, value in extra_data.items():
+                if isinstance(value, bool):
+                    data[key_name] = "1" if value else "0"
+                else:
+                    data[key_name] = value
 
             key = self._key(execution_id)
             self.redis.hset(key, mapping=data)
@@ -222,6 +228,9 @@ class QueryStatusManager:
             end_time = datetime.now(timezone.utc)
             execution_time_seconds = None
             if started_at:
+                # Ensure started_at is timezone-aware (convert if naive)
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
                 execution_time_seconds = (end_time - started_at).total_seconds()
 
             # Update Redis status first (for immediate polling)

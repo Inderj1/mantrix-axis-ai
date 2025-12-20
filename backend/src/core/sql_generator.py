@@ -2,7 +2,8 @@ from typing import List, Dict, Any, Optional
 import structlog
 import time
 from src.core.llm_client import LLMClient
-from src.core.query_optimizer import QueryOptimizer
+# NOTE: Old QueryOptimizer is deprecated - functionality moved to SingleDatabaseQueryOptimizer
+# See single_db_query_optimizer.py for CTE conversion, COUNT optimization, etc.
 from src.core.industry_configs import IndustryConfigManager
 from src.core.cache_manager import CacheManager
 from src.core.query_suggestions import QuerySuggestionService
@@ -88,7 +89,7 @@ class SQLGenerator:
         # Initialize LLM and vector clients
         self.llm_client = LLMClient()
         self.vector_client = WeaviateClient()
-        self.optimizer = QueryOptimizer()
+        # NOTE: Old QueryOptimizer removed - use self.single_db_optimizer instead
         self.suggestion_service = QuerySuggestionService()
 
         # Create database client using connector factory
@@ -540,7 +541,46 @@ class SQLGenerator:
             "Please ask about tables from a single database, or explicitly request cross-database federation."
         )
 
-    def _get_connector_for_database(self, db_type: str):
+    def _pre_detect_target_database(self, schemas: List[Dict[str, Any]]) -> str:
+        """
+        Pre-detect target database from schemas BEFORE SQL generation.
+
+        When multi-connector search returns tables from a single database type
+        (e.g., all Snowflake), we should use that database's dialect guide
+        instead of the primary connector's dialect. This ensures the LLM
+        generates SQL with the correct syntax (e.g., no backticks for Snowflake).
+
+        Unlike _determine_target_database() which runs AFTER SQL generation
+        using tables_used, this method runs BEFORE to guide the LLM with
+        the correct dialect.
+
+        Args:
+            schemas: List of schema dictionaries from vector search
+
+        Returns:
+            Database type string:
+            - Single database type if all schemas are from same database
+            - 'federated' if schemas are from multiple databases
+            - Primary database type if schemas list is empty
+        """
+        if not schemas:
+            return self.database_type
+
+        db_types = set(s.get('database_type', self.database_type) for s in schemas)
+
+        if len(db_types) == 1:
+            detected_type = list(db_types)[0]
+            if detected_type != self.database_type:
+                logger.info(
+                    f"Pre-detected target database: {detected_type} "
+                    f"(differs from primary: {self.database_type})"
+                )
+            return detected_type
+
+        logger.info(f"Multiple database types detected in schemas: {db_types}")
+        return 'federated'
+
+    def _get_connector_for_database(self, db_type: str) -> tuple:
         """
         Get or create a database connector for a specific database type.
 
@@ -551,21 +591,26 @@ class SQLGenerator:
             db_type: Database type ('bigquery', 'snowflake', 'postgresql', etc.)
 
         Returns:
-            Database connector instance
+            Tuple of (connector, connector_id) for multi-tenant cache isolation
 
         Raises:
             ValueError: If no enabled connector found for the database type
         """
         # If target matches current connector, use it
         if db_type == self.database_type and self.db_client:
-            return self.db_client
+            # Return the first connector_id (primary connector loaded in __init__)
+            primary_connector_id = self.connector_ids[0] if self.connector_ids else None
+            return self.db_client, primary_connector_id
 
-        # Check connector pool
+        # Check connector pool (now stores (connector, connector_id) tuples)
         if not hasattr(self, '_connector_pool'):
             self._connector_pool = {}
 
         if db_type in self._connector_pool:
             return self._connector_pool[db_type]
+
+        # Track connector_ids count before loading to get the new one
+        ids_before = len(self.connector_ids)
 
         # Load connector config for this database type
         db_config = self._load_org_connector_config(self.organization_id, db_type)
@@ -575,13 +620,18 @@ class SQLGenerator:
                 f"Please configure a {db_type} connector in the Database Configuration page."
             )
 
+        # Get the connector_id that was added by _load_org_connector_config
+        connector_id = self.connector_ids[-1] if len(self.connector_ids) > ids_before else None
+
         # Create and connect
         connector = ConnectorFactory.create_connector(db_type, config=db_config)
         connector.connect()
-        self._connector_pool[db_type] = connector
 
-        logger.info(f"Created dynamic connector for {db_type}")
-        return connector
+        # Store tuple in pool
+        self._connector_pool[db_type] = (connector, connector_id)
+
+        logger.info(f"Created dynamic connector for {db_type} (id={connector_id})")
+        return connector, connector_id
 
     def _detect_multi_connector_scenario(self, schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -963,6 +1013,83 @@ class SQLGenerator:
             """
         }
         return guides.get(self.database_type, "")
+
+    def _get_dialect_guide_for_type(self, db_type: str) -> str:
+        """
+        Get database-specific SQL syntax guidelines for a given database type.
+
+        Unlike _get_dialect_guide() which uses self.database_type, this method
+        allows getting the dialect guide for any database type. Used when
+        the target database (detected from schemas) differs from the primary connector.
+
+        Args:
+            db_type: Database type ('bigquery', 'snowflake', 'postgresql', etc.)
+
+        Returns:
+            String containing SQL dialect-specific guidelines
+        """
+        guides = {
+            'bigquery': """
+**BigQuery SQL Dialect:**
+- Use backticks for identifiers: `project.dataset.table`
+- Date formatting: FORMAT_DATE('%Y-%m-%d', date_column)
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP()
+- Date arithmetic: DATE_ADD(date, INTERVAL 1 DAY)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Arrays: ARRAY_AGG(), UNNEST()
+- Structs: STRUCT(field1, field2)
+- Supports standard SQL with extensions
+            """,
+            'snowflake': """
+**Snowflake SQL Dialect:**
+- Three-part names: database.schema.table (no backticks needed)
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP() or SYSDATE()
+- Date arithmetic: DATEADD(DAY, 1, date)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Semi-structured data: VARIANT type with : accessor
+- JSON: PARSE_JSON(), object:field syntax
+- Case-insensitive by default (identifiers are uppercase unless quoted)
+            """,
+            'postgresql': """
+**PostgreSQL SQL Dialect:**
+- Schema-qualified names: schema.table (or just table if in search_path)
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP or NOW()
+- Date arithmetic: date + INTERVAL '1 day'
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Case-insensitive search: ILIKE operator
+- JSON: jsonb type with -> and ->> operators
+- Supports CTEs, window functions, recursive queries
+            """,
+            'redshift': """
+**Amazon Redshift SQL Dialect:**
+- Similar to PostgreSQL but with some limitations
+- Schema-qualified names: schema.table
+- Date formatting: TO_CHAR(date_column, 'YYYY-MM-DD')
+- String concatenation: || or CONCAT
+- No recursive CTEs
+- Limited window function support compared to PostgreSQL
+- SUPER type for semi-structured data (JSON-like)
+- DISTKEY and SORTKEY for optimization (optional in queries)
+            """,
+            'databricks': """
+**Databricks SQL Dialect (Spark SQL):**
+- Three-part names: catalog.schema.table
+- Date formatting: DATE_FORMAT(date_column, 'yyyy-MM-dd')
+- String concatenation: CONCAT(str1, str2) or ||
+- Current timestamp: CURRENT_TIMESTAMP() or NOW()
+- Date arithmetic: DATE_ADD(date, 1)
+- Window functions: Use OVER (PARTITION BY ... ORDER BY ...)
+- Delta Lake features: TIME TRAVEL, MERGE, OPTIMIZE
+- Java-style date patterns: 'yyyy-MM-dd HH:mm:ss'
+- Supports Spark SQL with Delta Lake extensions
+            """
+        }
+        return guides.get(db_type, "")
 
     def _index_schemas(self):
         """Index all table schemas in the vector database."""
@@ -1354,17 +1481,29 @@ class SQLGenerator:
                         # Update database config for the selected connector
                         selected_meta = multi_conn_info["connector_metadata"].get(single_connector_id, {})
                         if selected_meta.get("database_type"):
-                            self.database_type = selected_meta["database_type"]
-                            # FIX: Also update database_config with connector's location info
-                            # This ensures the LLM prompt uses correct table qualification
+                            # NOTE: Do NOT mutate self.database_type here!
+                            # self.database_type is the PRIMARY connector type (e.g., 'bigquery')
+                            # and is used by _get_connector_for_database() to determine if
+                            # the target matches the primary connector.
+                            #
+                            # Mutating self.database_type while keeping self.db_client as BigQuery
+                            # causes _get_connector_for_database('snowflake') to incorrectly return
+                            # the BigQuery connector (because 'snowflake' == self.database_type).
+                            #
+                            # The target database type is tracked in:
+                            # - result["target_database_type"] (via _pre_detect_target_database)
+                            # - Local variable target_db_type
+                            #
+                            # We only update database_config for LLM prompt table qualification.
+                            target_db_type_for_config = selected_meta["database_type"]
                             self.database_config = {
-                                "database_type": selected_meta["database_type"],
+                                "database_type": target_db_type_for_config,
                                 "project_id": selected_meta.get("project", selected_meta.get("database", "")),
                                 "dataset_id": selected_meta.get("dataset", selected_meta.get("schema", "")),
                             }
                             logger.info(
                                 f"Updated database_config for {single_connector_id}",
-                                database_type=self.database_type,
+                                database_type=target_db_type_for_config,
                                 project_id=self.database_config.get("project_id"),
                                 dataset_id=self.database_config.get("dataset_id")
                             )
@@ -1383,13 +1522,55 @@ class SQLGenerator:
             # Prepare kwargs for LLM client
             llm_kwargs = {}
 
+            # ============================================================
+            # PRE-DETECT TARGET DATABASE FROM SCHEMAS
+            # This ensures the LLM generates SQL with correct dialect/syntax
+            # BEFORE calling LLM (not after based on tables_used)
+            # ============================================================
+            target_db_type = self._pre_detect_target_database(relevant_schemas)
+
             # Add database dialect information (CRITICAL for multi-database support)
-            llm_kwargs["database_type"] = self.database_type
-            llm_kwargs["database_name"] = self.db_capabilities.database_name
-            llm_kwargs["dialect_guide"] = self._get_dialect_guide()
-            # Pass connector's database config so LLM uses correct project/dataset
-            llm_kwargs["database_config"] = self.database_config
-            logger.info(f"Using database_config for LLM: project={self.database_config.get('project_id')}, dataset={self.database_config.get('dataset_id')}")
+            if target_db_type and target_db_type not in ('federated', self.database_type):
+                # Target database differs from primary - use target's dialect
+                llm_kwargs["database_type"] = target_db_type
+                llm_kwargs["database_name"] = target_db_type.title()
+                llm_kwargs["dialect_guide"] = self._get_dialect_guide_for_type(target_db_type)
+
+                # Build database_config from schema metadata for correct table qualification
+                first_schema = relevant_schemas[0] if relevant_schemas else {}
+                llm_kwargs["database_config"] = {
+                    'project_id': first_schema.get('project', first_schema.get('database', '')),
+                    'dataset_id': first_schema.get('dataset', first_schema.get('schema', '')),
+                    'database_type': target_db_type
+                }
+                logger.info(
+                    f"Using pre-detected target database: {target_db_type}",
+                    target_db=target_db_type,
+                    primary_db=self.database_type,
+                    project_id=llm_kwargs["database_config"].get('project_id'),
+                    dataset_id=llm_kwargs["database_config"].get('dataset_id')
+                )
+            else:
+                # Use primary connector's dialect (same DB or federated/empty)
+                llm_kwargs["database_type"] = self.database_type
+                # Use database_type to derive name (capabilities may be stale if multi-connector updated self.database_type)
+                db_name_map = {
+                    'bigquery': 'Google BigQuery',
+                    'snowflake': 'Snowflake',
+                    'postgresql': 'PostgreSQL',
+                    'redshift': 'Amazon Redshift',
+                    'databricks': 'Databricks'
+                }
+                llm_kwargs["database_name"] = db_name_map.get(self.database_type, self.database_type.title())
+                llm_kwargs["dialect_guide"] = self._get_dialect_guide()
+                llm_kwargs["database_config"] = self.database_config
+                logger.info(
+                    f"Using database_config for LLM",
+                    database_type=self.database_type,
+                    database_name=llm_kwargs["database_name"],
+                    project_id=self.database_config.get('project_id'),
+                    dataset_id=self.database_config.get('dataset_id')
+                )
 
             if financial_context:
                 llm_kwargs["financial_context"] = financial_context
@@ -1434,25 +1615,26 @@ class SQLGenerator:
                 result = self.llm_client.generate_sql(processed_query, relevant_schemas, **llm_kwargs)
                 result["from_cache"] = False
 
-            # Detect target database from tables used in generated SQL (multi-connector support)
-            tables_used = result.get("tables_used", [])
-            if tables_used and relevant_schemas:
-                try:
-                    target_db_type = self._determine_target_database(tables_used, relevant_schemas)
-                    result["target_database_type"] = target_db_type
-                    logger.info(f"Target database determined: {target_db_type}")
+            # Use pre-detected target database from schemas (set at line 1517)
+            # NOTE: We previously used _determine_target_database() here to match tables_used
+            # from LLM response against schemas. However, this caused issues because:
+            # 1. LLM returns simple table names like "SALES_TRANSACTIONS"
+            # 2. Schemas have qualified names like "CROSS_DB_TEST.SALES_TRANSACTIONS"
+            # 3. Exact match fails → incorrectly falls back to primary database (bigquery)
+            # 4. This caused Snowflake queries to get BigQuery syntax (backticks)
+            #
+            # For now, we trust _pre_detect_target_database() which correctly detects
+            # the database type from all schemas returned by vector search.
+            #
+            # TODO: If cross-database federation issues arise, revisit _determine_target_database
+            # with improved table name matching (partial match, case-insensitive, etc.)
+            result["target_database_type"] = target_db_type
+            logger.info(f"Using pre-detected target database: {target_db_type}")
 
-                    # If target DB differs from current connector, update LLM kwargs for dialect
-                    if target_db_type != self.database_type and target_db_type != 'federated':
-                        logger.info(f"Target database ({target_db_type}) differs from primary ({self.database_type})")
-                        result["requires_alternate_connector"] = True
-                except ValueError as e:
-                    # Cross-database query that can't be executed
-                    logger.warning(f"Cross-database detection: {e}")
-                    result["cross_database_error"] = str(e)
-            else:
-                # Default to current database type
-                result["target_database_type"] = self.database_type
+            # If target DB differs from current connector, flag for alternate connector
+            if target_db_type != self.database_type and target_db_type != 'federated':
+                logger.info(f"Target database ({target_db_type}) differs from primary ({self.database_type})")
+                result["requires_alternate_connector"] = True
 
             # Post-process SQL to fix revenue column usage
             logger.info(f"Post-processing check: query contains 'revenue'? {('revenue' in query.lower())}")
@@ -1507,41 +1689,57 @@ class SQLGenerator:
             # IMPORTANT: Always use the correct connector for the target database type
             # No fallback to avoid validating BigQuery SQL against Snowflake (or vice versa)
             target_db_type = result.get("target_database_type", self.database_type)
+            validation_connector = None
+            validation_connector_id = None
+
             if target_db_type and target_db_type != 'federated':
-                validation_connector = self._get_connector_for_database(target_db_type)
-                logger.info(f"Using {target_db_type} connector for validation")
+                validation_connector, validation_connector_id = self._get_connector_for_database(target_db_type)
+                logger.info(f"Using {target_db_type} connector ({validation_connector_id}) for validation")
             else:
                 validation_connector = self.db_client
-                logger.info(f"Using default connector for validation (federated or no target type)")
+                validation_connector_id = self.connector_ids[0] if self.connector_ids else None
+                logger.info(f"Using default connector ({validation_connector_id}) for validation (federated or no target type)")
 
+            # Cache with connector_id for multi-tenant isolation
             validation = None
             if self.cache_manager and settings.cache_validation_enabled:
-                validation = self.cache_manager.get_validation(result["sql"])
+                validation = self.cache_manager.get_validation(result["sql"], target_db_type, validation_connector_id)
 
             if validation is None:
                 validation = validation_connector.validate_query(result["sql"])
-                # Cache validation result
+                # Cache validation result (quality gate in cache_validation prevents caching failures)
                 if self.cache_manager and settings.cache_validation_enabled and not result.get("error"):
-                    self.cache_manager.cache_validation(result["sql"], validation)
+                    self.cache_manager.cache_validation(result["sql"], validation, target_db_type, validation_connector_id)
 
             result["validation"] = validation
-            
+
             # Apply query optimization if enabled and query is valid
-            if auto_optimize and validation.get("valid", False):
-                optimization_result = self.optimizer.optimize_query(result["sql"])
-                
-                # If optimization improved the query, use optimized version
-                if optimization_result.get("optimized_sql") and \
-                   optimization_result["optimized_sql"] != result["sql"]:
-                    
-                    result["original_sql"] = result["sql"]
-                    result["sql"] = optimization_result["optimized_sql"]
-                    result["optimizations"] = result.get("optimizations", []) + optimization_result.get("optimizations_applied", [])
-                    result["optimization_suggestions"] = optimization_result.get("suggestions", [])
-                    result["optimization_improvement"] = optimization_result.get("improvement", {})
-                    
-                    # Re-validate optimized query (using target database connector)
-                    result["validation"] = validation_connector.validate_query(result["sql"])
+            # Uses SingleDatabaseQueryOptimizer for all databases (CTE conversion, COUNT optimization)
+            # NOTE: Does NOT add auto LIMIT - federation handles large result sets
+            if auto_optimize and validation.get("valid", False) and self.single_db_optimizer:
+                try:
+                    dialect = get_dialect_for_database(target_db_type)
+                    optimized_sql, analysis = self.single_db_optimizer.optimize_query(
+                        result["sql"],
+                        dialect=dialect
+                    )
+
+                    # If optimization improved the query, use optimized version
+                    if optimized_sql and optimized_sql != result["sql"]:
+                        result["original_sql"] = result["sql"]
+                        result["sql"] = optimized_sql
+
+                        # Log applied optimizations
+                        logger.info(
+                            "Query optimization applied",
+                            database_type=target_db_type,
+                            strategy=analysis.strategy.value if analysis else "unknown"
+                        )
+
+                        # Re-validate optimized query (using target database connector)
+                        result["validation"] = validation_connector.validate_query(result["sql"])
+                except Exception as e:
+                    logger.warning(f"Query optimization failed, using original query: {e}")
 
             # Apply format normalization for JOIN accuracy (fixes COPA/Cockpit mismatch)
             if self.format_normalizer and validation.get("valid", False):
@@ -2221,7 +2419,8 @@ class SQLGenerator:
             # Get the appropriate connector for execution (multi-connector support)
             if target_database_type and target_database_type != self.database_type and target_database_type != 'federated':
                 try:
-                    db_connector = self._get_connector_for_database(target_database_type)
+                    # _get_connector_for_database returns (connector, connector_id) tuple
+                    db_connector, _ = self._get_connector_for_database(target_database_type)
                     logger.info(
                         "Using dynamic connector for query execution",
                         target_database_type=target_database_type,
@@ -2398,11 +2597,34 @@ class SQLGenerator:
                                 largest_table=query_analysis.largest_table,
                                 reason="Estimated rows exceed federation threshold (100M)"
                             )
+
+                            # Check if query requires async execution BEFORE federated execution
+                            # Very large tables (>1B rows) should be handled asynchronously by routes.py
+                            if query_analysis.requires_async:
+                                logger.info(
+                                    "ASYNC REQUIRED: Very large federated query requires background execution",
+                                    estimated_rows=f"{query_analysis.largest_table_rows:,}",
+                                    strategy=query_analysis.strategy.value,
+                                    tables=query_analysis.tables,
+                                    largest_table=query_analysis.largest_table,
+                                    reason="Source table exceeds 1B row threshold"
+                                )
+                                # Return special response - routes.py will handle async execution
+                                return {
+                                    "requires_async": True,
+                                    "sql": federated_sql,
+                                    "largest_table_rows": query_analysis.largest_table_rows,
+                                    "tables_used": query_analysis.tables,
+                                    "explanation": f"Query scans ~{query_analysis.largest_table_rows:,} rows. Running in background.",
+                                    "warnings": query_analysis.warnings,
+                                    "query_analysis": query_analysis.to_dict()
+                                }
+
                             return self._execute_federated_single_db(
                                 federated_sql, db_type, query_analysis
                             )
 
-                        # Check if query requires async execution (very large tables)
+                        # Check if query requires async execution (very large tables) - non-federated path
                         if query_analysis.requires_async:
                             logger.info(
                                 "ASYNC REQUIRED: Very large source table requires background execution",
@@ -2815,15 +3037,35 @@ class SQLGenerator:
             "execution": execution_result
         }
     
-    def optimize_query(self, sql: str) -> Dict[str, Any]:
-        """Optimize an existing SQL query using the QueryOptimizer."""
+    def optimize_query(self, sql: str, database_type: str = None) -> Dict[str, Any]:
+        """Optimize an existing SQL query using SingleDatabaseQueryOptimizer.
+
+        Args:
+            sql: SQL query to optimize
+            database_type: Target database type (uses instance default if not specified)
+
+        Returns:
+            Dict with optimized_sql and analysis results
+        """
         try:
-            return self.optimizer.optimize_query(sql)
+            if not self.single_db_optimizer:
+                return {"error": "Optimizer not initialized", "optimized_sql": sql}
+
+            db_type = database_type or self.database_type
+            dialect = get_dialect_for_database(db_type)
+            optimized_sql, analysis = self.single_db_optimizer.optimize_query(sql, dialect)
+
+            return {
+                "original_sql": sql,
+                "optimized_sql": optimized_sql,
+                "analysis": analysis.to_dict() if analysis else {},
+                "strategy": analysis.strategy.value if analysis else "unknown"
+            }
         except Exception as e:
             logger.error(f"Query optimization failed: {e}")
             return {
                 "error": str(e),
-                "optimized_sql": None
+                "optimized_sql": sql
             }
     
     def _enhance_schemas_with_industry_info(self, schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

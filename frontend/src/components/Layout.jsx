@@ -40,6 +40,7 @@ import {
   Clear as ClearIcon,
 } from '@mui/icons-material';
 import AuthButton from './AuthButton';
+import QueryHistoryDropdown from './QueryHistoryDropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { useConversationStore } from '../stores/conversationStore';
 
@@ -688,6 +689,13 @@ function Layout({ children }) {
             <MenuIcon />
           </IconButton>
           <Box sx={{ flexGrow: 1 }} />
+          <QueryHistoryDropdown
+            onViewResults={(query) => {
+              // Navigate to chat - the conversation should be loaded automatically
+              navigate('/chat');
+              console.log('[Layout] View results for query:', query.executionId);
+            }}
+          />
           <AuthButton />
         </Toolbar>
       </AppBar>

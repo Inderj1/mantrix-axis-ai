@@ -631,38 +631,66 @@ class CacheManager:
 
     # Validation Caching
 
-    def cache_validation(self, sql: str, validation_result: Dict[str, Any]) -> None:
-        """Cache SQL validation result."""
+    def cache_validation(self, sql: str, validation_result: Dict[str, Any], database_type: str = None, connector_id: str = None) -> None:
+        """
+        Cache SQL validation result (only if validation passed).
+
+        Args:
+            sql: The SQL query string
+            validation_result: Dict containing 'valid' bool and optional 'error' message
+            database_type: Target database type (e.g., 'bigquery', 'snowflake')
+            connector_id: Specific connector ID for multi-tenant isolation
+        """
+        # QUALITY GATE: Only cache successful validations
+        if not validation_result.get("valid", False):
+            logger.debug(f"Not caching failed validation for {database_type}/{connector_id}: {validation_result.get('error', 'unknown error')[:100]}")
+            return
+
+        # Include database_type AND connector_id in hash for multi-tenant isolation
+        # This prevents cross-organization and cross-connector cache pollution
+        hash_input = f"{sql}:{database_type or 'unknown'}:{connector_id or 'default'}"
         key = self._generate_key(
             self.PREFIX_VALIDATION,
-            hashlib.sha256((sql or '').encode()).hexdigest()
+            hashlib.sha256(hash_input.encode()).hexdigest()
         )
-        
+
         try:
             self.redis.setex(
                 key,
                 self.TTL_VALIDATION,
                 json.dumps(validation_result)
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to cache validation: {e}")
     
-    def get_validation(self, sql: str) -> Optional[Dict[str, Any]]:
-        """Get cached validation result."""
+    def get_validation(self, sql: str, database_type: str = None, connector_id: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get cached validation result.
+
+        Args:
+            sql: The SQL query string
+            database_type: Target database type (e.g., 'bigquery', 'snowflake')
+            connector_id: Specific connector ID for multi-tenant isolation
+
+        Returns:
+            Cached validation result dict or None if not found
+        """
+        # Include database_type AND connector_id in hash to match cache_validation
+        hash_input = f"{sql}:{database_type or 'unknown'}:{connector_id or 'default'}"
         key = self._generate_key(
             self.PREFIX_VALIDATION,
-            hashlib.sha256((sql or '').encode()).hexdigest()
+            hashlib.sha256(hash_input.encode()).hexdigest()
         )
-        
+
         try:
             cached_data = self.redis.get(key)
             if cached_data:
                 return json.loads(cached_data)
-                
+
         except Exception as e:
             logger.error(f"Failed to get cached validation: {e}")
-        
+
         return None
     
     # Query Result Caching (for reference data)
