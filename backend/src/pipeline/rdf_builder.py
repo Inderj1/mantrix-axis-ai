@@ -102,7 +102,10 @@ class RDFBuilder:
         self,
         snapshots: List[TableSchemaSnapshot],
         include_stats: bool = True,
-        discover_relationships: bool = True
+        discover_relationships: bool = True,
+        connector_id: Optional[str] = None,
+        database_type: Optional[str] = None,
+        organization_id: Optional[str] = None
     ) -> RDFBuildResult:
         """
         Build RDF graph from schema snapshots.
@@ -111,11 +114,20 @@ class RDFBuilder:
             snapshots: List of TableSchemaSnapshot objects
             include_stats: Add cardinality statistics
             discover_relationships: Discover JOIN relationships
+            connector_id: Optional connector ID for targeted merge (prevents race conditions)
+            database_type: Optional database type for targeted merge (e.g., 'bigquery', 'snowflake')
+            organization_id: Optional organization ID for targeted merge
 
         Returns:
             RDFBuildResult with operation statistics
         """
-        logger.info(f"Building RDF graph from {len(snapshots)} schema snapshots")
+        # Infer database_type and organization_id from snapshots if not provided
+        if snapshots and not database_type:
+            database_type = snapshots[0].database_type
+        if snapshots and not organization_id:
+            organization_id = getattr(snapshots[0], 'organization_id', None)
+
+        logger.info(f"Building RDF graph from {len(snapshots)} schema snapshots (connector={connector_id}, db_type={database_type})")
 
         errors = []
         relationships_discovered = 0
@@ -148,12 +160,15 @@ class RDFBuilder:
                 logger.error(f"Relationship discovery failed: {e}")
                 errors.append(f"Relationships: {str(e)}")
 
-        # Phase 4: Merge into Jena knowledge graph
+        # Phase 4: Merge into Jena knowledge graph (connector-aware to prevent race conditions)
         triples_before = len(self.jena_kg.graph) if self.jena_kg else 0
 
         if self.jena_kg:
             try:
-                self._merge_into_jena()
+                self._merge_into_jena(
+                    database_type=database_type,
+                    organization_id=organization_id
+                )
             except Exception as e:
                 logger.error(f"Failed to merge into Jena KG: {e}")
                 errors.append(f"Jena merge: {str(e)}")
@@ -909,36 +924,58 @@ class RDFBuilder:
             logger.error(f"Failed to query join path metadata: {e}")
             return None
 
-    def _merge_into_jena(self, pipeline_run_id: Optional[str] = None):
+    def _merge_into_jena(
+        self,
+        pipeline_run_id: Optional[str] = None,
+        database_type: Optional[str] = None,
+        organization_id: Optional[str] = None
+    ):
         """
         Merge local RDF graph into Jena knowledge graph.
 
-        Strategy:
-        - Remove old schema triples
+        Strategy (connector-aware to prevent race conditions):
+        - Only remove old schema triples for the SPECIFIC connector (by database_type)
         - Add new triples from local graph
-        - Preserve non-schema triples (GL mappings, synonyms, etc.)
-        - If using PostgreSQL backend, persist to database
-        - If EFS path configured, create backup
+        - Preserve triples from other connectors
+        - If using PostgreSQL backend, persist incrementally
 
         Args:
             pipeline_run_id: Optional pipeline run identifier for versioning
+            database_type: Database type to filter removal (e.g., 'bigquery', 'snowflake')
+            organization_id: Organization ID to filter removal
         """
         if not self.jena_kg:
             logger.warning("Jena KG not available, skipping merge")
             return
 
-        logger.info(f"Merging {len(self.graph)} triples into Jena knowledge graph")
+        logger.info(
+            f"Merging {len(self.graph)} triples into Jena knowledge graph "
+            f"(db_type={database_type}, org={organization_id})"
+        )
 
-        # Strategy: Remove schema-related triples, then add new ones
-        # This ensures clean updates without duplicate triples
+        # Build the URI pattern to match for this connector
+        # URI format: Table_{org_id}_{database_type}_{table_name}
+        if database_type and organization_id:
+            uri_pattern = f"Table_{organization_id}_{database_type}_"
+        elif database_type:
+            # Match any org with this database type
+            uri_pattern = f"_{database_type}_"
+        else:
+            # No filter - remove all tables (legacy behavior)
+            uri_pattern = None
 
-        # Remove old schema triples (tables, columns, relationships)
+        # Remove old schema triples only for THIS connector
         old_triples = list(self.jena_kg.graph.triples((None, RDF.type, FIN.Table)))
+        tables_removed = 0
         for triple in old_triples:
-            # Remove table and all its related triples
-            table_uri = triple[0]
-            self.jena_kg.graph.remove((table_uri, None, None))  # Remove all triples with table as subject
-            self.jena_kg.graph.remove((None, None, table_uri))  # Remove all triples with table as object
+            table_uri = str(triple[0])
+            # Only remove if it matches the current connector's pattern
+            if uri_pattern is None or uri_pattern in table_uri:
+                self.jena_kg.graph.remove((triple[0], None, None))  # Remove all triples with table as subject
+                self.jena_kg.graph.remove((None, None, triple[0]))  # Remove all triples with table as object
+                tables_removed += 1
+
+        logger.info(f"Removed {tables_removed} old tables for {database_type or 'all'}")
 
         # Add new triples
         for triple in self.graph:
@@ -950,14 +987,30 @@ class RDFBuilder:
         from src.core.knowledge_graph.jena_singleton import JENA_BACKEND, clear_jena_cache
         if JENA_BACKEND == "postgres":
             try:
-                from src.core.knowledge_graph.jena_postgres_store import save_graph_to_postgres
-                graph_id = os.getenv("JENA_GRAPH_ID", "global")
-                saved = save_graph_to_postgres(
-                    self.jena_kg.graph,
-                    graph_id=graph_id,
-                    pipeline_run_id=pipeline_run_id
+                from src.core.knowledge_graph.jena_postgres_store import (
+                    save_graph_to_postgres,
+                    save_connector_tables_to_postgres
                 )
-                logger.info(f"Persisted {saved} triples to PostgreSQL")
+                graph_id = os.getenv("JENA_GRAPH_ID", "global")
+
+                # Use connector-aware save if we have database_type
+                if database_type and organization_id:
+                    saved = save_connector_tables_to_postgres(
+                        self.graph,
+                        graph_id=graph_id,
+                        database_type=database_type,
+                        organization_id=organization_id,
+                        pipeline_run_id=pipeline_run_id
+                    )
+                    logger.info(f"Persisted {saved} triples for {database_type} to PostgreSQL")
+                else:
+                    # Fallback to full replace (legacy behavior)
+                    saved = save_graph_to_postgres(
+                        self.jena_kg.graph,
+                        graph_id=graph_id,
+                        pipeline_run_id=pipeline_run_id
+                    )
+                    logger.info(f"Persisted {saved} triples to PostgreSQL (full replace)")
 
                 # Clear the singleton cache so next access reloads from PostgreSQL
                 # This ensures all components see the updated graph

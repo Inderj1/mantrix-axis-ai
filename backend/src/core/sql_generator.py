@@ -24,7 +24,8 @@ from src.core.single_db_query_optimizer import (
     get_dialect_for_database,
     QueryAnalysis,
     ExecutionStrategy,
-    PANDAS_MAX_ROWS
+    PANDAS_MAX_ROWS,
+    SYNC_RETURN_MAX_ROWS
 )
 try:
     from src.core.knowledge_graph import GraphTraversalEngine
@@ -1742,7 +1743,14 @@ class SQLGenerator:
                     logger.warning(f"Query optimization failed, using original query: {e}")
 
             # Apply format normalization for JOIN accuracy (fixes COPA/Cockpit mismatch)
-            if self.format_normalizer and validation.get("valid", False):
+            # NOTE: Format normalizer is initialized with primary database connector,
+            # so only apply when target matches primary to avoid querying wrong database
+            format_norm_applicable = (
+                self.format_normalizer
+                and validation.get("valid", False)
+                and target_db_type == self.database_type  # Only for primary database
+            )
+            if format_norm_applicable:
                 try:
                     original_sql = result["sql"]
                     normalized_sql = self.format_normalizer.normalize_join_query(original_sql)
@@ -2664,9 +2672,19 @@ class SQLGenerator:
                             logger.warning(f"Query optimization warning: {warning}")
 
                         # Apply automatic pagination for row-level queries on large tables
-                        if (query_analysis.supports_pagination and
-                            query_analysis.strategy in (ExecutionStrategy.OPTIMIZED, ExecutionStrategy.FEDERATED)):
+                        # Applies to:
+                        # 1. OPTIMIZED/FEDERATED strategies (always paginate row-level queries)
+                        # 2. DIRECT strategy when estimated results exceed sync return threshold
+                        #    This prevents 502 timeouts on queries like "show all sales transactions"
+                        needs_pagination = (
+                            query_analysis.supports_pagination and (
+                                query_analysis.strategy in (ExecutionStrategy.OPTIMIZED, ExecutionStrategy.FEDERATED) or
+                                (query_analysis.strategy == ExecutionStrategy.DIRECT and
+                                 query_analysis.estimated_result_rows > SYNC_RETURN_MAX_ROWS)
+                            )
+                        )
 
+                        if needs_pagination:
                             # Use pagination to avoid loading too much data at once
                             # Default: 1000 rows for UI-friendly display
                             dialect = get_dialect_for_database(db_type)
@@ -2683,8 +2701,11 @@ class SQLGenerator:
                                 supports_pagination=True,
                                 strategy=query_analysis.strategy.value,
                                 original_estimated_rows=f"{query_analysis.estimated_result_rows:,}",
+                                sync_return_max_rows=SYNC_RETURN_MAX_ROWS,
                                 page_size=1000,
-                                reason="Row-level query without aggregation on large dataset"
+                                reason="Row-level query without aggregation exceeds sync return threshold"
+                                       if query_analysis.strategy == ExecutionStrategy.DIRECT
+                                       else "Row-level query without aggregation on large dataset"
                             )
 
                             # Store count SQL for later total count retrieval
@@ -2783,10 +2804,18 @@ class SQLGenerator:
                 # Add pagination info for row-level queries on large tables
                 # This applies when:
                 # 1. Query supports pagination (no aggregation)
-                # 2. Table is large (total rows > 1M)
+                # 2. Either:
+                #    a. Large tables (total rows > 1M) for OPTIMIZED/FEDERATED
+                #    b. Medium tables (estimated results > SYNC_RETURN_MAX_ROWS) for DIRECT
                 # 3. Either we applied pagination OR LLM added LIMIT
-                if (query_analysis.supports_pagination and
-                    query_analysis.total_estimated_rows > PANDAS_MAX_ROWS):
+                pagination_metadata_needed = (
+                    query_analysis.supports_pagination and (
+                        query_analysis.total_estimated_rows > PANDAS_MAX_ROWS or
+                        (query_analysis.strategy == ExecutionStrategy.DIRECT and
+                         query_analysis.estimated_result_rows > SYNC_RETURN_MAX_ROWS)
+                    )
+                )
+                if pagination_metadata_needed:
 
                     # Determine page size from LLM's LIMIT or our default
                     page_size = query_analysis.limit_value or 1000

@@ -1,12 +1,37 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Box, Paper, Typography, CssBaseline } from '@mui/material';
+import { Box, Paper, Typography, CssBaseline, CircularProgress } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import { premiumTheme } from './themes/premiumTheme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useConversationStore } from './stores/conversationStore';
 // ConversationContext replaced by Zustand store (stores/conversationStore.js)
 import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+
+// Route loading fallback
+const RouteLoadingFallback = () => (
+  <Box sx={{
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100vh',
+    backgroundColor: 'background.default'
+  }}>
+    <CircularProgress />
+  </Box>
+);
+
+// Lazy load page components for code splitting
+const QueryPage = lazy(() => import('./pages/QueryPage-simple'));
+const SimpleChatInterface = lazy(() => import('./components/SimpleChatInterface'));
+const AdminSettings = lazy(() => import('./pages/AdminSettings'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const UserProfileManager = lazy(() => import('./components/UserProfileManager'));
+const CommsConfig = lazy(() => import('./components/CommsConfig'));
+const ControlCenter = lazy(() => import('./components/ControlCenter'));
+const DatabaseConfigPage = lazy(() => import('./pages/DatabaseConfigPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 
 /**
  * AppInitializer - Eagerly initializes the conversation store when user is authenticated.
@@ -54,16 +79,6 @@ const AppInitializer = ({ children }) => {
 
   return children;
 };
-import QueryPage from './pages/QueryPage-simple';
-import SimpleChatInterface from './components/SimpleChatInterface';
-import AdminSettings from './pages/AdminSettings';
-import HomePage from './pages/HomePage';
-import UserProfileManager from './components/UserProfileManager';
-import CommsConfig from './components/CommsConfig';
-import ControlCenter from './components/ControlCenter';
-import DatabaseConfigPage from './pages/DatabaseConfigPage';
-import DashboardPage from './pages/DashboardPage';
-import ProtectedRoute from './components/ProtectedRoute';
 
 // Temporary simple pages
 const HistoryPage = () => (
@@ -96,9 +111,10 @@ function App() {
       <AppInitializer>
         <ThemeProvider theme={premiumTheme}>
           <CssBaseline />
-          <Routes>
-        {/* Public routes */}
-        <Route path="/" element={<HomePage />} />
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<HomePage />} />
 
         {/* Default protected route */}
         <Route
@@ -255,7 +271,8 @@ function App() {
             </Box>
           }
         />
-          </Routes>
+            </Routes>
+          </Suspense>
         </ThemeProvider>
       </AppInitializer>
     </AuthProvider>

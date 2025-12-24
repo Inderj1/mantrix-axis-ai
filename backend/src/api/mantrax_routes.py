@@ -21,7 +21,7 @@ results_formatter = ResultsFormatterAgent()
 class FormatResultsRequest(BaseModel):
     """Request model for formatting results."""
     query: str
-    sql: str
+    sql: Optional[str] = None  # Optional for multi-database queries where SQL is per-connector
     results: List[Dict[str, Any]]
     metadata: Optional[Dict[str, Any]] = None
     user_id: Optional[str] = None  # For personalized insights

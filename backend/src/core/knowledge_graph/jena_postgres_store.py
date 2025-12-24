@@ -387,3 +387,110 @@ def save_graph_to_postgres(
     """
     store = JenaPostgresStore(graph_id=graph_id)
     return store.save_graph(graph, pipeline_run_id=pipeline_run_id)
+
+
+def save_connector_tables_to_postgres(
+    graph: Graph,
+    graph_id: str = "global",
+    database_type: str = None,
+    organization_id: str = None,
+    pipeline_run_id: Optional[str] = None
+) -> int:
+    """
+    Save a connector's RDF triples to PostgreSQL without affecting other connectors.
+
+    This is a targeted save that:
+    1. Only deletes triples for tables matching the database_type and organization_id
+    2. Inserts the new triples for this connector
+    3. Preserves triples from other connectors
+
+    Args:
+        graph: RDFLib Graph containing the connector's triples to save
+        graph_id: Tenant/organization identifier
+        database_type: Database type (e.g., 'bigquery', 'snowflake')
+        organization_id: Organization ID
+        pipeline_run_id: Optional pipeline run identifier
+
+    Returns:
+        Number of triples saved
+    """
+    from src.db.postgresql_client import PostgreSQLClient
+
+    if not database_type or not organization_id:
+        # Fall back to full save if no filtering info
+        return save_graph_to_postgres(graph, graph_id, pipeline_run_id)
+
+    db_client = PostgreSQLClient()
+    uri_pattern = f"Table_{organization_id}_{database_type}_%"
+
+    logger.info(
+        f"Saving connector tables to PostgreSQL: db_type={database_type}, "
+        f"org={organization_id}, graph_id={graph_id}, pattern={uri_pattern}"
+    )
+
+    try:
+        # Step 1: Delete existing triples for this connector only
+        # This matches subjects like: http://example.com/finance#Table_Demo_bigquery_*
+        delete_query = """
+            DELETE FROM rdf_triples
+            WHERE graph_id = %s
+              AND subject LIKE %s
+        """
+        full_pattern = f"%#Table_{organization_id}_{database_type}_%"
+        db_client.execute_query(delete_query, (graph_id, full_pattern))
+        logger.info(f"Deleted existing triples for pattern: {full_pattern}")
+
+        # Also delete column triples for this connector
+        # Column URIs: http://example.com/finance#Column_{org}_{db_type}_{table}_{column}
+        delete_columns_query = """
+            DELETE FROM rdf_triples
+            WHERE graph_id = %s
+              AND subject LIKE %s
+        """
+        column_pattern = f"%#Column_{organization_id}_{database_type}_%"
+        db_client.execute_query(delete_columns_query, (graph_id, column_pattern))
+        logger.info(f"Deleted existing column triples for pattern: {column_pattern}")
+
+        # Step 2: Insert new triples
+        insert_query = """
+            INSERT INTO rdf_triples
+                (subject, predicate, object, object_type, language_tag, datatype_uri, graph_id, pipeline_run_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        count = 0
+        batch_size = 1000
+        batch = []
+        store = JenaPostgresStore(graph_id=graph_id)
+
+        for s, p, o in graph:
+            obj_type = store._get_node_type(o)
+            lang_tag = getattr(o, 'language', None) if isinstance(o, Literal) else None
+            dtype_uri = str(o.datatype) if isinstance(o, Literal) and o.datatype else None
+
+            batch.append((
+                str(s),
+                str(p),
+                str(o),
+                obj_type,
+                lang_tag,
+                dtype_uri,
+                graph_id,
+                pipeline_run_id
+            ))
+            count += 1
+
+            if len(batch) >= batch_size:
+                store._execute_batch_insert(insert_query, batch)
+                batch = []
+
+        # Insert remaining triples
+        if batch:
+            store._execute_batch_insert(insert_query, batch)
+
+        logger.info(f"Saved {count} triples for {database_type} connector to PostgreSQL")
+        return count
+
+    except Exception as e:
+        logger.error(f"Failed to save connector tables to PostgreSQL: {e}")
+        raise

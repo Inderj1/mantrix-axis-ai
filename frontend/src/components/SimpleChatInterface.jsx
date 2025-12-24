@@ -1921,7 +1921,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask a question about your data..."
-                disabled={loading || isInitializing}
+                disabled={loading}
                 variant="standard"
                 InputProps={{ disableUnderline: true }}
                 sx={{
@@ -1931,7 +1931,7 @@ const SimpleChatInterface = forwardRef((props, ref) => {
               />
               <IconButton
                 onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || loading || isInitializing}
+                disabled={!inputMessage.trim() || loading}
                 sx={{
                   width: 44,
                   height: 44,

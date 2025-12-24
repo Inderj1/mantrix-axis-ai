@@ -12,6 +12,7 @@ Permissions:
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import os
 import structlog
 from bson import ObjectId
 
@@ -200,12 +201,15 @@ async def trigger_pipeline_for_connector(connector_id: str, connector_type: str,
                         )
                         snapshots.append(snapshot)
 
-                    # Build RDF using the builder
+                    # Build RDF using the builder (connector-aware to prevent race conditions)
                     rdf_builder = RDFBuilder()
                     rdf_result = rdf_builder.build_from_snapshots(
                         snapshots,
                         include_stats=True,
-                        discover_relationships=True
+                        discover_relationships=True,
+                        connector_id=connector_id,
+                        database_type=connector_type,
+                        organization_id=organization_id
                     )
 
                     # Save to table_metadata_kg.ttl
@@ -1929,11 +1933,14 @@ async def get_schema_diagnostics(
                 # Count unique tables from database if we have triples
                 if pg_status.get("triple_count", 0) > 0:
                     try:
-                        # Query unique table subjects from PostgreSQL
+                        # Query unique table subjects from PostgreSQL by RDF type
+                        # Uses type predicate to count only actual Table entities, not columns
                         table_query = """
                             SELECT COUNT(DISTINCT subject) as count
                             FROM rdf_triples
-                            WHERE graph_id = %s AND subject LIKE '%%table%%'
+                            WHERE graph_id = %s
+                              AND predicate = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+                              AND object LIKE '%%#Table'
                         """
                         from src.db.postgresql_client import PostgreSQLClient
                         db_client = PostgreSQLClient()
@@ -1953,10 +1960,11 @@ async def get_schema_diagnostics(
                 results["jena"]["connected"] = True
                 results["jena"]["triple_count"] = len(jena_client.graph)
 
-                # Count unique tables
+                # Count unique tables by RDF type (not by name pattern)
                 tables = set()
                 for s, p, o in jena_client.graph:
-                    if "table" in str(s).lower():
+                    # Only count subjects that have rdf:type of Table
+                    if "type" in str(p).lower() and str(o).endswith("#Table"):
                         tables.add(str(s))
                 results["jena"]["tables_in_graph"] = len(tables)
 
@@ -1967,6 +1975,120 @@ async def get_schema_diagnostics(
     return {
         "success": len(results["errors"]) == 0,
         "diagnostics": results
+    }
+
+
+@router.get("/admin/rdf-tables")
+async def list_rdf_tables(
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    List all tables in the Jena RDF store (admin only).
+
+    This endpoint helps debug RDF indexing issues by showing exactly which
+    tables are stored in the knowledge graph.
+
+    Returns:
+        List of tables with their metadata (name, database_type, organization_id, etc.)
+    """
+    from src.core.knowledge_graph.jena_singleton import JENA_BACKEND
+
+    results = {
+        "backend": JENA_BACKEND,
+        "tables": [],
+        "table_count": 0,
+        "errors": []
+    }
+
+    try:
+        if JENA_BACKEND == "postgres":
+            from src.db.postgresql_client import PostgreSQLClient
+            db_client = PostgreSQLClient()
+            graph_id = os.getenv("JENA_GRAPH_ID", "global")
+
+            # Query all table subjects and their metadata
+            query = """
+                WITH table_subjects AS (
+                    SELECT DISTINCT subject
+                    FROM rdf_triples
+                    WHERE graph_id = %s
+                      AND predicate = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+                      AND object LIKE '%%#Table'
+                )
+                SELECT
+                    ts.subject,
+                    MAX(CASE WHEN rt.predicate LIKE '%%tableName' THEN rt.object END) as table_name,
+                    MAX(CASE WHEN rt.predicate LIKE '%%databaseType' THEN rt.object END) as database_type,
+                    MAX(CASE WHEN rt.predicate LIKE '%%organizationId' THEN rt.object END) as organization_id,
+                    MAX(CASE WHEN rt.predicate LIKE '%%dataset' THEN rt.object END) as dataset,
+                    MAX(CASE WHEN rt.predicate LIKE '%%project' THEN rt.object END) as project,
+                    MAX(CASE WHEN rt.predicate LIKE '%%rowCount' THEN rt.object END) as row_count
+                FROM table_subjects ts
+                LEFT JOIN rdf_triples rt ON ts.subject = rt.subject AND rt.graph_id = %s
+                GROUP BY ts.subject
+                ORDER BY ts.subject
+            """
+
+            table_results = db_client.execute_query(query, (graph_id, graph_id))
+
+            for row in table_results:
+                table_info = {
+                    "subject_uri": row['subject'],
+                    "table_name": row.get('table_name'),
+                    "database_type": row.get('database_type'),
+                    "organization_id": row.get('organization_id'),
+                    "dataset": row.get('dataset'),
+                    "project": row.get('project'),
+                    "row_count": row.get('row_count')
+                }
+                results["tables"].append(table_info)
+
+            results["table_count"] = len(results["tables"])
+            results["graph_id"] = graph_id
+
+        else:
+            # For non-PostgreSQL backends, use in-memory graph
+            from src.core.knowledge_graph.jena_singleton import get_jena_knowledge_graph
+            from rdflib.namespace import RDF
+            from rdflib import Namespace
+
+            FIN = Namespace("http://example.com/finance#")
+            SCHEMA = Namespace("http://schema.org/")
+
+            jena_client = get_jena_knowledge_graph()
+            if jena_client and jena_client.graph:
+                for s, p, o in jena_client.graph.triples((None, RDF.type, FIN.Table)):
+                    table_uri = str(s)
+                    table_info = {
+                        "subject_uri": table_uri,
+                        "table_name": None,
+                        "database_type": None,
+                        "organization_id": None
+                    }
+
+                    # Get table name
+                    for _, _, name in jena_client.graph.triples((s, SCHEMA.tableName, None)):
+                        table_info["table_name"] = str(name)
+
+                    # Get database type
+                    for _, _, db_type in jena_client.graph.triples((s, SCHEMA.databaseType, None)):
+                        table_info["database_type"] = str(db_type)
+
+                    # Get organization ID
+                    for _, _, org_id in jena_client.graph.triples((s, SCHEMA.organizationId, None)):
+                        table_info["organization_id"] = str(org_id)
+
+                    results["tables"].append(table_info)
+
+                results["table_count"] = len(results["tables"])
+
+    except Exception as e:
+        results["errors"].append(str(e))
+        logger.error(f"Failed to list RDF tables: {e}")
+
+    return {
+        "success": len(results["errors"]) == 0,
+        "rdf_tables": results
     }
 
 

@@ -33,6 +33,7 @@ import {
   Backdrop,
   useTheme,
   alpha,
+  LinearProgress,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -58,81 +59,264 @@ import {
   Storage as RowsIcon,
   AccessTime as UpdatedIcon,
 } from '@mui/icons-material';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { apiService } from '../services/api';
 import EChartsVisualization from './EChartsVisualization';
 
-// Loading skeleton component
-const LoadingSkeleton = () => {
+// Premium Loading Component with Lottie Animation and Glassmorphism
+const LoadingSkeleton = ({ query }) => {
   const theme = useTheme();
+  const [currentStep, setCurrentStep] = React.useState(0);
+  const [progress, setProgress] = React.useState(0);
+
+  const loadingSteps = [
+    { label: 'Analyzing data structure', icon: '📊' },
+    { label: 'Identifying patterns', icon: '🔍' },
+    { label: 'Generating visualizations', icon: '📈' },
+    { label: 'Preparing insights', icon: '💡' },
+  ];
+
+  // Progress simulation
+  React.useEffect(() => {
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 95) return prev;
+        return prev + Math.random() * 8;
+      });
+    }, 500);
+
+    const stepInterval = setInterval(() => {
+      setCurrentStep(prev => (prev + 1) % loadingSteps.length);
+    }, 2500);
+
+    return () => {
+      clearInterval(progressInterval);
+      clearInterval(stepInterval);
+    };
+  }, []);
+
+  const isDark = theme.palette.mode === 'dark';
+  const primaryBlue = '#5899DA';
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header skeleton */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Skeleton variant="circular" width={40} height={40} />
-          <Box>
-            <Skeleton variant="text" width={200} height={32} />
-            <Skeleton variant="text" width={120} height={20} />
+    <Box
+      sx={{
+        minHeight: 500,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 4,
+        background: isDark
+          ? 'linear-gradient(180deg, rgba(18,20,28,1) 0%, rgba(26,28,38,1) 100%)'
+          : 'linear-gradient(180deg, rgba(248,250,254,1) 0%, rgba(238,242,250,1) 100%)',
+      }}
+    >
+      {/* Main Loading Card with Premium Glassmorphism */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 5,
+          borderRadius: 4,
+          textAlign: 'center',
+          maxWidth: 480,
+          width: '100%',
+          background: isDark
+            ? 'linear-gradient(145deg, rgba(40,42,54,0.88) 0%, rgba(30,32,44,0.92) 100%)'
+            : 'linear-gradient(145deg, rgba(255,255,255,0.92) 0%, rgba(248,250,252,0.88) 100%)',
+          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+          backdropFilter: 'blur(20px) saturate(180%)',
+          boxShadow: isDark
+            ? '0 24px 80px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)'
+            : '0 24px 80px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+        }}
+      >
+        {/* Lottie Animation */}
+        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', minHeight: 200 }}>
+          <DotLottieReact
+            src="/Loading animation blue.lottie"
+            loop
+            autoplay
+            style={{
+              width: 280,
+              height: 200,
+            }}
+          />
+        </Box>
+
+        {/* Title with Gradient */}
+        <Typography
+          variant="h5"
+          sx={{
+            fontWeight: 700,
+            mb: 1,
+            fontSize: '1.5rem',
+            background: `linear-gradient(135deg, ${primaryBlue} 0%, #3B82F6 100%)`,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+        >
+          Building Dashboard
+        </Typography>
+
+        {/* Current Step */}
+        <Typography
+          variant="body1"
+          sx={{
+            color: theme.palette.text.secondary,
+            mb: 3,
+            minHeight: 28,
+            transition: 'all 0.3s ease',
+            fontSize: '0.95rem',
+          }}
+        >
+          {loadingSteps[currentStep].icon} {loadingSteps[currentStep].label}...
+        </Typography>
+
+        {/* Premium Progress Bar */}
+        <Box sx={{ mb: 3 }}>
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{
+              height: 8,
+              borderRadius: 4,
+              bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              '& .MuiLinearProgress-bar': {
+                borderRadius: 4,
+                background: `linear-gradient(90deg, ${primaryBlue} 0%, #3B82F6 50%, ${primaryBlue} 100%)`,
+                backgroundSize: '200% 100%',
+                animation: 'shimmer 2s infinite linear',
+              },
+              '@keyframes shimmer': {
+                '0%': { backgroundPosition: '100% 0' },
+                '100%': { backgroundPosition: '-100% 0' },
+              },
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{
+              color: theme.palette.text.secondary,
+              mt: 1.5,
+              display: 'block',
+              fontWeight: 600,
+              fontSize: '0.75rem',
+            }}
+          >
+            {Math.round(progress)}% complete
+          </Typography>
+        </Box>
+
+        {/* Step Indicators with Glow */}
+        <Stack
+          direction="row"
+          spacing={1.5}
+          justifyContent="center"
+          sx={{ mb: 3 }}
+        >
+          {loadingSteps.map((step, index) => (
+            <Box
+              key={index}
+              sx={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                transition: 'all 0.3s ease',
+                bgcolor: index === currentStep
+                  ? primaryBlue
+                  : index < currentStep
+                    ? alpha(primaryBlue, 0.5)
+                    : isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                transform: index === currentStep ? 'scale(1.3)' : 'scale(1)',
+                boxShadow: index === currentStep
+                  ? `0 0 12px ${alpha(primaryBlue, 0.6)}, 0 0 4px ${alpha(primaryBlue, 0.4)}`
+                  : 'none',
+              }}
+            />
+          ))}
+        </Stack>
+
+        {/* Query Display with Glass Effect */}
+        {query && (
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              bgcolor: isDark ? 'rgba(88,153,218,0.06)' : 'rgba(88,153,218,0.04)',
+              border: `1px solid ${isDark ? 'rgba(88,153,218,0.15)' : 'rgba(88,153,218,0.12)'}`,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                color: theme.palette.text.disabled,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontSize: '0.65rem',
+                fontWeight: 600,
+              }}
+            >
+              Your Query
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme.palette.text.secondary,
+                mt: 0.5,
+                fontStyle: 'italic',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              "{query}"
+            </Typography>
           </Box>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Skeleton variant="rounded" width={100} height={36} />
-          <Skeleton variant="rounded" width={36} height={36} />
-        </Box>
-      </Box>
+        )}
+      </Paper>
 
-      {/* Metrics skeleton */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <Grid item xs={6} md={3} key={i}>
-            <Skeleton variant="rounded" height={100} sx={{ borderRadius: 2 }} />
-          </Grid>
-        ))}
-      </Grid>
-
-      {/* Tabs skeleton */}
-      <Skeleton variant="rounded" width={400} height={48} sx={{ mb: 3, borderRadius: 2 }} />
-
-      {/* Content skeleton - 60/40 split */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={7}>
-          <Skeleton variant="rounded" height={350} sx={{ borderRadius: 2, mb: 2 }} />
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <Skeleton variant="rounded" height={220} sx={{ borderRadius: 2 }} />
-            </Grid>
-            <Grid item xs={6}>
-              <Skeleton variant="rounded" height={220} sx={{ borderRadius: 2 }} />
-            </Grid>
-          </Grid>
-        </Grid>
-        <Grid item xs={12} md={5}>
-          <Skeleton variant="rounded" height={580} sx={{ borderRadius: 2 }} />
-        </Grid>
-      </Grid>
-
-      {/* Footer skeleton */}
-      <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.5)}` }}>
-        <Skeleton variant="text" width={300} height={20} />
-      </Box>
+      {/* Subtle tip */}
+      <Typography
+        variant="caption"
+        sx={{
+          mt: 3,
+          color: theme.palette.text.disabled,
+          opacity: 0.7,
+        }}
+      >
+        AI is analyzing your data and creating visualizations
+      </Typography>
     </Box>
   );
 };
 
-// Metric card with glassmorphism effect
+// Premium Metric card with glassmorphism effect and trend accent
 const MetricCard = ({ label, value, change, trend, theme }) => {
   const getTrendIcon = () => {
-    if (trend === 'up') return <TrendingUp sx={{ fontSize: 16, color: theme.palette.success.main }} />;
-    if (trend === 'down') return <TrendingDown sx={{ fontSize: 16, color: theme.palette.error.main }} />;
-    return <TrendingFlat sx={{ fontSize: 16, color: theme.palette.text.secondary }} />;
+    if (trend === 'up') return <TrendingUp sx={{ fontSize: 18, color: '#10B981' }} />;
+    if (trend === 'down') return <TrendingDown sx={{ fontSize: 18, color: '#EF4444' }} />;
+    return <TrendingFlat sx={{ fontSize: 18, color: theme.palette.text.disabled }} />;
   };
 
   const getTrendColor = () => {
-    if (trend === 'up') return theme.palette.success.main;
-    if (trend === 'down') return theme.palette.error.main;
-    return theme.palette.text.secondary;
+    if (trend === 'up') return '#10B981';
+    if (trend === 'down') return '#EF4444';
+    return theme.palette.text.disabled;
   };
+
+  const getAccentColor = () => {
+    if (trend === 'up') return '#10B981';
+    if (trend === 'down') return '#EF4444';
+    return '#5899DA';
+  };
+
+  const isDark = theme.palette.mode === 'dark';
 
   return (
     <Paper
@@ -140,14 +324,32 @@ const MetricCard = ({ label, value, change, trend, theme }) => {
       sx={{
         p: 2.5,
         height: '100%',
-        borderRadius: 2,
-        border: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.default, 0.7)} 100%)`,
-        backdropFilter: 'blur(10px)',
-        transition: 'all 0.2s ease',
+        borderRadius: 3,
+        position: 'relative',
+        overflow: 'hidden',
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+        background: isDark
+          ? 'linear-gradient(145deg, rgba(40,42,54,0.85) 0%, rgba(30,32,44,0.9) 100%)'
+          : 'linear-gradient(145deg, rgba(255,255,255,0.92) 0%, rgba(248,250,252,0.88) 100%)',
+        backdropFilter: 'blur(16px) saturate(180%)',
+        transition: 'all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)',
         '&:hover': {
-          transform: 'translateY(-2px)',
-          boxShadow: `0 8px 24px ${alpha(theme.palette.primary.main, 0.1)}`,
+          transform: 'translateY(-4px)',
+          boxShadow: isDark
+            ? '0 12px 32px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3)'
+            : '0 12px 32px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05)',
+          border: `1px solid ${alpha(getAccentColor(), 0.3)}`,
+        },
+        // Left accent stripe
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 4,
+          background: `linear-gradient(180deg, ${getAccentColor()} 0%, ${alpha(getAccentColor(), 0.6)} 100%)`,
+          borderRadius: '4px 0 0 4px',
         },
       }}
     >
@@ -155,32 +357,52 @@ const MetricCard = ({ label, value, change, trend, theme }) => {
         variant="overline"
         sx={{
           color: theme.palette.text.secondary,
-          fontSize: '0.7rem',
-          letterSpacing: '0.08em',
+          fontSize: '0.68rem',
+          letterSpacing: '0.1em',
           fontWeight: 600,
+          textTransform: 'uppercase',
+          display: 'block',
+          mb: 0.5,
         }}
       >
         {label}
       </Typography>
       <Typography
-        variant="h4"
         sx={{
           fontWeight: 700,
           color: theme.palette.text.primary,
-          my: 0.5,
-          fontSize: '1.75rem',
+          my: 0.75,
+          fontSize: '1.85rem',
+          lineHeight: 1.2,
+          fontFamily: 'Inter, system-ui, sans-serif',
+          background: `linear-gradient(135deg, ${theme.palette.text.primary} 0%, ${alpha(theme.palette.text.primary, 0.8)} 100%)`,
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
         }}
       >
         {value}
       </Typography>
       {change && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.75,
+            mt: 1,
+            p: 0.75,
+            borderRadius: 1.5,
+            bgcolor: alpha(getTrendColor(), 0.08),
+            width: 'fit-content',
+          }}
+        >
           {getTrendIcon()}
           <Typography
             variant="caption"
             sx={{
-              fontWeight: 600,
+              fontWeight: 700,
               color: getTrendColor(),
+              fontSize: '0.75rem',
             }}
           >
             {change}
@@ -191,73 +413,117 @@ const MetricCard = ({ label, value, change, trend, theme }) => {
   );
 };
 
-// Chart card wrapper
-const ChartCard = ({ title, children, height = 300, theme }) => (
-  <Paper
-    elevation={0}
-    sx={{
-      height: '100%',
-      borderRadius: 2,
-      border: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-      overflow: 'hidden',
-    }}
-  >
-    <Box
+// Premium Chart card wrapper with gradient header
+const ChartCard = ({ title, children, height = 300, theme }) => {
+  const isDark = theme.palette.mode === 'dark';
+
+  return (
+    <Paper
+      elevation={0}
       sx={{
-        px: 2.5,
-        py: 1.5,
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-        bgcolor: alpha(theme.palette.background.default, 0.5),
+        height: '100%',
+        borderRadius: 3,
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
+        overflow: 'hidden',
+        background: isDark
+          ? 'linear-gradient(180deg, rgba(40,42,54,0.8) 0%, rgba(35,37,49,0.85) 100%)'
+          : 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(250,251,254,0.9) 100%)',
+        backdropFilter: 'blur(12px)',
+        transition: 'all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)',
+        '&:hover': {
+          boxShadow: isDark
+            ? '0 8px 24px rgba(0, 0, 0, 0.35)'
+            : '0 8px 24px rgba(0, 0, 0, 0.08)',
+          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+        },
       }}
     >
-      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-        {title}
-      </Typography>
-    </Box>
-    <Box sx={{ p: 2, height }}>
-      {children}
-    </Box>
-  </Paper>
-);
+      <Box
+        sx={{
+          px: 2.5,
+          py: 1.75,
+          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}`,
+          background: isDark
+            ? 'linear-gradient(135deg, rgba(88,153,218,0.08) 0%, rgba(88,153,218,0.02) 100%)'
+            : 'linear-gradient(135deg, rgba(88,153,218,0.06) 0%, rgba(88,153,218,0.01) 100%)',
+        }}
+      >
+        <Typography
+          variant="subtitle2"
+          sx={{
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            color: theme.palette.text.primary,
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+        >
+          {title}
+        </Typography>
+      </Box>
+      <Box sx={{ p: 2.5, height }}>
+        {children}
+      </Box>
+    </Paper>
+  );
+};
 
-// Insight card with impact color
+// Premium Insight card with impact-based gradient backgrounds
 const InsightCard = ({ insight, theme, compact = false }) => {
+  const isDark = theme.palette.mode === 'dark';
+
   const getIcon = () => {
     switch (insight.type) {
-      case 'finding': return <InfoIcon sx={{ fontSize: compact ? 18 : 20 }} />;
-      case 'trend': return <TrendingUp sx={{ fontSize: compact ? 18 : 20 }} />;
-      case 'anomaly': return <WarningIcon sx={{ fontSize: compact ? 18 : 20 }} />;
-      case 'recommendation': return <LightbulbIcon sx={{ fontSize: compact ? 18 : 20 }} />;
-      default: return <InfoIcon sx={{ fontSize: compact ? 18 : 20 }} />;
+      case 'finding': return <InfoIcon sx={{ fontSize: compact ? 18 : 22 }} />;
+      case 'trend': return <TrendingUp sx={{ fontSize: compact ? 18 : 22 }} />;
+      case 'anomaly': return <WarningIcon sx={{ fontSize: compact ? 18 : 22 }} />;
+      case 'recommendation': return <LightbulbIcon sx={{ fontSize: compact ? 18 : 22 }} />;
+      default: return <InfoIcon sx={{ fontSize: compact ? 18 : 22 }} />;
     }
   };
 
-  const getAccentColor = () => {
+  const getAccentColors = () => {
     switch (insight.impact) {
-      case 'high': return theme.palette.error.main;
-      case 'medium': return theme.palette.warning.main;
-      default: return theme.palette.info.main;
+      case 'high': return { main: '#EF4444', light: '#FCA5A5', gradient: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)' };
+      case 'medium': return { main: '#F59E0B', light: '#FCD34D', gradient: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)' };
+      default: return { main: '#5899DA', light: '#93C5FD', gradient: 'linear-gradient(135deg, #5899DA 0%, #3B82F6 100%)' };
     }
   };
 
-  const accentColor = getAccentColor();
+  const colors = getAccentColors();
 
   if (compact) {
     return (
       <Box
         sx={{
-          p: 1.5,
-          borderRadius: 1.5,
-          border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-          borderLeft: `3px solid ${accentColor}`,
-          bgcolor: alpha(accentColor, 0.04),
+          p: 1.75,
+          borderRadius: 2,
+          border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}`,
+          borderLeft: `4px solid ${colors.main}`,
+          background: isDark
+            ? `linear-gradient(135deg, ${alpha(colors.main, 0.08)} 0%, ${alpha(colors.main, 0.02)} 100%)`
+            : `linear-gradient(135deg, ${alpha(colors.main, 0.06)} 0%, ${alpha(colors.main, 0.01)} 100%)`,
           mb: 1.5,
+          transition: 'all 0.2s ease',
+          '&:hover': {
+            background: isDark
+              ? `linear-gradient(135deg, ${alpha(colors.main, 0.12)} 0%, ${alpha(colors.main, 0.04)} 100%)`
+              : `linear-gradient(135deg, ${alpha(colors.main, 0.1)} 0%, ${alpha(colors.main, 0.03)} 100%)`,
+            transform: 'translateX(2px)',
+          },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-          <Box sx={{ color: accentColor, mt: 0.25 }}>{getIcon()}</Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
+          <Box sx={{ color: colors.main, mt: 0.25, display: 'flex' }}>{getIcon()}</Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 600,
+                lineHeight: 1.4,
+                fontSize: '0.85rem',
+                color: theme.palette.text.primary,
+              }}
+            >
               {insight.title}
             </Typography>
           </Box>
@@ -265,12 +531,15 @@ const InsightCard = ({ insight, theme, compact = false }) => {
             label={insight.impact}
             size="small"
             sx={{
-              height: 20,
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              bgcolor: alpha(accentColor, 0.1),
-              color: accentColor,
+              height: 22,
+              fontSize: '0.6rem',
+              fontWeight: 700,
+              background: insight.impact === 'high' ? colors.gradient : alpha(colors.main, 0.12),
+              color: insight.impact === 'high' ? '#fff' : colors.main,
               textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              border: 'none',
+              flexShrink: 0,
             }}
           />
         </Box>
@@ -283,60 +552,97 @@ const InsightCard = ({ insight, theme, compact = false }) => {
       elevation={0}
       sx={{
         p: 2.5,
-        borderRadius: 2,
-        border: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-        borderLeft: `4px solid ${accentColor}`,
+        borderRadius: 3,
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
+        borderLeft: `4px solid ${colors.main}`,
         mb: 2,
+        background: isDark
+          ? `linear-gradient(145deg, ${alpha(colors.main, 0.06)} 0%, rgba(30,32,44,0.9) 100%)`
+          : `linear-gradient(145deg, ${alpha(colors.main, 0.04)} 0%, rgba(255,255,255,0.95) 100%)`,
+        transition: 'all 0.25s ease',
+        '&:hover': {
+          boxShadow: `0 4px 20px ${alpha(colors.main, 0.15)}`,
+          transform: 'translateX(4px)',
+        },
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 1.5 }}>
         <Box
           sx={{
-            p: 1,
-            borderRadius: 1.5,
-            bgcolor: alpha(accentColor, 0.1),
-            color: accentColor,
+            p: 1.25,
+            borderRadius: 2,
+            background: `linear-gradient(135deg, ${alpha(colors.main, 0.15)} 0%, ${alpha(colors.main, 0.08)} 100%)`,
+            color: colors.main,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           {getIcon()}
         </Box>
-        <Box sx={{ flex: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.75, flexWrap: 'wrap' }}>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                color: theme.palette.text.primary,
+              }}
+            >
               {insight.title}
             </Typography>
             <Chip
               label={insight.impact}
               size="small"
               sx={{
-                height: 22,
-                fontSize: '0.7rem',
-                fontWeight: 600,
-                bgcolor: alpha(accentColor, 0.1),
-                color: accentColor,
+                height: 24,
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                background: insight.impact === 'high' ? colors.gradient : alpha(colors.main, 0.12),
+                color: insight.impact === 'high' ? '#fff' : colors.main,
                 textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                border: 'none',
               }}
             />
           </Box>
-          <Typography variant="body2" sx={{ color: theme.palette.text.secondary, lineHeight: 1.6 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: theme.palette.text.secondary,
+              lineHeight: 1.65,
+              fontSize: '0.875rem',
+            }}
+          >
             {insight.description}
           </Typography>
         </Box>
       </Box>
       {insight.actions && insight.actions.length > 0 && (
-        <Box sx={{ mt: 2, pl: 6 }}>
+        <Box
+          sx={{
+            mt: 2,
+            ml: 6.5,
+            p: 1.5,
+            borderRadius: 2,
+            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+          }}
+        >
           <Typography
             variant="overline"
             sx={{
               fontSize: '0.65rem',
-              letterSpacing: '0.08em',
+              letterSpacing: '0.1em',
               color: theme.palette.text.secondary,
-              fontWeight: 600,
+              fontWeight: 700,
+              display: 'block',
+              mb: 1,
             }}
           >
             Recommended Actions
           </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+          <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
             {insight.actions.map((action, i) => (
               <Typography
                 component="li"
@@ -361,11 +667,13 @@ const TabPanel = ({ children, value, index, ...other }) => (
   </div>
 );
 
-const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
+const MantraxResultsView = ({ query, sql, results, metadata, onClose, preComputedData = null }) => {
   const theme = useTheme();
-  const [loading, setLoading] = useState(true);
+  // If we have pre-computed data, start with loading=false
+  const [loading, setLoading] = useState(!preComputedData);
   const [error, setError] = useState(null);
-  const [formattedData, setFormattedData] = useState(null);
+  // Use pre-computed data if available
+  const [formattedData, setFormattedData] = useState(preComputedData);
   const [activeTab, setActiveTab] = useState(0);
   const [exportAnchorEl, setExportAnchorEl] = useState(null);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -379,18 +687,30 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
   const [drillMessage, setDrillMessage] = useState('');
   const [originalQuery] = useState(query);
   const [currentQuery, setCurrentQuery] = useState(query);
+  // Current results state for drill-down (starts with initial results)
+  const [currentResults, setCurrentResults] = useState(results);
+  const [currentSql, setCurrentSql] = useState(sql);
 
   useEffect(() => {
+    // Skip API call if we have pre-computed data
+    if (preComputedData) {
+      console.log('[MantraxResultsView] Using pre-computed data, skipping API call');
+      setFormattedData(preComputedData);
+      setLoading(false);
+      return;
+    }
     formatResults();
-  }, [query, sql, results]);
+  }, [query, sql, results, preComputedData]);
 
-  const formatResults = async (queryOverride = null) => {
+  const formatResults = async (queryOverride = null, resultsOverride = null, sqlOverride = null) => {
     try {
       setLoading(true);
       setError(null);
       const userId = 'persona';
       const queryToUse = queryOverride || query;
-      const response = await apiService.formatResultsWithMantrax(queryToUse, sql, results, metadata, userId);
+      const resultsToUse = resultsOverride || currentResults;
+      const sqlToUse = sqlOverride || currentSql;
+      const response = await apiService.formatResultsWithMantrax(queryToUse, sqlToUse, resultsToUse, metadata, userId);
       setFormattedData(response.data);
     } catch (err) {
       console.error('Failed to format results:', err);
@@ -400,7 +720,7 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
     }
   };
 
-  // Handle chart click → drill down
+  // Handle chart click → drill down with real data filtering
   const handleDrillDown = useCallback(async (params, chartComponent) => {
     const dimension = chartComponent?.data?.xAxis?.key || params.seriesName || params.name;
     const value = params.name || params.value;
@@ -410,43 +730,105 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
       return;
     }
 
-    console.log('[MantraxResultsView] Drilling down:', { dimension, value });
+    console.log('[MantraxResultsView] Drilling down:', { dimension, value, metadata });
 
     // Show feedback immediately
     const displayDimension = dimension.replace(/_/g, ' ');
     setDrillMessage(`Drilling into ${displayDimension}: ${value}...`);
 
     // Add to breadcrumbs
-    setDrillBreadcrumbs(prev => [...prev, { dimension, value }]);
+    const newBreadcrumbs = [...drillBreadcrumbs, { dimension, value }];
+    setDrillBreadcrumbs(newBreadcrumbs);
     setDrillLoading(true);
 
     try {
-      // Build drill query by adding filter to current query
-      const drillQuery = `${currentQuery} where ${dimension} = '${value}'`;
-      setCurrentQuery(drillQuery);
+      // Build all filters from breadcrumbs
+      const filters = newBreadcrumbs.map(bc => ({
+        dimension: bc.dimension,
+        value: bc.value,
+        operator: '='
+      }));
 
-      // Re-format with new filtered query
-      const userId = 'persona';
-      const response = await apiService.formatResultsWithMantrax(
-        drillQuery,
-        sql,
-        results,
-        metadata,
-        userId
-      );
-      setFormattedData(response.data);
-      setDrillMessage(`Filtered by ${displayDimension}: ${value}`);
+      // Check if we have connector queries for cross-database drill-down
+      const connectorQueries = metadata?.connectorQueries;
+      const hasMultiDb = connectorQueries && connectorQueries.length > 1;
+
+      let drillResponse;
+
+      if (hasMultiDb) {
+        // Multi-database drill-down - call backend API
+        console.log('[MantraxResultsView] Multi-DB drill-down with', connectorQueries.length, 'connectors');
+        drillResponse = await apiService.executeDrillDown({
+          connectorQueries: connectorQueries,
+          filters: filters,
+          joinSpecification: metadata?.joinSpecification
+        });
+      } else if (sql && metadata?.databaseType) {
+        // Single-database drill-down
+        console.log('[MantraxResultsView] Single-DB drill-down');
+        drillResponse = await apiService.executeDrillDown({
+          sql: sql,
+          databaseType: metadata.databaseType,
+          connectorId: metadata.connectorId,
+          filters: filters
+        });
+      } else {
+        // Fallback: client-side filtering (no re-execution)
+        console.log('[MantraxResultsView] Client-side filter fallback');
+        const filteredResults = currentResults.filter(row => {
+          return filters.every(f => {
+            const rowValue = row[f.dimension];
+            if (rowValue === undefined) return true; // Column not in row
+            return String(rowValue) === String(f.value);
+          });
+        });
+
+        // Update current results and re-format
+        setCurrentResults(filteredResults);
+        const drillQuery = `${originalQuery} (filtered: ${filters.map(f => `${f.dimension}=${f.value}`).join(', ')})`;
+        setCurrentQuery(drillQuery);
+
+        await formatResults(drillQuery, filteredResults, currentSql);
+        setDrillMessage(`Filtered by ${displayDimension}: ${value} (${filteredResults.length} rows)`);
+        return;
+      }
+
+      // Handle API response
+      if (drillResponse?.data?.success) {
+        const newResults = drillResponse.data.results;
+        const modifiedQueries = drillResponse.data.modified_queries;
+
+        // Update state with filtered results
+        setCurrentResults(newResults);
+
+        // Update SQL display with modified queries
+        if (modifiedQueries && Object.keys(modifiedQueries).length > 0) {
+          const combinedSql = Object.entries(modifiedQueries)
+            .map(([connId, query]) => `-- ${connId}\n${query}`)
+            .join('\n\n');
+          setCurrentSql(combinedSql);
+        }
+
+        const drillQuery = `${originalQuery} (filtered: ${filters.map(f => `${f.dimension}=${f.value}`).join(', ')})`;
+        setCurrentQuery(drillQuery);
+
+        // Re-format with new results
+        await formatResults(drillQuery, newResults, currentSql);
+        setDrillMessage(`Filtered by ${displayDimension}: ${value} (${newResults.length} rows)`);
+      } else {
+        throw new Error(drillResponse?.data?.error || 'Drill-down failed');
+      }
     } catch (err) {
       console.error('Drill-down failed:', err);
       // Revert breadcrumb on error
       setDrillBreadcrumbs(prev => prev.slice(0, -1));
-      setDrillMessage('Drill-down failed. Please try again.');
+      setDrillMessage(`Drill-down failed: ${err.message}`);
     } finally {
       setDrillLoading(false);
       // Auto-hide message after 3 seconds
       setTimeout(() => setDrillMessage(''), 3000);
     }
-  }, [currentQuery, sql, results, metadata]);
+  }, [drillBreadcrumbs, currentResults, currentSql, sql, metadata, originalQuery]);
 
   // Handle breadcrumb navigation (go back)
   const handleBreadcrumbClick = useCallback(async (index) => {
@@ -454,36 +836,78 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
 
     try {
       if (index === -1) {
-        // Go back to root
+        // Go back to root - reset to original data
         setDrillBreadcrumbs([]);
         setCurrentQuery(originalQuery);
-        await formatResults(originalQuery);
+        setCurrentResults(results);
+        setCurrentSql(sql);
+        await formatResults(originalQuery, results, sql);
       } else {
         // Go back to specific level
         const newBreadcrumbs = drillBreadcrumbs.slice(0, index + 1);
         setDrillBreadcrumbs(newBreadcrumbs);
 
-        // Rebuild query with only those filters
-        const filters = newBreadcrumbs.map(b => `${b.dimension} = '${b.value}'`).join(' and ');
-        const drillQuery = filters ? `${originalQuery} where ${filters}` : originalQuery;
-        setCurrentQuery(drillQuery);
+        // Build filters from remaining breadcrumbs
+        const filters = newBreadcrumbs.map(bc => ({
+          dimension: bc.dimension,
+          value: bc.value,
+          operator: '='
+        }));
 
-        const userId = 'persona';
-        const response = await apiService.formatResultsWithMantrax(
-          drillQuery,
-          sql,
-          results,
-          metadata,
-          userId
-        );
-        setFormattedData(response.data);
+        // Check if we have connector queries for cross-database drill-down
+        const connectorQueries = metadata?.connectorQueries;
+        const hasMultiDb = connectorQueries && connectorQueries.length > 1;
+
+        let drillResponse;
+
+        if (hasMultiDb) {
+          // Multi-database drill-down
+          drillResponse = await apiService.executeDrillDown({
+            connectorQueries: connectorQueries,
+            filters: filters,
+            joinSpecification: metadata?.joinSpecification
+          });
+        } else if (sql && metadata?.databaseType) {
+          // Single-database drill-down
+          drillResponse = await apiService.executeDrillDown({
+            sql: sql,
+            databaseType: metadata.databaseType,
+            connectorId: metadata.connectorId,
+            filters: filters
+          });
+        } else {
+          // Fallback: client-side filtering
+          const filteredResults = results.filter(row => {
+            return filters.every(f => {
+              const rowValue = row[f.dimension];
+              if (rowValue === undefined) return true;
+              return String(rowValue) === String(f.value);
+            });
+          });
+
+          setCurrentResults(filteredResults);
+          const drillQuery = `${originalQuery} (filtered: ${filters.map(f => `${f.dimension}=${f.value}`).join(', ')})`;
+          setCurrentQuery(drillQuery);
+          await formatResults(drillQuery, filteredResults, sql);
+          return;
+        }
+
+        // Handle API response
+        if (drillResponse?.data?.success) {
+          const newResults = drillResponse.data.results;
+          setCurrentResults(newResults);
+
+          const drillQuery = `${originalQuery} (filtered: ${filters.map(f => `${f.dimension}=${f.value}`).join(', ')})`;
+          setCurrentQuery(drillQuery);
+          await formatResults(drillQuery, newResults, currentSql);
+        }
       }
     } catch (err) {
       console.error('Breadcrumb navigation failed:', err);
     } finally {
       setDrillLoading(false);
     }
-  }, [originalQuery, drillBreadcrumbs, sql, results, metadata]);
+  }, [originalQuery, drillBreadcrumbs, sql, results, metadata, currentSql]);
 
   // Extract metrics from summary-card component
   const metrics = useMemo(() => {
@@ -576,11 +1000,11 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
   const handleExportClose = () => setExportAnchorEl(null);
 
   const handleExportCSV = () => {
-    if (!results || results.length === 0) return;
-    const headers = Object.keys(results[0]);
+    if (!currentResults || currentResults.length === 0) return;
+    const headers = Object.keys(currentResults[0]);
     const csvContent = [
       headers.join(','),
-      ...results.map((row) =>
+      ...currentResults.map((row) =>
         headers.map((h) => {
           const val = row[h];
           if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
@@ -1263,7 +1687,7 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
 
   // Loading state
   if (loading) {
-    return <LoadingSkeleton />;
+    return <LoadingSkeleton query={query} />;
   }
 
   // Error state
@@ -1460,11 +1884,12 @@ const MantraxResultsView = ({ query, sql, results, metadata, onClose }) => {
             </Typography>
           </Stack>
         )}
-        {results?.length && (
+        {currentResults?.length > 0 && (
           <Stack direction="row" spacing={0.5} alignItems="center">
             <RowsIcon sx={{ fontSize: 16, color: theme.palette.text.disabled }} />
             <Typography variant="caption" color="text.secondary">
-              {results.length.toLocaleString()} rows
+              {currentResults.length.toLocaleString()} rows
+              {drillBreadcrumbs.length > 0 && ` (filtered from ${results.length.toLocaleString()})`}
             </Typography>
           </Stack>
         )}

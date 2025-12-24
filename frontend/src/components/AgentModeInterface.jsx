@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Box,
@@ -81,22 +81,37 @@ import {
   PivotTableChart as PivotIcon,
   LineStyle as LineChartIcon2,
 } from '@mui/icons-material';
-import { DataGrid } from '@mui/x-data-grid';
-import PivotTableUI from 'react-pivottable/PivotTableUI';
-import 'react-pivottable/pivottable.css';
-import TableRenderers from 'react-pivottable/TableRenderers';
 import { apiService } from '../services/api';
-import ResultAnalysis from './ResultAnalysis';
-import DeepResearchInterface from './DeepResearchInterface';
 import QueryLogger from './QueryLogger';
-import EnhancedAnalyticsModal from './EnhancedAnalyticsModal';
-import MantraxResultsView from './MantraxResultsView';
 import FollowUpSuggestions from './FollowUpSuggestions';
-import AceEditor from 'react-ace';
-import 'ace-builds/src-noconflict/mode-sql';
-import 'ace-builds/src-noconflict/theme-monokai';
-import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/ext-language_tools';
+
+// Lazy load heavy components for better initial load performance
+const DataGrid = lazy(() => import('@mui/x-data-grid').then(m => ({ default: m.DataGrid })));
+const ResultAnalysis = lazy(() => import('./ResultAnalysis'));
+const DeepResearchInterface = lazy(() => import('./DeepResearchInterface'));
+const EnhancedAnalyticsModal = lazy(() => import('./EnhancedAnalyticsModal'));
+const MantraxResultsView = lazy(() => import('./MantraxResultsView'));
+const AceEditor = lazy(() => import('react-ace'));
+
+// Pivot table - we'll create a wrapper component for lazy loading
+// This allows us to lazy load both PivotTableUI and TableRenderers together
+const LazyPivotTable = lazy(() =>
+  Promise.all([
+    import('react-pivottable/PivotTableUI'),
+    import('react-pivottable/TableRenderers'),
+    import('react-pivottable/pivottable.css'),
+  ]).then(([PivotTableUI, TableRenderers]) => ({
+    default: (props) => (
+      <PivotTableUI.default
+        {...props}
+        renderers={TableRenderers.default}
+      />
+    )
+  }))
+);
+
+// Recharts - kept as static import since components are used inline
+// Vite manualChunks will split this into vendor-charts bundle
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, ScatterChart, Scatter, RadarChart, Radar,
@@ -105,6 +120,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   ResponsiveContainer
 } from 'recharts';
+
+// Import ace extensions lazily when needed
+const loadAceExtensions = () => {
+  import('ace-builds/src-noconflict/mode-sql');
+  import('ace-builds/src-noconflict/theme-monokai');
+  import('ace-builds/src-noconflict/theme-github');
+  import('ace-builds/src-noconflict/ext-language_tools');
+};
 
 // Import images as modules for proper caching
 import axisAiLogo from '../assets/axis-ai4.png';
@@ -282,9 +305,47 @@ const AgentModeInterface = forwardRef((props, ref) => {
   const [tableChartType, setTableChartType] = useState({}); // Track chart type per query index
   const [tablePivotState, setTablePivotState] = useState({}); // Track pivot state per query index
   const [expandedSteps, setExpandedSteps] = useState({}); // Track which execution steps are expanded
+  const [loadingMoreQueries, setLoadingMoreQueries] = useState({}); // Track loading state for "Load More" per query
   const initializationRef = useRef(false);
 
+  // Pre-computed dashboard data cache (messageId -> formatted data)
+  const preComputedDashboardsRef = useRef({});
+  const [dashboardReadyStatus, setDashboardReadyStatus] = useState({}); // Track which dashboards are ready
+
   console.log('AgentModeInterface rendering, mode:', mode, 'userId:', userId);
+
+  // Pre-compute dashboard data in background when query results arrive
+  const preComputeDashboard = useCallback(async (messageId, query, sql, results, metadata) => {
+    // Don't re-compute if already done or in progress
+    if (preComputedDashboardsRef.current[messageId]) return;
+
+    // Mark as in-progress
+    preComputedDashboardsRef.current[messageId] = { status: 'loading' };
+    setDashboardReadyStatus(prev => ({ ...prev, [messageId]: 'loading' }));
+
+    try {
+      console.log('[PreCompute] Starting dashboard pre-computation for message:', messageId);
+      const response = await apiService.formatResultsWithMantrax(
+        query,
+        sql,
+        results,
+        metadata,
+        'persona'
+      );
+
+      // Store the pre-computed result
+      preComputedDashboardsRef.current[messageId] = {
+        status: 'ready',
+        data: response.data
+      };
+      setDashboardReadyStatus(prev => ({ ...prev, [messageId]: 'ready' }));
+      console.log('[PreCompute] Dashboard ready for message:', messageId);
+    } catch (error) {
+      console.error('[PreCompute] Failed to pre-compute dashboard:', error);
+      preComputedDashboardsRef.current[messageId] = { status: 'error', error };
+      setDashboardReadyStatus(prev => ({ ...prev, [messageId]: 'error' }));
+    }
+  }, []);
 
   // Load cached messages on mount
   useEffect(() => {
@@ -471,6 +532,41 @@ const AgentModeInterface = forwardRef((props, ref) => {
                     updated.results = queryData.results;
                     updated.resultCount = queryData.row_count;
                     updated.statusMessages = [...(updated.statusMessages || []), `Retrieved ${queryData.row_count} rows`];
+
+                    // Pre-compute dashboard in background for instant loading
+                    if (queryData.results && queryData.results.length > 0) {
+                      // Build connector queries for drill-down support
+                      const allQueries = [...(updated.allSqlQueries || []), queryData];
+                      const connectorQueries = allQueries.map(q => ({
+                        connector_id: q.connector_id || q.connectorId,
+                        database_type: q.database_type || q.databaseType,
+                        sql: q.sql,
+                        tables_used: q.tables_used || q.tablesUsed || []
+                      }));
+
+                      // Get SQL - combine from allQueries if multiple
+                      let sqlForDashboard = queryData.sql;
+                      if (!sqlForDashboard && allQueries.length > 0) {
+                        sqlForDashboard = allQueries
+                          .map((q, i) => `-- Query ${i + 1}: ${q.database_type || 'Unknown'}\n${q.sql}`)
+                          .join('\n\n');
+                      }
+
+                      // Schedule pre-compute (will run after this event processing)
+                      setTimeout(() => {
+                        preComputeDashboard(
+                          responseMessageId,
+                          trimmedMessage, // User's query
+                          sqlForDashboard,
+                          queryData.results,
+                          {
+                            connectorQueries,
+                            databaseType: queryData.database_type,
+                            connectorId: queryData.connector_id
+                          }
+                        );
+                      }, 100);
+                    }
                     break;
 
                   case 'execution_plan':
@@ -626,6 +722,84 @@ const AgentModeInterface = forwardRef((props, ref) => {
     URL.revokeObjectURL(url);
   };
 
+  // Handle loading more rows for paginated queries
+  const handleLoadMore = async (messageId, queryIndex, queryData) => {
+    const loadingKey = `${messageId}_${queryIndex}`;
+
+    // Don't load if already loading
+    if (loadingMoreQueries[loadingKey]) return;
+
+    // Check if we have pagination info
+    const pagination = queryData.pagination;
+    if (!pagination?.is_paginated) {
+      console.warn('No pagination info available for query');
+      return;
+    }
+
+    setLoadingMoreQueries(prev => ({ ...prev, [loadingKey]: true }));
+
+    try {
+      // Calculate next page
+      const currentResultCount = queryData.results?.length || 0;
+      const pageSize = pagination.page_size || 1000;
+      const nextPage = Math.floor(currentResultCount / pageSize) + 1;
+
+      console.log('[LoadMore] Fetching page', nextPage, 'for query', queryIndex, {
+        currentResults: currentResultCount,
+        pageSize,
+        totalEstimated: pagination.total_count
+      });
+
+      const response = await apiService.loadMoreResults({
+        sql: queryData.sql,
+        databaseType: queryData.database_type || 'snowflake',
+        connectorId: queryData.connector_id,
+        page: nextPage,
+        pageSize: pageSize,
+        totalCount: pagination.total_count,
+      });
+
+      if (response.data?.results && response.data.results.length > 0) {
+        // Append new results to existing results
+        setMessages(prevMessages =>
+          prevMessages.map(msg => {
+            if (msg.id !== messageId) return msg;
+
+            // Update allSqlQueries with appended results
+            const updatedQueries = msg.allSqlQueries.map((q, idx) => {
+              if (idx !== queryIndex) return q;
+
+              return {
+                ...q,
+                results: [...(q.results || []), ...response.data.results],
+                row_count: (q.results?.length || 0) + response.data.results.length,
+                pagination: {
+                  ...q.pagination,
+                  page: nextPage,
+                  has_next_page: response.data.pagination?.has_next_page ??
+                    ((q.results?.length || 0) + response.data.results.length < pagination.total_count)
+                }
+              };
+            });
+
+            return {
+              ...msg,
+              allSqlQueries: updatedQueries,
+              results: updatedQueries[queryIndex]?.results || msg.results,
+              resultCount: updatedQueries[queryIndex]?.row_count || msg.resultCount
+            };
+          })
+        );
+
+        console.log('[LoadMore] Successfully loaded', response.data.results.length, 'more rows');
+      }
+    } catch (error) {
+      console.error('[LoadMore] Failed to load more results:', error);
+    } finally {
+      setLoadingMoreQueries(prev => ({ ...prev, [loadingKey]: false }));
+    }
+  };
+
   const handleAnalyzeResults = async (message) => {
     if (!message.results || message.results.length === 0) return;
     
@@ -701,12 +875,50 @@ const AgentModeInterface = forwardRef((props, ref) => {
     // Find the user message that triggered this response
     const messageIndex = messages.findIndex(m => m.id === message.id);
     const userQuery = messageIndex > 0 ? messages[messageIndex - 1].content : message.content;
-    
+
+    // Get SQL - use message.sql or combine from allSqlQueries for multi-db queries
+    let sql = message.sql;
+    if (!sql && message.allSqlQueries && message.allSqlQueries.length > 0) {
+      // Combine all SQLs with comments showing the source database
+      sql = message.allSqlQueries
+        .map((q, i) => `-- Query ${i + 1}: ${q.database_type || 'Unknown'}\n${q.sql}`)
+        .join('\n\n');
+    }
+
+    // Build connector queries for drill-down support
+    const connectorQueries = message.allSqlQueries?.map(q => ({
+      connector_id: q.connector_id || q.connectorId,
+      database_type: q.database_type || q.databaseType,
+      sql: q.sql,
+      tables_used: q.tables_used || q.tablesUsed || []
+    })) || null;
+
+    // Check if we have pre-computed dashboard data
+    const preComputed = preComputedDashboardsRef.current[message.id];
+    const preComputedData = preComputed?.status === 'ready' ? preComputed.data : null;
+
+    if (preComputedData) {
+      console.log('[Dashboard] Using pre-computed data for message:', message.id);
+    } else {
+      console.log('[Dashboard] No pre-computed data, will load fresh for message:', message.id);
+    }
+
     setDetailedResultsData({
       query: userQuery,
-      sql: message.sql,
+      sql: sql,
       results: message.results,
-      metadata: message.metadata
+      metadata: {
+        ...message.metadata,
+        // Include connector queries for drill-down capability
+        connectorQueries: connectorQueries,
+        // Include join specification if available
+        joinSpecification: message.joinSpecification || message.join_specification,
+        // Single-database info for non-cross-connector queries
+        databaseType: message.database_type || message.databaseType,
+        connectorId: message.connector_id || message.connectorId
+      },
+      // Pass pre-computed data if available
+      preComputedData: preComputedData
     });
     setShowDetailedResults(true);
   };
@@ -2368,40 +2580,81 @@ const AgentModeInterface = forwardRef((props, ref) => {
                         {/* Table View */}
                         {currentViewMode === 'table' && (
                           <Box sx={{ height: 400, width: '100%' }}>
-                            <DataGrid
-                              rows={rows}
-                              columns={columns}
-                              initialState={{
-                                pagination: {
-                                  paginationModel: { pageSize: 10, page: 0 },
-                                },
-                              }}
-                              pageSizeOptions={[10, 25, 50, 100]}
-                              density="compact"
-                              disableRowSelectionOnClick
+                            <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>}>
+                              <DataGrid
+                                rows={rows}
+                                columns={columns}
+                                initialState={{
+                                  pagination: {
+                                    paginationModel: { pageSize: 10, page: 0 },
+                                  },
+                                }}
+                                pageSizeOptions={[10, 25, 50, 100]}
+                                density="compact"
+                                disableRowSelectionOnClick
+                                sx={{
+                                  '& .MuiDataGrid-cell': {
+                                    fontSize: '0.875rem',
+                                  },
+                                  '& .MuiDataGrid-columnHeaders': {
+                                    backgroundColor: 'action.hover',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 600,
+                                  },
+                                }}
+                              />
+                            </Suspense>
+                          </Box>
+                        )}
+
+                        {/* Load More Button for paginated results */}
+                        {queryData.pagination?.is_paginated &&
+                         queryData.results?.length < (queryData.pagination?.total_count || 0) && (
+                          <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            mt: 2,
+                            pt: 2,
+                            borderTop: '1px solid',
+                            borderColor: 'divider'
+                          }}>
+                            <Button
+                              variant="outlined"
+                              color="primary"
+                              onClick={() => handleLoadMore(message.id, idx, queryData)}
+                              disabled={loadingMoreQueries[`${message.id}_${idx}`]}
+                              startIcon={loadingMoreQueries[`${message.id}_${idx}`]
+                                ? <CircularProgress size={18} />
+                                : <ExpandMoreIcon />}
                               sx={{
-                                '& .MuiDataGrid-cell': {
-                                  fontSize: '0.875rem',
-                                },
-                                '& .MuiDataGrid-columnHeaders': {
-                                  backgroundColor: 'action.hover',
-                                  fontSize: '0.875rem',
-                                  fontWeight: 600,
-                                },
+                                borderRadius: 2,
+                                textTransform: 'none',
+                                px: 3,
+                                py: 1,
                               }}
-                            />
+                            >
+                              {loadingMoreQueries[`${message.id}_${idx}`]
+                                ? 'Loading more rows...'
+                                : `Load more rows (${queryData.results?.length?.toLocaleString()} of ${
+                                    queryData.pagination?.total_count >= 1e6
+                                      ? (queryData.pagination.total_count / 1e6).toFixed(1) + 'M'
+                                      : queryData.pagination?.total_count?.toLocaleString() || '?'
+                                  } total)`
+                              }
+                            </Button>
                           </Box>
                         )}
 
                         {/* Pivot Table View */}
                         {currentViewMode === 'pivot' && (
                           <Box sx={{ width: '100%', overflow: 'auto' }}>
-                            <PivotTableUI
-                              data={queryData.results}
-                              onChange={s => setTablePivotState(prev => ({ ...prev, [queryIndex]: s }))}
-                              renderers={TableRenderers}
-                              {...currentPivotState}
-                            />
+                            <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>}>
+                              <LazyPivotTable
+                                data={queryData.results}
+                                onChange={s => setTablePivotState(prev => ({ ...prev, [queryIndex]: s }))}
+                                {...currentPivotState}
+                              />
+                            </Suspense>
                           </Box>
                         )}
 
@@ -2923,28 +3176,30 @@ const AgentModeInterface = forwardRef((props, ref) => {
                       });
 
                       return (
-                        <DataGrid
-                          rows={safeRows}
-                          columns={safeColumns}
-                          initialState={{
-                            pagination: {
-                              paginationModel: { pageSize: 10, page: 0 },
-                            },
-                          }}
-                          pageSizeOptions={[10, 25, 50]}
-                          density="compact"
-                          disableRowSelectionOnClick
-                          sx={{
-                            '& .MuiDataGrid-cell': {
-                              fontSize: '0.875rem',
-                            },
-                            '& .MuiDataGrid-columnHeaders': {
-                              backgroundColor: 'action.hover',
-                              fontSize: '0.875rem',
-                              fontWeight: 600,
-                            },
-                          }}
-                        />
+                        <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>}>
+                          <DataGrid
+                            rows={safeRows}
+                            columns={safeColumns}
+                            initialState={{
+                              pagination: {
+                                paginationModel: { pageSize: 10, page: 0 },
+                              },
+                            }}
+                            pageSizeOptions={[10, 25, 50]}
+                            density="compact"
+                            disableRowSelectionOnClick
+                            sx={{
+                              '& .MuiDataGrid-cell': {
+                                fontSize: '0.875rem',
+                              },
+                              '& .MuiDataGrid-columnHeaders': {
+                                backgroundColor: 'action.hover',
+                                fontSize: '0.875rem',
+                                fontWeight: 600,
+                              },
+                            }}
+                          />
+                        </Suspense>
                       );
                     } catch (err) {
                       console.error('Error rendering DataGrid:', err);
@@ -3400,11 +3655,13 @@ const AgentModeInterface = forwardRef((props, ref) => {
         </DialogTitle>
         <DialogContent>
           {activeAnalysis || analysisLoading ? (
-            <ResultAnalysis
-              analysis={activeAnalysis}
-              loading={analysisLoading}
-              onFollowUpClick={handleFollowUpQuestion}
-            />
+            <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress /></Box>}>
+              <ResultAnalysis
+                analysis={activeAnalysis}
+                loading={analysisLoading}
+                onFollowUpClick={handleFollowUpQuestion}
+              />
+            </Suspense>
           ) : null}
         </DialogContent>
       </Dialog>
@@ -3424,55 +3681,62 @@ const AgentModeInterface = forwardRef((props, ref) => {
       >
         <DialogContent sx={{ p: 0 }}>
           {showDetailedResults && detailedResultsData && (
-            <MantraxResultsView
-              query={detailedResultsData.query}
-              sql={detailedResultsData.sql}
-              results={detailedResultsData.results}
-              metadata={detailedResultsData.metadata}
-              onClose={() => setShowDetailedResults(false)}
-            />
+            <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center', minHeight: 400 }}><CircularProgress /></Box>}>
+              <MantraxResultsView
+                query={detailedResultsData.query}
+                sql={detailedResultsData.sql}
+                results={detailedResultsData.results}
+                metadata={detailedResultsData.metadata}
+                preComputedData={detailedResultsData.preComputedData}
+                onClose={() => setShowDetailedResults(false)}
+              />
+            </Suspense>
           )}
         </DialogContent>
       </Dialog>
       
       {/* Enhanced Analytics Modal */}
-      <EnhancedAnalyticsModal
-        open={showAnalyticsModal}
-        onClose={() => setShowAnalyticsModal(false)}
-        initialQuery={analyticsModalData?.query || ''}
-        initialData={analyticsModalData?.results || null}
-        mode={analyticsModalMode}
-        onQueryExecute={(newResults) => {
-          // Optional: Update the chat with new results if needed
-          console.log('New results from analytics modal:', newResults);
-        }}
-      />
+      <Suspense fallback={null}>
+        <EnhancedAnalyticsModal
+          open={showAnalyticsModal}
+          onClose={() => setShowAnalyticsModal(false)}
+          initialQuery={analyticsModalData?.query || ''}
+          initialData={analyticsModalData?.results || null}
+          mode={analyticsModalMode}
+          onQueryExecute={(newResults) => {
+            // Optional: Update the chat with new results if needed
+            console.log('New results from analytics modal:', newResults);
+          }}
+        />
+      </Suspense>
 
       {/* Deep Research Interface */}
-      <DeepResearchInterface
-        open={showDeepResearch}
-        onClose={() => setShowDeepResearch(false)}
-        initialQuestion={deepResearchQuestion}
-        onResults={(results) => {
-          console.log('Deep research results:', results);
-          // Optionally add results to chat
-          if (results.executive_summary) {
-            const researchMessage = {
-              id: Date.now(),
-              type: 'assistant',
-              content: `Deep Research Complete: ${results.executive_summary}`,
-              metadata: {
-                type: 'deep_research_result',
-                research_id: results.research_id,
-                confidence_level: results.confidence_level,
-                data_quality: results.data_quality
-              },
-              timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, researchMessage]);
-          }
-        }}
-      />
+      <Suspense fallback={null}>
+        <DeepResearchInterface
+          open={showDeepResearch}
+          onClose={() => setShowDeepResearch(false)}
+          initialQuestion={deepResearchQuestion}
+          onResults={(results) => {
+            console.log('Deep research results:', results);
+            // Optionally add results to chat
+            if (results.executive_summary) {
+              const researchMessage = {
+                id: Date.now(),
+                type: 'assistant',
+                content: `Deep Research Complete: ${results.executive_summary}`,
+                metadata: {
+                  type: 'deep_research_result',
+                  research_id: results.research_id,
+                  confidence_level: results.confidence_level,
+                  data_quality: results.data_quality
+                },
+                timestamp: new Date(),
+              };
+              setMessages(prev => [...prev, researchMessage]);
+            }
+          }}
+        />
+      </Suspense>
     </Box>
   );
 });

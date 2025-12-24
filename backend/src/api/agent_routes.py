@@ -303,11 +303,14 @@ async def analyze_financial_query_stream(
                     await event_queue.put({'type': 'sql_execution', 'data': {'sql': sql_query[:200]}})
                     await event_queue.put({'type': 'status', 'message': 'Executing query on SAP data...'})
 
-                    execution_result = bq.execute_query(sql_query)
+                    # Use SQLGenerator.execute_query for proper pagination support
+                    # Get target database type from sql_result if available
+                    target_db_type = sql_result.get("target_database_type")
+                    execution_result = sql_gen.execute_query(sql_query, target_db_type)
 
                     # Extract results from the new Dict format
-                    results = execution_result.get('rows', [])
-                    row_count = execution_result.get('fetched_rows', len(results))
+                    results = execution_result.get('results', execution_result.get('rows', []))
+                    row_count = execution_result.get('row_count', len(results))
                     total_rows = execution_result.get('total_rows', row_count)
                     truncated = execution_result.get('truncated', False)
 
@@ -317,8 +320,15 @@ async def analyze_financial_query_stream(
                         "row_count": row_count,
                         "total_rows": total_rows,
                         "truncated": truncated,
-                        "explanation": sql_result.get("explanation", "")
+                        "explanation": sql_result.get("explanation", ""),
+                        # Include database_type and connector_id for "Load More" requests
+                        "database_type": sql_result.get("target_database_type") or sql_gen.database_type,
+                        "connector_id": sql_result.get("connector_id"),
                     }
+
+                    # Include pagination info if available (for large non-aggregation queries)
+                    if execution_result.get("pagination"):
+                        result_data["pagination"] = execution_result["pagination"]
 
                     # Send query results with success message
                     truncation_note = f" (showing {row_count:,} of {total_rows:,})" if truncated else ""

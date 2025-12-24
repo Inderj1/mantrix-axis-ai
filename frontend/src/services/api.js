@@ -437,7 +437,27 @@ export const apiService = {
   
   getMantraxAgentHistory: (agentName, limit = 10) =>
     api.get(`/api/v1/mantrax/agents/${agentName}/history?limit=${limit}`),
-  
+
+  // Drill-down API for Tableau-like filtering
+  executeDrillDown: ({
+    sessionId = null,
+    connectorQueries = null,
+    sql = null,
+    databaseType = null,
+    connectorId = null,
+    filters = [],
+    joinSpecification = null
+  }) =>
+    api.post('/api/v1/drill-down', {
+      session_id: sessionId,
+      connector_queries: connectorQueries,
+      sql,
+      database_type: databaseType,
+      connector_id: connectorId,
+      filters,
+      join_specification: joinSpecification
+    }),
+
   // Executive Analytics endpoints
   getExecutiveSummary: () =>
     api.get('/api/v1/executive/summary'),

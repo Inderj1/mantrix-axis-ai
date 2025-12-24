@@ -21,6 +21,7 @@ from src.api.models import (
     QueryRequest, QueryResponse,
     SQLGenerateRequest, SQLExecuteRequest, SingleConnectorExecuteRequest,
     CrossConnectorRejoinRequest, CrossConnectorRejoinResponse,
+    DrillDownRequest, DrillDownResponse, DrillDownFilter,
     OptimizeRequest, OptimizationResponse,
     ExecutionResponse, SchemaResponse,
     HealthResponse,
@@ -2885,6 +2886,309 @@ async def rejoin_cross_connector_results(
     except Exception as e:
         logger.error(f"Cross-connector rejoin failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/drill-down", response_model=DrillDownResponse)
+async def execute_drill_down(
+    request: DrillDownRequest,
+    user: Optional[Dict] = Depends(get_current_user)
+):
+    """
+    Execute a drill-down query by applying filters to existing queries.
+
+    This endpoint enables Tableau-like drill-down functionality by:
+    1. Taking the original SQL query/queries
+    2. Injecting WHERE clause filters for the drill-down dimension
+    3. Re-executing the modified queries
+    4. Re-joining results (for cross-connector queries)
+    5. Returning the filtered dataset
+
+    Supports both:
+    - Single-database queries (sql + database_type)
+    - Cross-connector queries (session_id or connector_queries)
+    """
+    import time
+    from bson import ObjectId
+    from src.core.cross_connector_session import get_cross_connector_session_manager
+
+    start_time = time.time()
+
+    try:
+        organization_id = user.get('organization_id') if user else 'default'
+        modified_queries = {}
+        results = []
+
+        # Build WHERE clause from filters
+        def build_filter_clause(filters: list) -> str:
+            """Build SQL WHERE clause from drill-down filters."""
+            conditions = []
+            for f in filters:
+                dim = f.dimension
+                val = f.value
+                op = f.operator.upper()
+
+                # Quote string values
+                if isinstance(val, str):
+                    # Escape single quotes in value
+                    escaped_val = val.replace("'", "''")
+                    if op == "LIKE":
+                        conditions.append(f"{dim} LIKE '%{escaped_val}%'")
+                    elif op == "IN":
+                        # Assume val is comma-separated for IN
+                        items = [f"'{v.strip()}'" for v in escaped_val.split(",")]
+                        conditions.append(f"{dim} IN ({', '.join(items)})")
+                    else:
+                        conditions.append(f"{dim} {op} '{escaped_val}'")
+                else:
+                    conditions.append(f"{dim} {op} {val}")
+
+            return " AND ".join(conditions)
+
+        def inject_where_clause(sql: str, filter_clause: str) -> str:
+            """Inject WHERE clause into existing SQL query."""
+            import re
+
+            # Normalize SQL for parsing
+            sql_upper = sql.upper()
+
+            # Check if query already has WHERE clause
+            where_match = re.search(r'\bWHERE\b', sql_upper)
+            group_match = re.search(r'\bGROUP\s+BY\b', sql_upper)
+            order_match = re.search(r'\bORDER\s+BY\b', sql_upper)
+            limit_match = re.search(r'\bLIMIT\b', sql_upper)
+
+            if where_match:
+                # Already has WHERE - add AND condition
+                where_pos = where_match.end()
+                return sql[:where_pos] + " " + filter_clause + " AND" + sql[where_pos:]
+            else:
+                # No WHERE - find insertion point (before GROUP BY, ORDER BY, or LIMIT)
+                insertion_point = None
+                for match in [group_match, order_match, limit_match]:
+                    if match:
+                        if insertion_point is None or match.start() < insertion_point:
+                            insertion_point = match.start()
+
+                if insertion_point:
+                    return sql[:insertion_point] + f" WHERE {filter_clause} " + sql[insertion_point:]
+                else:
+                    # No GROUP BY, ORDER BY, or LIMIT - append at end
+                    return sql.rstrip().rstrip(';') + f" WHERE {filter_clause}"
+
+        filter_clause = build_filter_clause([f.model_dump() for f in request.filters])
+
+        # Handle single-database drill-down
+        if request.sql and request.database_type:
+            logger.info(
+                "Single-database drill-down",
+                database_type=request.database_type,
+                filter_count=len(request.filters)
+            )
+
+            modified_sql = inject_where_clause(request.sql, filter_clause)
+            modified_queries["single"] = modified_sql
+
+            # Get connector and execute
+            if request.connector_id:
+                # Use specific connector
+                from src.db.postgresql_client import PostgreSQLClient
+                postgres_client = PostgreSQLClient()
+                connector_doc = await postgres_client.get_connector_by_id(
+                    ObjectId(request.connector_id),
+                    organization_id
+                )
+                if connector_doc:
+                    connector = ConnectorFactory.create_connector(
+                        connector_type=request.database_type,
+                        config=connector_doc.get('config', {})
+                    )
+                    result = connector.execute_query(modified_sql)
+                    results = result.get('results', [])
+            else:
+                # Use default connector for database type
+                connector = ConnectorFactory.create_connector(
+                    connector_type=request.database_type
+                )
+                result = connector.execute_query(modified_sql)
+                results = result.get('results', [])
+
+        # Handle cross-connector drill-down with session
+        elif request.session_id:
+            logger.info(
+                "Cross-connector drill-down with session",
+                session_id=request.session_id,
+                filter_count=len(request.filters)
+            )
+
+            session_manager = get_cross_connector_session_manager()
+            session = await session_manager.get_session(request.session_id)
+
+            if session is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Session {request.session_id} not found or expired"
+                )
+
+            # Verify organization
+            if session.get('organization_id') != organization_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Session belongs to different organization"
+                )
+
+            # Re-execute each connector's query with filters
+            from src.db.postgresql_client import PostgreSQLClient
+            postgres_client = PostgreSQLClient()
+
+            for connector_id, connector_info in session.get('connector_results', {}).items():
+                original_sql = connector_info.get('sql', '')
+                if not original_sql:
+                    # Try to get from cached results
+                    result_data = await session_manager.get_connector_results(
+                        request.session_id, connector_id
+                    )
+                    continue
+
+                modified_sql = inject_where_clause(original_sql, filter_clause)
+                modified_queries[connector_id] = modified_sql
+
+                # Get connector config and execute
+                try:
+                    connector_doc = await postgres_client.get_connector_by_id(
+                        ObjectId(connector_id),
+                        organization_id
+                    )
+                    if connector_doc:
+                        connector = ConnectorFactory.create_connector(
+                            connector_type=connector_info.get('database_type'),
+                            config=connector_doc.get('config', {})
+                        )
+                        result = connector.execute_query(modified_sql)
+
+                        # Update session with new results
+                        await session_manager.update_connector_results(
+                            session_id=request.session_id,
+                            connector_id=connector_id,
+                            new_sql=modified_sql,
+                            new_results=result.get('results', [])
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to execute drill-down for {connector_id}: {e}")
+
+            # Re-join all results
+            join_spec = session.get('join_specification', {})
+            if request.join_specification:
+                join_spec = {
+                    'type': request.join_specification.type,
+                    'condition': request.join_specification.condition,
+                    'left_key': request.join_specification.left_key,
+                    'right_key': request.join_specification.right_key
+                }
+
+            merged_results, metadata = await session_manager.rejoin_results(
+                session_id=request.session_id,
+                join_specification=join_spec
+            )
+            results = merged_results
+
+        # Handle cross-connector drill-down with provided queries (no session)
+        elif request.connector_queries:
+            logger.info(
+                "Cross-connector drill-down with provided queries",
+                connector_count=len(request.connector_queries),
+                filter_count=len(request.filters)
+            )
+
+            from src.db.postgresql_client import PostgreSQLClient
+            postgres_client = PostgreSQLClient()
+
+            all_results = {}
+
+            for cq in request.connector_queries:
+                modified_sql = inject_where_clause(cq.sql, filter_clause)
+                modified_queries[cq.connector_id] = modified_sql
+
+                try:
+                    connector_doc = await postgres_client.get_connector_by_id(
+                        ObjectId(cq.connector_id),
+                        organization_id
+                    )
+                    if connector_doc:
+                        connector = ConnectorFactory.create_connector(
+                            connector_type=cq.database_type,
+                            config=connector_doc.get('config', {})
+                        )
+                        result = connector.execute_query(modified_sql)
+                        all_results[cq.connector_id] = result.get('results', [])
+                except Exception as e:
+                    logger.error(f"Failed to execute drill-down for {cq.connector_id}: {e}")
+                    all_results[cq.connector_id] = []
+
+            # Join results if we have multiple
+            if len(all_results) > 1:
+                session_manager = get_cross_connector_session_manager()
+
+                # Create temporary session for joining
+                session_id = await session_manager.create_session(
+                    organization_id=organization_id,
+                    user_id=user.get('id', 'unknown') if user else 'unknown',
+                    connector_results={
+                        cid: {
+                            'sql': modified_queries.get(cid, ''),
+                            'database_type': next(
+                                (cq.database_type for cq in request.connector_queries if cq.connector_id == cid),
+                                'unknown'
+                            ),
+                            'results': res
+                        }
+                        for cid, res in all_results.items()
+                    },
+                    join_specification=request.join_specification.model_dump() if request.join_specification else {}
+                )
+
+                join_spec = request.join_specification.model_dump() if request.join_specification else {}
+                merged_results, metadata = await session_manager.rejoin_results(
+                    session_id=session_id,
+                    join_specification=join_spec
+                )
+                results = merged_results
+            else:
+                # Single connector in the list
+                results = list(all_results.values())[0] if all_results else []
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Must provide either sql+database_type, session_id, or connector_queries"
+            )
+
+        execution_time = time.time() - start_time
+
+        logger.info(
+            "Drill-down executed successfully",
+            filter_count=len(request.filters),
+            result_count=len(results),
+            execution_time=f"{execution_time:.2f}s"
+        )
+
+        return DrillDownResponse(
+            success=True,
+            results=results,
+            row_count=len(results),
+            filters_applied=request.filters,
+            modified_queries=modified_queries,
+            session_id=request.session_id,
+            execution_time_seconds=execution_time
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Drill-down execution failed: {e}", exc_info=True)
+        return DrillDownResponse(
+            success=False,
+            error=str(e)
+        )
 
 
 @router.post("/optimize", response_model=OptimizationResponse)

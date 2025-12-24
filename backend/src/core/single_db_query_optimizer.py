@@ -45,6 +45,10 @@ FEDERATION_THRESHOLD = 100_000_000  # 100M rows - consider federation
 # Very large table threshold - force async execution
 VERY_LARGE_TABLE_THRESHOLD = 1_000_000_000  # 1B rows - requires async/background execution
 
+# Sync return limit - max rows to return in single HTTP response
+# For non-aggregation queries exceeding this, force pagination
+SYNC_RETURN_MAX_ROWS = 10_000  # 10K rows max for synchronous return
+
 
 class ExecutionStrategy(Enum):
     """Execution strategy for single-database queries."""

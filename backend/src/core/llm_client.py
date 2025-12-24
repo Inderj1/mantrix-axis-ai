@@ -437,9 +437,27 @@ ORDER BY current_inventory ASC"""
             connector_ids=list(schemas_by_connector.keys())
         )
 
-        # Build connector-aware prompt
+        # Build simple identifiers for LLM (e.g., "bigquery_1", "snowflake_1")
+        # This prevents LLM from hallucinating/corrupting long hex connector IDs
+        id_to_simple = {}  # connector_id -> simple identifier
+        simple_to_id = {}  # simple identifier -> connector_id
+        type_counters = {}  # database_type -> counter
+
+        for connector_id in connector_metadata.keys():
+            db_type = connector_metadata[connector_id].get("database_type", "unknown")
+            type_counters[db_type] = type_counters.get(db_type, 0) + 1
+            simple_id = f"{db_type}_{type_counters[db_type]}"
+            id_to_simple[connector_id] = simple_id
+            simple_to_id[simple_id] = connector_id
+
+        logger.info(
+            "Built connector ID mapping for LLM",
+            mapping=id_to_simple
+        )
+
+        # Build connector-aware prompt using simple identifiers
         connector_schemas_text = self._build_connector_schemas_prompt(
-            schemas_by_connector, connector_metadata
+            schemas_by_connector, connector_metadata, id_to_simple
         )
 
         # Determine SQL dialects involved
@@ -491,11 +509,11 @@ Use the generate_cross_connector_query tool to provide your response."""
                     },
                     "single_connector_id": {
                         "type": "string",
-                        "description": "If requires_cross_connector=false, the connector_id to use"
+                        "description": "If requires_cross_connector=false, the connector identifier to use (e.g., 'bigquery_1', 'snowflake_1')"
                     },
                     "connector_queries": {
                         "type": "object",
-                        "description": "SQL query for each connector_id involved",
+                        "description": "SQL query for each connector. Keys MUST be the connector identifiers from the prompt (e.g., 'bigquery_1', 'snowflake_1')",
                         "additionalProperties": {
                             "type": "object",
                             "properties": {
@@ -527,11 +545,11 @@ Use the generate_cross_connector_query tool to provide your response."""
                             },
                             "left_connector_id": {
                                 "type": "string",
-                                "description": "Connector ID for left side of join"
+                                "description": "Connector identifier for left side of join (e.g., 'bigquery_1')"
                             },
                             "right_connector_id": {
                                 "type": "string",
-                                "description": "Connector ID for right side of join"
+                                "description": "Connector identifier for right side of join (e.g., 'snowflake_1')"
                             },
                             "left_key": {
                                 "type": "string",
@@ -595,10 +613,51 @@ Use the generate_cross_connector_query tool to provide your response."""
                 else:
                     raise ValueError("No tool use in Anthropic response")
 
+            # Map simple identifiers back to real connector IDs
+            # LLM returns keys like "bigquery_1" -> we need to convert to actual hex IDs
+            if result.get("connector_queries"):
+                mapped_queries = {}
+                for simple_id, query_info in result["connector_queries"].items():
+                    if simple_id in simple_to_id:
+                        real_id = simple_to_id[simple_id]
+                        mapped_queries[real_id] = query_info
+                        logger.debug(f"Mapped connector ID: {simple_id} -> {real_id}")
+                    else:
+                        # Fuzzy match: try to match by database type prefix
+                        matched = False
+                        for valid_simple, real_id in simple_to_id.items():
+                            if simple_id.lower().startswith(valid_simple.split('_')[0]):
+                                mapped_queries[real_id] = query_info
+                                logger.warning(f"Fuzzy matched connector ID: {simple_id} -> {valid_simple} -> {real_id}")
+                                matched = True
+                                break
+                        if not matched:
+                            logger.error(f"Could not map connector identifier: {simple_id}, available: {list(simple_to_id.keys())}")
+                            # Keep original to preserve the error for debugging
+                            mapped_queries[simple_id] = query_info
+
+                result["connector_queries"] = mapped_queries
+
+            # Map single_connector_id if present
+            if result.get("single_connector_id") and result["single_connector_id"] in simple_to_id:
+                original = result["single_connector_id"]
+                result["single_connector_id"] = simple_to_id[original]
+                logger.debug(f"Mapped single_connector_id: {original} -> {result['single_connector_id']}")
+
+            # Map join_specification connector IDs if present
+            join_spec = result.get("join_specification")
+            if join_spec:
+                for key in ["left_connector_id", "right_connector_id"]:
+                    if join_spec.get(key) and join_spec[key] in simple_to_id:
+                        original = join_spec[key]
+                        join_spec[key] = simple_to_id[original]
+                        logger.debug(f"Mapped {key}: {original} -> {join_spec[key]}")
+
             logger.info(
                 "Cross-connector SQL generation completed",
                 requires_cross_connector=result.get("requires_cross_connector"),
-                connector_queries=list(result.get("connector_queries", {}).keys()) if result.get("connector_queries") else []
+                connector_queries=list(result.get("connector_queries", {}).keys()) if result.get("connector_queries") else [],
+                id_mapping_used=id_to_simple
             )
 
             return result
@@ -614,7 +673,8 @@ Use the generate_cross_connector_query tool to provide your response."""
     def _build_connector_schemas_prompt(
         self,
         schemas_by_connector: Dict[str, List[Dict[str, Any]]],
-        connector_metadata: Dict[str, Dict[str, Any]]
+        connector_metadata: Dict[str, Dict[str, Any]],
+        id_to_simple: Dict[str, str] = None
     ) -> str:
         """
         Build prompt with RDF-enriched schema data grouped by connector.
@@ -624,6 +684,11 @@ Use the generate_cross_connector_query tool to provide your response."""
         - Row count/size hints
         - Column stats (PK/FK, selectivity, indexes)
         - JOIN relationships
+
+        Args:
+            schemas_by_connector: Dict mapping connector_id -> list of table schemas
+            connector_metadata: Dict mapping connector_id -> metadata
+            id_to_simple: Optional mapping of connector_id -> simple identifier (e.g., "bigquery_1")
         """
         lines = []
 
@@ -633,9 +698,12 @@ Use the generate_cross_connector_query tool to provide your response."""
             project = meta.get('project', '')
             dataset = meta.get('dataset', meta.get('schema', ''))
 
+            # Use simple identifier if mapping provided (prevents LLM hallucination of hex IDs)
+            display_id = id_to_simple.get(connector_id, connector_id) if id_to_simple else connector_id
+
             # Connector header
             location = f"{project}.{dataset}" if project and dataset else (project or dataset or '')
-            header = f"[CONNECTOR: {connector_id} ({db_type}"
+            header = f"[CONNECTOR: {display_id} ({db_type}"
             if location:
                 header += f" - {location}"
             header += ")]"
@@ -644,6 +712,20 @@ Use the generate_cross_connector_query tool to provide your response."""
 
             # Format each table with RDF data
             for schema in schemas:
+                # Log columns being sent to LLM for debugging hallucination issues
+                table_name = schema.get('table_name', 'unknown')
+                columns = schema.get('columns', [])
+                column_names = [c.get('name', c.get('column_name', '?')) for c in columns]
+                segment_cols = [c for c in column_names if 'segment' in c.lower()]
+                logger.info(
+                    "Schema columns for LLM prompt",
+                    table_name=table_name,
+                    connector_id=display_id,
+                    column_count=len(columns),
+                    first_15_columns=column_names[:15],
+                    segment_columns=segment_cols if segment_cols else "NONE"
+                )
+
                 lines.append(self._format_schema_with_rdf(schema))
                 lines.append("")
 
@@ -1440,14 +1522,11 @@ If you deviate from the template's calculation logic, you WILL generate incorrec
         row_count = schema.get('row_count', 0)
         lines.append(f"  Size: {self._get_size_hint(row_count)}")
 
-        # Columns with stats
+        # Columns with stats - show ALL columns to prevent LLM hallucination
         lines.append("  Columns:")
-        for col in schema.get('columns', [])[:15]:
+        for col in schema.get('columns', []):
             col_info = self._format_column_with_stats(col)
             lines.append(f"    - {col_info}")
-
-        if len(schema.get('columns', [])) > 15:
-            lines.append(f"    ... and {len(schema['columns']) - 15} more")
 
         # Best filter columns (high selectivity - good for WHERE clauses)
         best_filter_cols = self._get_best_filter_columns(schema.get('columns', []))

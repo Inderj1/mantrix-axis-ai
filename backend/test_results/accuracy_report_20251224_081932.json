@@ -1,0 +1,520 @@
+{
+  "timestamp": "2025-12-24T08:08:28.170309",
+  "api_url": "https://axis-dev.cloudmantra.ai/api/v1",
+  "summary": {
+    "total_tests": 20,
+    "total_passed": 13,
+    "overall_pass_rate": 65.0
+  },
+  "categories": {
+    "sql": {
+      "total": 10,
+      "passed": 5,
+      "failed": 5,
+      "pass_rate": 50.0,
+      "avg_time_ms": 32241.66,
+      "results": [
+        {
+          "test_id": "sql_001",
+          "query": "What is the total revenue?",
+          "success": false,
+          "sql": "SELECT \n    ROUND(SUM(COALESCE(TOTAL_AMOUNT, 0)), 2) as total_revenue\nFROM SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.SALES_TRANSACTIONS",
+          "execution_time_ms": 31579.20527458191,
+          "row_count": 0,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "SUM",
+              "revenue"
+            ],
+            "patterns_found": [
+              "SUM",
+              "revenue"
+            ],
+            "difficulty": "easy",
+            "tables_used": [
+              "SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.SALES_TRANSACTIONS"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_002",
+          "query": "How many customers do we have?",
+          "success": true,
+          "sql": "SELECT COUNT(DISTINCT Customer) as total_customers\nFROM `arizona-poc.copa_export_copa_data_000000000000.customer_master_analysis`",
+          "execution_time_ms": 17054.74901199341,
+          "row_count": 1,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "COUNT"
+            ],
+            "patterns_found": [
+              "COUNT"
+            ],
+            "difficulty": "easy",
+            "tables_used": [
+              "customer_master_analysis"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_003",
+          "query": "Show all GL accounts",
+          "success": true,
+          "sql": "SELECT\n    GL_Account,\n    GL_Acct_Long_Text,\n    CM_SS_GLACCOUNT_BUCKET_Code,\n    New_CM_SS_GLACCOUNT_BUCKET_Desc\nFROM `arizona-poc.copa_export_copa_data_000000000000.GL_Accounts`\nORDER BY GL_Account",
+          "execution_time_ms": 11242.69723892212,
+          "row_count": 267,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "GL",
+              "account"
+            ],
+            "patterns_found": [
+              "GL",
+              "account"
+            ],
+            "difficulty": "easy",
+            "tables_used": [
+              "GL_Accounts"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_004",
+          "query": "Show revenue by customer segment",
+          "success": true,
+          "sql": "SELECT\n  Segment_Name as customer_segment,\n  ROUND(Monetary_sum, 2) as total_revenue,\n  CAST(Customer_count AS INT64) as customer_count,\n  ROUND(Monetary_mean, 2) as avg_revenue_per_customer\nFROM `arizona-poc.copa_export_copa_data_000000000000.segment_performance_summary`\nORDER BY Monetary_sum DESC",
+          "execution_time_ms": 22903.454780578613,
+          "row_count": 25,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "GROUP BY",
+              "segment"
+            ],
+            "patterns_found": [
+              "segment"
+            ],
+            "difficulty": "medium",
+            "tables_used": [
+              "segment_performance_summary"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_005",
+          "query": "What are the top 10 customers by revenue?",
+          "success": true,
+          "sql": "SELECT\n  Customer,\n  ROUND(Monetary, 2) as revenue\nFROM `arizona-poc.copa_export_copa_data_000000000000.customer_master_analysis`\nORDER BY Monetary DESC\nLIMIT 10",
+          "execution_time_ms": 19148.54669570923,
+          "row_count": 10,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "ORDER BY",
+              "DESC",
+              "LIMIT"
+            ],
+            "patterns_found": [
+              "ORDER BY",
+              "DESC",
+              "LIMIT"
+            ],
+            "difficulty": "medium",
+            "tables_used": [
+              "customer_master_analysis"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_006",
+          "query": "Show monthly revenue trends",
+          "success": true,
+          "sql": "SELECT\n  Year_Month,\n  ROUND(SUM(COALESCE(Net_Sales, 0)), 2) as monthly_revenue\nFROM `arizona-poc.copa_export_copa_data_000000000000.time_series_performance`\nGROUP BY Year_Month\nORDER BY Year_Month",
+          "execution_time_ms": 19408.02788734436,
+          "row_count": 91,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "GROUP BY",
+              "month"
+            ],
+            "patterns_found": [
+              "GROUP BY",
+              "month"
+            ],
+            "difficulty": "medium",
+            "tables_used": [
+              "time_series_performance"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_007",
+          "query": "What products have the highest sales?",
+          "success": false,
+          "sql": "SELECT *\nFROM REGIONAL_PRODUCT_TOP_PERFORMERS\nWHERE Record_Type = 'TOP_PERFORMER'",
+          "execution_time_ms": 40925.10485649109,
+          "row_count": 0,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "ORDER BY",
+              "product"
+            ],
+            "patterns_found": [
+              "product"
+            ],
+            "difficulty": "medium",
+            "tables_used": [
+              "regional_product_top_performers"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_008",
+          "query": "Show customer revenue with RFM segments",
+          "success": false,
+          "sql": "SELECT *\nFROM CUSTOMER_MASTER_ANALYSIS\nWHERE NOT Customer IS NULL",
+          "execution_time_ms": 47566.44368171692,
+          "row_count": 0,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "JOIN",
+              "RFM"
+            ],
+            "patterns_found": [],
+            "difficulty": "complex",
+            "tables_used": [
+              "customer_master_analysis"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_009",
+          "query": "Calculate gross profit margin by category",
+          "success": false,
+          "sql": "SELECT *\nFROM DATASET_25M_TABLE\nWHERE NOT Gross_Revenue IS NULL",
+          "execution_time_ms": 47901.57175064087,
+          "row_count": 0,
+          "confidence_score": 0.9,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "margin",
+              "category"
+            ],
+            "patterns_found": [],
+            "difficulty": "complex",
+            "tables_used": [
+              "dataset_25m_table"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "sql_010",
+          "query": "Compare this year's revenue to last year",
+          "success": false,
+          "sql": "SELECT *\nFROM TIME_SERIES_PERFORMANCE\nWHERE Year IN (EXTRACT(YEAR FROM CURRENT_DATE), EXTRACT(YEAR FROM CURRENT_DATE) - 1)",
+          "execution_time_ms": 64686.789989471436,
+          "row_count": 0,
+          "confidence_score": 1.0,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "patterns_expected": [
+              "revenue",
+              "year"
+            ],
+            "patterns_found": [
+              "year"
+            ],
+            "difficulty": "complex",
+            "tables_used": [
+              "time_series_performance"
+            ],
+            "kg_enhanced": false
+          }
+        }
+      ]
+    },
+    "kg": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "pass_rate": 100.0,
+      "avg_time_ms": 47832.77,
+      "results": [
+        {
+          "test_id": "kg_001",
+          "query": "Show customer details with their names",
+          "success": true,
+          "sql": "SELECT \n    CUSTOMER_ID,\n    CUSTOMER_NAME,\n    REGION,\n    TERRITORY,\n    ACCOUNT_TIER\nFROM SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.CUSTOMER_REGION\nORDER BY CUSTOMER_NAME",
+          "execution_time_ms": 34178.4291267395,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expected_tables": [
+              "customer"
+            ],
+            "expected_found": [
+              "customer"
+            ],
+            "tables_used": [
+              "SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.CUSTOMER_REGION"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "kg_002",
+          "query": "Show sales orders with customer information",
+          "success": true,
+          "sql": "SELECT\n  so.SalesDocument_VBELN as Sales_Order,\n  so.Item_POSNR as Item,\n  so.Header_Creation_Date as Order_Date,\n  so.SoldToParty_KUNNR as Customer_ID,\n  so.MaterialNumber_MATNR as Material,\n  so.MaterialDescription as Material_Description,\n  ROUND(so.SalesOrderNetPrice, 2) as Net_Price,\n  ROUND(so.SalesOrderQty, 2) as Order_Quantity,\n  so.SalesUnit_VRKME as Unit,\n  so.OverallProcessingStatus_GBSTA as Processing_Status,\n  so.Delivery_Block_Status as Delivery_Status\nFROM `arizona-poc.copa_export_copa_data_000000000000.sales_order_cockpit_export` so\nWHERE so.SalesDocument_VBELN IS NOT NULL\nORDER BY so.Header_Creation_Date DESC",
+          "execution_time_ms": 44724.24602508545,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expected_tables": [
+              "order",
+              "customer"
+            ],
+            "expected_found": [
+              "order",
+              "customer"
+            ],
+            "tables_used": [
+              "sales_order_cockpit_export"
+            ],
+            "kg_enhanced": false
+          }
+        },
+        {
+          "test_id": "kg_003",
+          "query": "Show revenue and COGS breakdown",
+          "success": true,
+          "sql": "SELECT\n  'Revenue' as Category,\n  'Gross Revenue' as Component,\n  ROUND(SUM(COALESCE(Gross_Revenue, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'Revenue' as Category,\n  'Pallet Revenue Net' as Component,\n  ROUND(SUM(COALESCE(Pallet_Revenue_Net, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'Revenue' as Category,\n  'Revenue IC Ingredients' as Component,\n  ROUND(SUM(COALESCE(Revenue_IC_Ingredients, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'Revenue' as Category,\n  'Revenue IC Packaging' as Component,\n  ROUND(SUM(COALESCE(Revenue_IC_Packaging, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Total COGS' as Component,\n  ROUND(SUM(COALESCE(Total_COGS, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Total COS' as Component,\n  ROUND(SUM(COALESCE(Total_COS, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Ingredients' as Component,\n  ROUND(SUM(COALESCE(Ingredients, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Packaging' as Component,\n  ROUND(SUM(COALESCE(Packaging, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Labor' as Component,\n  ROUND(SUM(COALESCE(Labor, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nUNION ALL\n\nSELECT\n  'COGS' as Category,\n  'Overhead' as Component,\n  ROUND(SUM(COALESCE(Overhead, 0)), 2) as Amount\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n\nORDER BY Category DESC, Amount DESC",
+          "execution_time_ms": 64595.643758773804,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expected_tables": [
+              "revenue",
+              "COGS",
+              "sales"
+            ],
+            "expected_found": [
+              "revenue",
+              "COGS"
+            ],
+            "tables_used": [
+              "dataset_25m_table"
+            ],
+            "kg_enhanced": false
+          }
+        }
+      ]
+    },
+    "vector": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "pass_rate": 100.0,
+      "avg_time_ms": 25696.25,
+      "results": [
+        {
+          "test_id": "vec_001",
+          "query": "Show client spending patterns",
+          "success": true,
+          "sql": "WITH CustomerSpending AS (\n  SELECT\n    Customer,\n    COUNT(DISTINCT Sales_Order_KDAUF) as order_count,\n    SUM(COALESCE(Gross_Revenue, 0)) as total_spending,\n    AVG(COALESCE(Gross_Revenue, 0)) as avg_transaction_value,\n    MIN(Posting_Date) as first_purchase_date,\n    MAX(Posting_Date) as last_purchase_date,\n    COUNT(DISTINCT Fiscal_Year_Period) as active_periods\n  FROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\n  WHERE Customer IS NOT NULL\n    AND Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 YEAR)\n  GROUP BY Customer\n)\nSELECT\n  Customer,\n  CAST(order_count AS INT64) as order_count,\n  ROUND(total_spending, 2) as total_spending,\n  ROUND(avg_transaction_value, 2) as avg_transaction_value,\n  first_purchase_date,\n  last_purchase_date,\n  CAST(active_periods AS INT64) as active_periods,\n  CASE \n    WHEN total_spending >= 1000000 THEN 'High Value'\n    WHEN total_spending >= 100000 THEN 'Medium Value'\n    ELSE 'Low Value'\n  END as spending_tier\nFROM CustomerSpending\nWHERE total_spending > 0\nORDER BY total_spending DESC",
+          "execution_time_ms": 32119.428157806396,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "synonyms": [
+              "customer",
+              "revenue"
+            ],
+            "synonyms_found": [
+              "customer",
+              "revenue"
+            ],
+            "tables_used": [
+              "dataset_25m_table"
+            ]
+          }
+        },
+        {
+          "test_id": "vec_002",
+          "query": "What is our gross margin?",
+          "success": true,
+          "sql": "SELECT\n  ROUND(SUM(COALESCE(Gross_Revenue, 0)), 2) as gross_revenue,\n  ROUND(SUM(COALESCE(Total_COGS, 0)), 2) as total_cogs,\n  ROUND(SUM(COALESCE(Gross_Revenue, 0)) - SUM(COALESCE(Total_COGS, 0)), 2) as gross_margin\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`",
+          "execution_time_ms": 22132.23385810852,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "synonyms": [
+              "profit",
+              "revenue",
+              "COGS"
+            ],
+            "synonyms_found": [
+              "revenue",
+              "COGS"
+            ],
+            "tables_used": [
+              "dataset_25m_table"
+            ]
+          }
+        },
+        {
+          "test_id": "vec_003",
+          "query": "Show quarterly performance",
+          "success": true,
+          "sql": "SELECT\n  Year,\n  CASE \n    WHEN Month IN (1, 2, 3) THEN 'Q1'\n    WHEN Month IN (4, 5, 6) THEN 'Q2'\n    WHEN Month IN (7, 8, 9) THEN 'Q3'\n    WHEN Month IN (10, 11, 12) THEN 'Q4'\n  END as Quarter,\n  ROUND(SUM(COALESCE(Net_Sales, 0)), 2) as net_sales,\n  ROUND(SUM(COALESCE(Gross_Margin, 0)), 2) as gross_margin,\n  ROUND(SUM(COALESCE(Total_COGS, 0)), 2) as total_cogs,\n  SUM(Customer) as customer_count,\n  ROUND(SUM(COALESCE(Inv_Quantity_Cases, 0)), 0) as total_volume,\n  ROUND(AVG(Margin_Percent), 2) as avg_margin_percent\nFROM `arizona-poc.copa_export_copa_data_000000000000.time_series_performance`\nGROUP BY Year, Quarter\nORDER BY Year, Quarter",
+          "execution_time_ms": 22837.09192276001,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "synonyms": [
+              "quarter",
+              "date",
+              "period"
+            ],
+            "synonyms_found": [
+              "quarter"
+            ],
+            "tables_used": [
+              "time_series_performance"
+            ]
+          }
+        }
+      ]
+    },
+    "cache": {
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "pass_rate": 0.0,
+      "avg_time_ms": 33368.66,
+      "results": [
+        {
+          "test_id": "cache_001",
+          "query": "What is the total revenue?",
+          "success": false,
+          "sql": null,
+          "execution_time_ms": 33368.664026260376,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "first_time_ms": 32246.38295173645,
+            "second_time_ms": 33368.664026260376,
+            "first_from_cache": false,
+            "second_from_cache": false,
+            "speedup": 0.9663672158513533
+          }
+        }
+      ]
+    },
+    "errors": {
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "pass_rate": 66.67,
+      "avg_time_ms": 18277.46,
+      "results": [
+        {
+          "test_id": "err_001",
+          "query": "",
+          "success": false,
+          "sql": "SELECT \n    Fiscal_Year,\n    Fiscal_Year_Period,\n    GL_Account,\n    GL_Account_Description,\n    ROUND(SUM(COALESCE(GL_Amount_in_CC, 0)), 2) as total_amount,\n    COUNT(*) as transaction_count\nFROM `arizona-poc.copa_export_copa_data_000000000000.dataset_25m_table`\nWHERE Posting_Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY Fiscal_Year, Fiscal_Year_Period, GL_Account, GL_Account_Description\nORDER BY Fiscal_Year DESC, Fiscal_Year_Period DESC, total_amount DESC",
+          "execution_time_ms": 19353.572130203247,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expect_error": true,
+            "got_error": false,
+            "description": "Empty query"
+          }
+        },
+        {
+          "test_id": "err_002",
+          "query": "asdfghjkl random nonsense",
+          "success": true,
+          "sql": "SELECT \n    'Your query could not be interpreted' as message,\n    'Please ask a specific question about financial data, such as revenue, costs, margins, GL accounts, or sales analysis' as suggestion\n",
+          "execution_time_ms": 17961.971044540405,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expect_error": false,
+            "got_error": false,
+            "description": "Nonsense should still attempt SQL"
+          }
+        },
+        {
+          "test_id": "err_003",
+          "query": "'; DROP TABLE test; --",
+          "success": true,
+          "sql": "SELECT 'Invalid query - SQL injection attempt detected' as message",
+          "execution_time_ms": 17516.830921173096,
+          "row_count": 0,
+          "confidence_score": null,
+          "from_cache": false,
+          "error": null,
+          "details": {
+            "expect_error": false,
+            "got_error": false,
+            "description": "SQL injection should be sanitized"
+          }
+        }
+      ]
+    }
+  }
+}

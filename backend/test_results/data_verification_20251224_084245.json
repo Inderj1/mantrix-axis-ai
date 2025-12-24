@@ -1,0 +1,322 @@
+{
+  "timestamp": "2025-12-24T08:39:29.425204",
+  "api_url": "https://axis-dev.cloudmantra.ai/api/v1",
+  "summary": {
+    "total_checks": 9,
+    "passed_checks": 5,
+    "failed_checks": 4,
+    "pass_rate": 55.56
+  },
+  "stores": {
+    "weaviate": {
+      "connected": true,
+      "schema_count": 14
+    },
+    "jena": {
+      "connected": true,
+      "triple_count": 13589,
+      "table_count": 730
+    }
+  },
+  "connectors": [
+    {
+      "id": "692c4ba94a78978f0264a987",
+      "connector_type": "bigquery",
+      "name": "Arizona-POC-copa",
+      "status": "connected",
+      "created_at": "2025-11-30T13:50:33.924646",
+      "updated_at": "2025-12-24T08:31:14.474433",
+      "config": {
+        "project_id": "arizona-poc",
+        "dataset_id": "copa_export_copa_data_000000000000",
+        "location": "US",
+        "auth_method": "oauth"
+      },
+      "enabled_for_chat": true,
+      "metadata": {
+        "table_count": 14,
+        "total_size": "120.6 GB",
+        "last_sync": "2025-12-24T08:31:14.474431"
+      },
+      "organization_id": "Demo",
+      "sync_status": "success",
+      "sync_error": null,
+      "sync_started_at": "2025-12-24T08:30:58.590639",
+      "sync_completed_at": "2025-12-24T08:31:14.474421"
+    },
+    {
+      "id": "69427c6d802b0cd8ad44b310",
+      "connector_type": "snowflake",
+      "name": "Snowflake",
+      "status": "connected",
+      "created_at": "2025-12-17T09:48:29.521138",
+      "updated_at": "2025-12-24T08:31:21.122479",
+      "config": {
+        "auth_method": "password",
+        "account": "DAYZHDW-AD88320",
+        "user": "MANTRIX_SERVICE",
+        "warehouse": "COMPUTE_WH",
+        "schema": "CROSS_DB_TEST",
+        "database": "SNOWFLAKE_LEARNING_DB",
+        "programmatic_access_token": "***",
+        "password": "***"
+      },
+      "enabled_for_chat": true,
+      "metadata": {
+        "table_count": 5,
+        "total_size": "7.5 MB",
+        "last_sync": "2025-12-24T08:31:21.122477"
+      },
+      "organization_id": "Demo",
+      "sync_status": "success",
+      "sync_error": null,
+      "sync_started_at": "2025-12-24T08:30:59.746809",
+      "sync_completed_at": "2025-12-24T08:31:21.122471"
+    }
+  ],
+  "results": [
+    {
+      "check_name": "weaviate_connection",
+      "passed": true,
+      "details": {
+        "connected": true,
+        "total_schemas": 14,
+        "schemas_by_connector": {},
+        "sample_schemas": [
+          {
+            "table_name": "transaction_data",
+            "database_type": "bigquery",
+            "organization_id": "default",
+            "connector_id": ""
+          },
+          {
+            "table_name": "dataset_25m_table",
+            "database_type": "bigquery",
+            "organization_id": "default",
+            "connector_id": ""
+          },
+          {
+            "table_name": "segment_performance_summary",
+            "database_type": "bigquery",
+            "organization_id": "default",
+            "connector_id": ""
+          },
+          {
+            "table_name": "time_series_performance",
+            "database_type": "bigquery",
+            "organization_id": "default",
+            "connector_id": ""
+          },
+          {
+            "table_name": "customer_master_analysis",
+            "database_type": "bigquery",
+            "organization_id": "default",
+            "connector_id": ""
+          }
+        ]
+      },
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "check_name": "weaviate_schema_coverage",
+      "passed": false,
+      "details": {
+        "enabled_connectors": 2,
+        "connectors_with_schemas": {},
+        "connectors_missing_schemas": [
+          "Arizona-POC-copa",
+          "Snowflake"
+        ]
+      },
+      "errors": [],
+      "warnings": [
+        "Connector 'Arizona-POC-copa' has no schemas in Weaviate",
+        "Connector 'Snowflake' has no schemas in Weaviate"
+      ]
+    },
+    {
+      "check_name": "weaviate_schema_quality",
+      "passed": false,
+      "details": {
+        "samples_checked": 5,
+        "required_fields": [
+          "table_name",
+          "database_type",
+          "connector_id"
+        ],
+        "missing_fields": [
+          "transaction_data.connector_id",
+          "dataset_25m_table.connector_id",
+          "segment_performance_summary.connector_id",
+          "time_series_performance.connector_id",
+          "customer_master_analysis.connector_id"
+        ]
+      },
+      "errors": [
+        "Missing required fields: ['transaction_data.connector_id', 'dataset_25m_table.connector_id', 'segment_performance_summary.connector_id', 'time_series_performance.connector_id', 'customer_master_analysis.connector_id']"
+      ],
+      "warnings": []
+    },
+    {
+      "check_name": "jena_connection",
+      "passed": true,
+      "details": {
+        "connected": true,
+        "backend": "postgres",
+        "triple_count": 13589,
+        "tables_in_graph": 730,
+        "postgres": {
+          "connected": true,
+          "triple_count": 13589,
+          "graph_id": "global",
+          "backend": "postgresql"
+        }
+      },
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "check_name": "jena_table_metadata",
+      "passed": true,
+      "details": {
+        "jena_table_count": 730,
+        "weaviate_schema_count": 14,
+        "difference": 716,
+        "in_sync": false
+      },
+      "errors": [],
+      "warnings": [
+        "Jena table count (730) differs significantly from Weaviate (14)"
+      ]
+    },
+    {
+      "check_name": "rdf_vector_sync",
+      "passed": false,
+      "details": {
+        "weaviate_schemas": 14,
+        "jena_tables": 730,
+        "difference": 716,
+        "sync_status": "out_of_sync"
+      },
+      "errors": [],
+      "warnings": [
+        "RDF (730) and Vector (14) counts differ"
+      ]
+    },
+    {
+      "check_name": "table_discovery",
+      "passed": false,
+      "details": {
+        "queries_tested": 3,
+        "results": [
+          {
+            "query": "Show all customers",
+            "found_tables": [],
+            "expected_patterns": [
+              "customer"
+            ],
+            "matched": false
+          },
+          {
+            "query": "Show revenue data",
+            "found_tables": [
+              "dataset_25m_table"
+            ],
+            "expected_patterns": [
+              "revenue",
+              "sales"
+            ],
+            "matched": true
+          },
+          {
+            "query": "Show GL accounts",
+            "found_tables": [
+              "GL_Accounts"
+            ],
+            "expected_patterns": [
+              "GL",
+              "account"
+            ],
+            "matched": true
+          }
+        ]
+      },
+      "errors": [
+        "Query 'Show all customers' didn't find expected tables"
+      ],
+      "warnings": []
+    },
+    {
+      "check_name": "column_discovery",
+      "passed": true,
+      "details": {
+        "queries_tested": 2,
+        "results": [
+          {
+            "query": "Show customer names",
+            "sql_preview": "SELECT \n    CUSTOMER_ID,\n    CUSTOMER_NAME\nFROM SNOWFLAKE_LEARNING_DB.CROSS_DB_TEST.CUSTOMER_REGION\n",
+            "expected_patterns": [
+              "name",
+              "customer"
+            ],
+            "matched": true
+          },
+          {
+            "query": "Show total revenue",
+            "sql_preview": "SELECT\n    ROUND(SUM(COALESCE(TOTAL_AMOUNT, 0)), 2) AS total_revenue\nFROM SNOWFLAKE_LEARNING_DB.CROS",
+            "expected_patterns": [
+              "revenue",
+              "amount",
+              "total"
+            ],
+            "matched": true
+          }
+        ]
+      },
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "check_name": "semantic_search",
+      "passed": true,
+      "details": {
+        "tests_run": 3,
+        "results": [
+          {
+            "search_term": "client",
+            "should_find": [
+              "customer"
+            ],
+            "matched": true,
+            "sql_preview": "SELECT\n  Customer,\n  RFM_Segment,\n  ABC_Revenue,\n  ABC_Profit,\n  Recency,\n  Freq"
+          },
+          {
+            "search_term": "earnings",
+            "should_find": [
+              "revenue",
+              "income",
+              "profit"
+            ],
+            "matched": false,
+            "sql_preview": "SELECT\n  Year,\n  Month,\n  Year_Month,\n  ROUND(SUM(COALESCE(Net_Sales, 0)), 2) as"
+          },
+          {
+            "search_term": "expense",
+            "should_find": [
+              "cost",
+              "COGS"
+            ],
+            "matched": false,
+            "sql_preview": "SELECT\n  GL_Account,\n  GL_Account_Description,\n  Posting_Date,\n  ROUND(SUM(COALE"
+          }
+        ]
+      },
+      "errors": [],
+      "warnings": [
+        "Semantic search for 'earnings' didn't find expected terms",
+        "Semantic search for 'expense' didn't find expected terms"
+      ]
+    }
+  ]
+}

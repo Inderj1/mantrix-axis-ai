@@ -247,7 +247,7 @@ CHART PRIORITY (check in this order):
     
     def format_results(self,
                       query: str,
-                      sql: str,
+                      sql: Optional[str],
                       results: List[Dict[str, Any]],
                       metadata: Optional[Dict[str, Any]] = None,
                       user_id: Optional[str] = None,
@@ -262,7 +262,7 @@ CHART PRIORITY (check in this order):
 
         Args:
             query: Original user query
-            sql: Executed SQL query
+            sql: Executed SQL query (can be None for multi-database queries)
             results: Raw query results
             metadata: Optional metadata about the query
             user_id: Optional user ID for personalized insights
@@ -607,7 +607,7 @@ Use the tools now to build this presentation using ONLY the actual data."""
 
         return "\n".join(guide_parts)
 
-    def _basic_format_results(self, query: str, sql: str, results: List[Dict[str, Any]],
+    def _basic_format_results(self, query: str, sql: Optional[str], results: List[Dict[str, Any]],
                              metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Provide basic formatting when OpenAI is not available."""
         if not results:

@@ -59,109 +59,368 @@ class ChartErrorBoundary extends Component {
  * Each function takes data and key names, returns ECharts option object.
  */
 const CHART_CONFIGS = {
-  bar: (data, xKey, yKey, theme) => ({
-    xAxis: {
-      type: 'category',
-      data: data.map(d => d[xKey]),
-      axisLabel: {
-        rotate: data.length > 10 ? 45 : 0,
-        color: theme.palette.text.secondary
-      }
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    series: [{
-      type: 'bar',
-      data: data.map(d => d[yKey]),
-      itemStyle: {
-        borderRadius: [4, 4, 0, 0],
-        color: theme.palette.primary.main
-      },
-      emphasis: {
-        itemStyle: { color: theme.palette.primary.dark }
-      }
-    }]
-  }),
+  bar: (data, xKey, yKey, theme) => {
+    const itemCount = data.length;
+    const needsRotation = itemCount > 6;
+    const avgLabelLength = data.reduce((sum, d) => sum + String(d[xKey] || '').length, 0) / itemCount;
+    const rotationAngle = avgLabelLength > 12 ? 45 : (needsRotation ? 30 : 0);
 
-  line: (data, xKey, yKey, theme) => ({
-    xAxis: {
-      type: 'category',
-      data: data.map(d => d[xKey]),
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    series: [{
-      type: 'line',
-      data: data.map(d => d[yKey]),
-      smooth: true,
-      lineStyle: { color: theme.palette.primary.main, width: 2 },
-      itemStyle: { color: theme.palette.primary.main },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: theme.palette.primary.light + '40' },
-            { offset: 1, color: theme.palette.primary.light + '05' }
-          ]
+    return {
+      xAxis: {
+        type: 'category',
+        data: data.map(d => truncateLabel(d[xKey], 20)),
+        axisLabel: {
+          rotate: rotationAngle,
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500,
+          margin: 12
+        },
+        axisLine: {
+          lineStyle: { color: theme.palette.divider }
+        },
+        axisTick: {
+          lineStyle: { color: theme.palette.divider }
         }
-      }
-    }]
-  }),
-
-  pie: (data, xKey, yKey, theme) => ({
-    series: [{
-      type: 'pie',
-      radius: ['40%', '70%'],
-      center: ['50%', '55%'],
-      data: data.map((d, i) => ({
-        name: d[xKey],
-        value: d[yKey],
-        itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] }
-      })),
-      label: {
-        show: true,
-        formatter: '{b}: {d}%',
-        color: theme.palette.text.primary
       },
-      emphasis: {
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: theme.palette.divider,
+            type: 'dashed',
+            opacity: 0.6
+          }
+        }
+      },
+      series: [{
+        type: 'bar',
+        barMaxWidth: 48,
+        barMinWidth: 16,
+        data: data.map((d, i) => ({
+          value: d[yKey],
+          itemStyle: {
+            borderRadius: [6, 6, 0, 0],
+            color: getChartGradient(i)
+          }
+        })),
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 12,
+            shadowColor: 'rgba(0, 0, 0, 0.15)',
+            shadowOffsetY: 4
+          }
+        },
+        label: {
+          show: itemCount <= 8,
+          position: 'top',
+          color: theme.palette.text.secondary,
+          fontSize: 10,
+          fontWeight: 600,
+          formatter: (params) => {
+            const val = params.value;
+            if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+            if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+            return typeof val === 'number' ? val.toFixed(val % 1 === 0 ? 0 : 1) : val;
+          }
+        }
+      }]
+    };
+  },
+
+  line: (data, xKey, yKey, theme) => {
+    const itemCount = data.length;
+    const needsRotation = itemCount > 8;
+    const primaryColor = '#5899DA';
+    const primaryLight = '#7AB4E8';
+
+    return {
+      xAxis: {
+        type: 'category',
+        data: data.map(d => truncateLabel(d[xKey], 16)),
+        boundaryGap: false,
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500,
+          rotate: needsRotation ? 30 : 0,
+          margin: 12
+        },
+        axisLine: {
+          lineStyle: { color: theme.palette.divider }
+        },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: theme.palette.divider,
+            type: 'dashed',
+            opacity: 0.6
+          }
+        }
+      },
+      series: [{
+        type: 'line',
+        data: data.map(d => d[yKey]),
+        smooth: 0.4,
+        symbol: 'circle',
+        symbolSize: 8,
+        showSymbol: itemCount <= 20,
+        lineStyle: {
+          color: primaryColor,
+          width: 3,
+          cap: 'round',
+          join: 'round'
+        },
         itemStyle: {
-          shadowBlur: 10,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
+          color: primaryColor,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: primaryLight + '50' },
+              { offset: 0.7, color: primaryLight + '15' },
+              { offset: 1, color: primaryLight + '00' }
+            ]
+          }
+        },
+        emphasis: {
+          focus: 'series',
+          itemStyle: {
+            borderWidth: 3,
+            shadowBlur: 10,
+            shadowColor: 'rgba(88, 153, 218, 0.4)'
+          }
         }
-      }
-    }]
-  }),
+      }]
+    };
+  },
 
-  donut: (data, xKey, yKey, theme) => ({
-    series: [{
-      type: 'pie',
-      radius: ['50%', '75%'],
-      center: ['50%', '55%'],
-      avoidLabelOverlap: true,
-      data: data.map((d, i) => ({
-        name: d[xKey],
-        value: d[yKey],
-        itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] }
-      })),
-      label: {
-        show: true,
-        position: 'outside',
-        formatter: '{b}\n{d}%',
-        color: theme.palette.text.primary
+  pie: (data, xKey, yKey, theme) => {
+    const itemCount = data.length;
+    const useVerticalLegend = itemCount > 8;
+    const showOuterLabels = itemCount <= 4;
+
+    return {
+      legend: {
+        type: itemCount > 6 ? 'scroll' : 'plain',
+        orient: useVerticalLegend ? 'vertical' : 'horizontal',
+        right: useVerticalLegend ? 16 : 'center',
+        top: useVerticalLegend ? 'middle' : undefined,
+        bottom: useVerticalLegend ? undefined : 8,
+        itemGap: 10,
+        itemWidth: 14,
+        itemHeight: 14,
+        icon: 'roundRect',
+        textStyle: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500
+        },
+        formatter: (name) => truncateLabel(name, 18),
+        pageTextStyle: { color: theme.palette.text.secondary },
+        pageIconColor: theme.palette.primary.main,
+        pageIconInactiveColor: theme.palette.action.disabled
       },
-      labelLine: { show: true },
-      emphasis: {
-        label: { show: true, fontWeight: 'bold' }
-      }
-    }]
-  }),
+      series: [{
+        type: 'pie',
+        radius: useVerticalLegend ? ['30%', '55%'] : ['35%', '65%'],
+        center: useVerticalLegend ? ['35%', '50%'] : ['50%', showOuterLabels ? '45%' : '48%'],
+        avoidLabelOverlap: true,
+        padAngle: 2,
+        itemStyle: {
+          borderRadius: 6,
+          borderColor: theme.palette.background.paper,
+          borderWidth: 2
+        },
+        data: data.map((d, i) => ({
+          name: d[xKey],
+          value: d[yKey],
+          itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] }
+        })),
+        label: {
+          show: showOuterLabels,
+          position: 'outside',
+          formatter: (params) => {
+            const name = truncateLabel(params.name, 10);
+            return `{name|${name}}\n{percent|${params.percent.toFixed(1)}%}`;
+          },
+          rich: {
+            name: {
+              fontSize: 11,
+              color: theme.palette.text.secondary,
+              lineHeight: 16
+            },
+            percent: {
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: theme.palette.text.primary,
+              lineHeight: 18
+            }
+          }
+        },
+        labelLine: {
+          show: showOuterLabels,
+          length: 12,
+          length2: 16,
+          smooth: true,
+          lineStyle: {
+            color: theme.palette.divider,
+            width: 1.5
+          }
+        },
+        emphasis: {
+          scale: true,
+          scaleSize: 8,
+          itemStyle: {
+            shadowBlur: 20,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.25)'
+          },
+          label: {
+            show: true,
+            fontSize: 13,
+            fontWeight: 'bold',
+            formatter: '{b}\n{d}%'
+          }
+        }
+      }]
+    };
+  },
+
+  donut: (data, xKey, yKey, theme) => {
+    const itemCount = data.length;
+    const useVerticalLegend = itemCount > 8;
+    const total = data.reduce((sum, d) => sum + (parseFloat(d[yKey]) || 0), 0);
+    const formattedTotal = total >= 1000000
+      ? (total / 1000000).toFixed(1) + 'M'
+      : total >= 1000
+        ? (total / 1000).toFixed(1) + 'K'
+        : total.toFixed(1);
+
+    return {
+      legend: {
+        type: itemCount > 6 ? 'scroll' : 'plain',
+        orient: useVerticalLegend ? 'vertical' : 'horizontal',
+        right: useVerticalLegend ? 16 : 'center',
+        top: useVerticalLegend ? 'middle' : undefined,
+        bottom: useVerticalLegend ? undefined : 8,
+        itemGap: 10,
+        itemWidth: 14,
+        itemHeight: 14,
+        icon: 'roundRect',
+        textStyle: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500
+        },
+        formatter: (name) => truncateLabel(name, 18),
+        pageTextStyle: { color: theme.palette.text.secondary },
+        pageIconColor: theme.palette.primary.main,
+        pageIconInactiveColor: theme.palette.action.disabled
+      },
+      graphic: [{
+        type: 'group',
+        left: useVerticalLegend ? '32%' : 'center',
+        top: 'center',
+        children: [
+          {
+            type: 'text',
+            style: {
+              text: formattedTotal,
+              textAlign: 'center',
+              fill: theme.palette.text.primary,
+              fontSize: 24,
+              fontWeight: 'bold',
+              fontFamily: 'Inter, system-ui, sans-serif'
+            },
+            left: 'center',
+            top: -12
+          },
+          {
+            type: 'text',
+            style: {
+              text: 'Total',
+              textAlign: 'center',
+              fill: theme.palette.text.secondary,
+              fontSize: 11,
+              fontWeight: 500
+            },
+            left: 'center',
+            top: 14
+          }
+        ]
+      }],
+      series: [{
+        type: 'pie',
+        radius: useVerticalLegend ? ['38%', '58%'] : ['42%', '68%'],
+        center: useVerticalLegend ? ['35%', '50%'] : ['50%', '48%'],
+        avoidLabelOverlap: true,
+        padAngle: 2,
+        itemStyle: {
+          borderRadius: 8,
+          borderColor: theme.palette.background.paper,
+          borderWidth: 3
+        },
+        data: data.map((d, i) => ({
+          name: d[xKey],
+          value: d[yKey],
+          itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] }
+        })),
+        label: { show: false },
+        labelLine: { show: false },
+        emphasis: {
+          scale: true,
+          scaleSize: 6,
+          itemStyle: {
+            shadowBlur: 24,
+            shadowColor: 'rgba(0, 0, 0, 0.2)'
+          },
+          label: {
+            show: true,
+            position: 'center',
+            formatter: (params) => {
+              const name = truncateLabel(params.name, 14);
+              return `{name|${name}}\n{value|${params.percent.toFixed(1)}%}`;
+            },
+            rich: {
+              name: {
+                fontSize: 13,
+                color: theme.palette.text.secondary,
+                lineHeight: 20
+              },
+              value: {
+                fontSize: 20,
+                fontWeight: 'bold',
+                color: theme.palette.primary.main,
+                lineHeight: 28
+              }
+            }
+          }
+        }
+      }]
+    };
+  },
 
   scatter: (data, xKey, yKey, theme) => ({
     xAxis: {
@@ -180,34 +439,84 @@ const CHART_CONFIGS = {
     }]
   }),
 
-  area: (data, xKey, yKey, theme) => ({
-    xAxis: {
-      type: 'category',
-      data: data.map(d => d[xKey]),
-      boundaryGap: false,
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    series: [{
-      type: 'line',
-      data: data.map(d => d[yKey]),
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: theme.palette.primary.main + '80' },
-            { offset: 1, color: theme.palette.primary.main + '10' }
-          ]
+  area: (data, xKey, yKey, theme) => {
+    const itemCount = data.length;
+    const needsRotation = itemCount > 8;
+    const primaryColor = '#19A979';
+    const primaryLight = '#4DC9A4';
+
+    return {
+      xAxis: {
+        type: 'category',
+        data: data.map(d => truncateLabel(d[xKey], 16)),
+        boundaryGap: false,
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500,
+          rotate: needsRotation ? 30 : 0,
+          margin: 12
+        },
+        axisLine: {
+          lineStyle: { color: theme.palette.divider }
+        },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: theme.palette.divider,
+            type: 'dashed',
+            opacity: 0.6
+          }
         }
       },
-      lineStyle: { color: theme.palette.primary.main, width: 2 },
-      itemStyle: { color: theme.palette.primary.main }
-    }]
-  }),
+      series: [{
+        type: 'line',
+        data: data.map(d => d[yKey]),
+        smooth: 0.3,
+        symbol: 'circle',
+        symbolSize: 6,
+        showSymbol: itemCount <= 15,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: primaryColor + '70' },
+              { offset: 0.5, color: primaryLight + '40' },
+              { offset: 1, color: primaryLight + '08' }
+            ]
+          }
+        },
+        lineStyle: {
+          color: primaryColor,
+          width: 2.5,
+          cap: 'round'
+        },
+        itemStyle: {
+          color: primaryColor,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        emphasis: {
+          focus: 'series',
+          itemStyle: {
+            shadowBlur: 8,
+            shadowColor: 'rgba(25, 169, 121, 0.4)'
+          }
+        }
+      }]
+    };
+  },
 
   heatmap: (data, xKey, yKey, valueKey, theme) => {
     const xCategories = [...new Set(data.map(d => d[xKey]))];
@@ -300,84 +609,170 @@ const CHART_CONFIGS = {
 
   gauge: (data, valueKey, theme) => {
     const value = data[0]?.[valueKey] || 0;
-    const isPercentage = valueKey?.toLowerCase().includes('percent') || valueKey?.toLowerCase().includes('rate');
+    const isPercentage = valueKey?.toLowerCase().includes('percent') || valueKey?.toLowerCase().includes('rate') || valueKey?.toLowerCase().includes('margin');
+    const maxVal = isPercentage ? 100 : Math.ceil(value * 1.3);
 
     return {
       series: [{
         type: 'gauge',
-        startAngle: 180,
-        endAngle: 0,
+        startAngle: 200,
+        endAngle: -20,
         min: 0,
-        max: isPercentage ? 100 : Math.ceil(value * 1.2),
+        max: maxVal,
         splitNumber: 5,
-        radius: '90%',
-        center: ['50%', '70%'],
+        radius: '85%',
+        center: ['50%', '58%'],
         axisLine: {
           lineStyle: {
-            width: 20,
+            width: 24,
             color: [
-              [0.3, '#ef4444'],
-              [0.7, '#f59e0b'],
-              [1, '#22c55e']
+              [0.25, '#EF4444'],
+              [0.5, '#F59E0B'],
+              [0.75, '#22C55E'],
+              [1, '#10B981']
             ]
           }
         },
         pointer: {
-          itemStyle: { color: theme.palette.text.primary },
-          width: 5
+          icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
+          length: '55%',
+          width: 10,
+          offsetCenter: [0, '-10%'],
+          itemStyle: {
+            color: theme.palette.text.primary,
+            shadowBlur: 8,
+            shadowColor: 'rgba(0, 0, 0, 0.2)',
+            shadowOffsetY: 2
+          }
         },
-        axisTick: { show: false },
-        splitLine: { show: false },
+        axisTick: {
+          length: 8,
+          lineStyle: {
+            color: 'auto',
+            width: 2
+          }
+        },
+        splitLine: {
+          length: 16,
+          lineStyle: {
+            color: 'auto',
+            width: 3
+          }
+        },
         axisLabel: {
-          distance: 25,
+          distance: 32,
           color: theme.palette.text.secondary,
-          fontSize: 10
+          fontSize: 11,
+          fontWeight: 500,
+          formatter: (val) => {
+            if (isPercentage) return val + '%';
+            if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
+            return val;
+          }
+        },
+        anchor: {
+          show: true,
+          showAbove: true,
+          size: 18,
+          itemStyle: {
+            borderWidth: 4,
+            borderColor: theme.palette.background.paper,
+            color: theme.palette.text.primary,
+            shadowBlur: 6,
+            shadowColor: 'rgba(0, 0, 0, 0.15)'
+          }
+        },
+        title: {
+          show: true,
+          offsetCenter: [0, '72%'],
+          color: theme.palette.text.secondary,
+          fontSize: 12,
+          fontWeight: 500
         },
         detail: {
           valueAnimation: true,
-          formatter: isPercentage ? '{value}%' : '{value}',
+          formatter: (val) => {
+            if (isPercentage) return val.toFixed(1) + '%';
+            if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+            if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+            return val.toFixed(val % 1 === 0 ? 0 : 1);
+          },
           color: theme.palette.text.primary,
-          fontSize: 24,
+          fontSize: 32,
           fontWeight: 'bold',
-          offsetCenter: [0, '20%']
+          fontFamily: 'Inter, system-ui, sans-serif',
+          offsetCenter: [0, '35%']
         },
-        data: [{ value, name: valueKey }]
+        data: [{
+          value,
+          name: valueKey?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Value'
+        }]
       }]
     };
   },
 
-  // Single value display - uses stat card style
+  // Single value display - premium stat card style
   metric: (data, valueKey, theme) => {
     const value = data[0]?.[valueKey] || 0;
-    const formattedValue = typeof value === 'number'
-      ? value.toLocaleString()
-      : value;
+    const isPercentage = valueKey?.toLowerCase().includes('percent') || valueKey?.toLowerCase().includes('rate') || valueKey?.toLowerCase().includes('margin');
+
+    let formattedValue;
+    if (typeof value === 'number') {
+      if (isPercentage) {
+        formattedValue = value.toFixed(1) + '%';
+      } else if (value >= 1000000) {
+        formattedValue = (value / 1000000).toFixed(1) + 'M';
+      } else if (value >= 1000) {
+        formattedValue = (value / 1000).toFixed(1) + 'K';
+      } else {
+        formattedValue = value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      }
+    } else {
+      formattedValue = String(value);
+    }
+
+    const label = valueKey?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Value';
 
     return {
       graphic: {
         elements: [
           {
-            type: 'text',
+            type: 'group',
             left: 'center',
-            top: '40%',
-            style: {
-              text: formattedValue,
-              fontSize: 48,
-              fontWeight: 'bold',
-              fill: theme.palette.primary.main,
-              textAlign: 'center'
-            }
-          },
-          {
-            type: 'text',
-            left: 'center',
-            top: '65%',
-            style: {
-              text: valueKey?.replace(/_/g, ' ').toUpperCase() || 'VALUE',
-              fontSize: 14,
-              fill: theme.palette.text.secondary,
-              textAlign: 'center'
-            }
+            top: 'middle',
+            children: [
+              {
+                type: 'text',
+                style: {
+                  text: formattedValue,
+                  fontSize: 52,
+                  fontWeight: 'bold',
+                  fill: {
+                    type: 'linear',
+                    x: 0, y: 0, x2: 1, y2: 1,
+                    colorStops: [
+                      { offset: 0, color: '#5899DA' },
+                      { offset: 1, color: '#3D7ABD' }
+                    ]
+                  },
+                  textAlign: 'center',
+                  fontFamily: 'Inter, system-ui, sans-serif'
+                },
+                top: -20
+              },
+              {
+                type: 'text',
+                style: {
+                  text: label,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  fill: theme.palette.text.secondary,
+                  textAlign: 'center',
+                  fontFamily: 'Inter, system-ui, sans-serif'
+                },
+                top: 40
+              }
+            ]
           }
         ]
       }
@@ -423,25 +818,83 @@ const CHART_CONFIGS = {
   }),
 
   // Horizontal bar chart
-  horizontalBar: (data, xKey, yKey, theme) => ({
-    xAxis: {
-      type: 'value',
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => d[xKey]),
-      axisLabel: { color: theme.palette.text.secondary }
-    },
-    series: [{
-      type: 'bar',
-      data: data.map(d => d[yKey]),
-      itemStyle: {
-        borderRadius: [0, 4, 4, 0],
-        color: theme.palette.primary.main
-      }
-    }]
-  }),
+  horizontalBar: (data, xKey, yKey, theme) => {
+    const maxValue = Math.max(...data.map(d => d[yKey] || 0));
+
+    return {
+      xAxis: {
+        type: 'value',
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500,
+          formatter: (val) => {
+            if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+            if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+            return val;
+          }
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: {
+          lineStyle: {
+            color: theme.palette.divider,
+            type: 'dashed',
+            opacity: 0.6
+          }
+        }
+      },
+      yAxis: {
+        type: 'category',
+        data: data.map(d => truncateLabel(d[xKey], 22)),
+        axisLabel: {
+          color: theme.palette.text.secondary,
+          fontSize: 11,
+          fontWeight: 500,
+          width: 140,
+          overflow: 'truncate'
+        },
+        axisLine: {
+          lineStyle: { color: theme.palette.divider }
+        },
+        axisTick: { show: false }
+      },
+      series: [{
+        type: 'bar',
+        barMaxWidth: 28,
+        barMinWidth: 12,
+        data: data.map((d, i) => ({
+          value: d[yKey],
+          itemStyle: {
+            borderRadius: [0, 6, 6, 0],
+            color: getChartGradient(i, 'horizontal')
+          }
+        })),
+        label: {
+          show: true,
+          position: 'right',
+          color: theme.palette.text.secondary,
+          fontSize: 10,
+          fontWeight: 600,
+          distance: 8,
+          formatter: (params) => {
+            const val = params.value;
+            const percent = maxValue > 0 ? ((val / maxValue) * 100).toFixed(0) : 0;
+            if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+            if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+            return val;
+          }
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: 'rgba(0, 0, 0, 0.15)',
+            shadowOffsetX: 4
+          }
+        }
+      }]
+    };
+  },
 
   // Sunburst - hierarchical radial chart
   sunburst: (data, nameKey, valueKey, theme) => {
@@ -750,19 +1203,59 @@ const CHART_CONFIGS = {
   }
 };
 
-// Mantrix theme colors
+// Premium Mantrix theme colors - enhanced palette with gradient support
 const CHART_COLORS = [
-  '#6366f1', // Indigo
-  '#22c55e', // Green
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#8b5cf6', // Purple
-  '#06b6d4', // Cyan
-  '#ec4899', // Pink
-  '#14b8a6', // Teal
-  '#f97316', // Orange
-  '#84cc16'  // Lime
+  '#5899DA', // Corporate Blue
+  '#19A979', // Emerald Green
+  '#E8743B', // Warm Orange
+  '#945ECF', // Rich Purple
+  '#13A4B4', // Teal Cyan
+  '#ED4A7B', // Coral Pink
+  '#525DF4', // Royal Indigo
+  '#F59E0B', // Amber Gold
+  '#6366F1', // Modern Indigo
+  '#14B8A6', // Sea Teal
+  '#EC4899', // Hot Pink
+  '#84CC16'  // Lime Green
 ];
+
+// Gradient color pairs for premium chart fills
+const CHART_GRADIENTS = {
+  blue: ['#5899DA', '#3D7ABD'],
+  green: ['#19A979', '#0D7A54'],
+  orange: ['#E8743B', '#C25A2A'],
+  purple: ['#945ECF', '#7040A8'],
+  teal: ['#13A4B4', '#0D7A87'],
+  pink: ['#ED4A7B', '#C73A62'],
+  indigo: ['#525DF4', '#3D47C9'],
+  amber: ['#F59E0B', '#D97706'],
+};
+
+// Utility: Truncate long labels
+const truncateLabel = (text, maxLen = 16) => {
+  const str = String(text || '');
+  return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
+};
+
+// Utility: Create linear gradient for ECharts
+const createGradient = (colors, direction = 'vertical') => ({
+  type: 'linear',
+  x: 0,
+  y: 0,
+  x2: direction === 'horizontal' ? 1 : 0,
+  y2: direction === 'horizontal' ? 0 : 1,
+  colorStops: [
+    { offset: 0, color: colors[0] },
+    { offset: 1, color: colors[1] }
+  ]
+});
+
+// Utility: Get gradient for chart index
+const getChartGradient = (index, direction = 'vertical') => {
+  const gradientKeys = Object.keys(CHART_GRADIENTS);
+  const key = gradientKeys[index % gradientKeys.length];
+  return createGradient(CHART_GRADIENTS[key], direction);
+};
 
 // Helper to detect ID/key columns that should be treated as categorical even if numeric
 const isIdColumn = (columnName) => {
@@ -1099,20 +1592,66 @@ const EChartsVisualization = ({
         left: 'center',
         textStyle: {
           color: muiTheme.palette.text.primary,
-          fontSize: 16,
-          fontWeight: 600
-        }
+          fontSize: 15,
+          fontWeight: 600,
+          fontFamily: 'Inter, system-ui, sans-serif'
+        },
+        padding: [0, 0, 8, 0]
       } : undefined,
 
-      // Tooltip
+      // Premium Glassmorphism Tooltip
       tooltip: {
         trigger: itemTriggerTypes.includes(type) ? 'item' : 'axis',
         backgroundColor: muiTheme.palette.mode === 'dark'
-          ? 'rgba(30, 30, 30, 0.95)'
-          : 'rgba(255, 255, 255, 0.95)',
-        borderColor: muiTheme.palette.divider,
-        textStyle: { color: muiTheme.palette.text.primary },
-        confine: true
+          ? 'rgba(30, 32, 40, 0.92)'
+          : 'rgba(255, 255, 255, 0.88)',
+        borderColor: muiTheme.palette.mode === 'dark'
+          ? 'rgba(255, 255, 255, 0.12)'
+          : 'rgba(0, 0, 0, 0.08)',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: [12, 16],
+        textStyle: {
+          color: muiTheme.palette.text.primary,
+          fontSize: 12,
+          fontFamily: 'Inter, system-ui, sans-serif'
+        },
+        extraCssText: `
+          backdrop-filter: blur(12px) saturate(180%);
+          -webkit-backdrop-filter: blur(12px) saturate(180%);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+        `,
+        confine: true,
+        formatter: (params) => {
+          // Custom formatting for better readability
+          if (Array.isArray(params)) {
+            const title = params[0]?.axisValue || params[0]?.name || '';
+            let content = `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${truncateLabel(title, 30)}</div>`;
+            params.forEach(item => {
+              const marker = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.color};margin-right:8px;"></span>`;
+              const value = typeof item.value === 'number'
+                ? item.value >= 1000000
+                  ? (item.value / 1000000).toFixed(2) + 'M'
+                  : item.value >= 1000
+                    ? (item.value / 1000).toFixed(2) + 'K'
+                    : item.value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                : item.value;
+              content += `<div style="display:flex;align-items:center;margin:4px 0;">${marker}<span style="flex:1;color:${muiTheme.palette.text.secondary}">${truncateLabel(item.seriesName, 20)}</span><span style="font-weight:600;margin-left:12px;">${value}</span></div>`;
+            });
+            return content;
+          }
+          // Single item (pie, etc.)
+          const marker = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${params.color};margin-right:8px;"></span>`;
+          const value = typeof params.value === 'number'
+            ? params.value >= 1000000
+              ? (params.value / 1000000).toFixed(2) + 'M'
+              : params.value >= 1000
+                ? (params.value / 1000).toFixed(2) + 'K'
+                : params.value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+            : params.value;
+          const percent = params.percent ? ` (${params.percent.toFixed(1)}%)` : '';
+          return `<div style="display:flex;align-items:center;">${marker}<span style="font-weight:600;">${truncateLabel(params.name, 24)}</span></div><div style="margin-top:6px;font-size:14px;font-weight:700;">${value}${percent}</div>`;
+        }
       },
 
       // Toolbox

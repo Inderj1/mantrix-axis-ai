@@ -69,19 +69,22 @@ function Layout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredConvId, setHoveredConvId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const { token } = useAuth();
+  const { token, loading: authLoading } = useAuth();
 
   // Get conversation store
   const {
     conversations,
     conversationId: currentConversationId,
     loadingConversations,
-    isInitializing,
     loadConversation,
     createNewConversation,
     toggleStar,
     deleteConversation,
   } = useConversationStore();
+
+  // New Chat button should only be disabled while auth is loading
+  // (not while conversation store is initializing - that's just loading history)
+  const isNewChatDisabled = authLoading;
 
   // Filter conversations by search query
   const filteredConversations = searchQuery.trim()
@@ -242,9 +245,9 @@ function Layout({ children }) {
           <Button
             fullWidth
             variant="contained"
-            startIcon={isInitializing ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+            startIcon={isNewChatDisabled ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
             onClick={handleNewChat}
-            disabled={isInitializing}
+            disabled={isNewChatDisabled}
             sx={{
               bgcolor: sidebarColors.accent,
               color: 'white',
@@ -263,16 +266,16 @@ function Layout({ children }) {
               },
             }}
           >
-            {isInitializing ? 'Loading...' : 'New Chat'}
+            New Chat
           </Button>
         </Box>
       ) : (
         <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'center' }}>
-          <Tooltip title={isInitializing ? 'Loading...' : 'New Chat'} placement="right" arrow>
+          <Tooltip title="New Chat" placement="right" arrow>
             <span>
               <IconButton
                 onClick={handleNewChat}
-                disabled={isInitializing}
+                disabled={isNewChatDisabled}
                 sx={{
                   bgcolor: sidebarColors.accent,
                   color: 'white',

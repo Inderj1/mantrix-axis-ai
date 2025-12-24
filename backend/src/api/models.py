@@ -96,6 +96,65 @@ class CrossConnectorRejoinResponse(BaseModel):
     error: Optional[str] = None
 
 
+class DrillDownFilter(BaseModel):
+    """A single drill-down filter condition."""
+    dimension: str = Field(..., description="Column name to filter on")
+    value: Any = Field(..., description="Value to filter for")
+    operator: str = Field("=", description="Filter operator: =, !=, >, <, >=, <=, LIKE, IN")
+
+
+class ConnectorQuery(BaseModel):
+    """SQL query for a specific connector."""
+    connector_id: str = Field(..., description="Connector ID")
+    database_type: str = Field(..., description="Database type (bigquery, snowflake, postgresql, etc.)")
+    sql: str = Field(..., description="SQL query")
+    tables_used: List[str] = Field(default_factory=list, description="Tables referenced in the query")
+
+
+class DrillDownRequest(BaseModel):
+    """Request model for drill-down query execution with filters."""
+    # Either session_id OR connector_queries must be provided
+    session_id: Optional[str] = Field(None, description="Session ID from cross-connector query (if available)")
+    connector_queries: Optional[List[ConnectorQuery]] = Field(None, description="Original connector queries (if no session)")
+
+    # Single-database fallback
+    sql: Optional[str] = Field(None, description="Single SQL query (for non-cross-connector queries)")
+    database_type: Optional[str] = Field(None, description="Database type for single query")
+    connector_id: Optional[str] = Field(None, description="Connector ID for single query")
+
+    # Drill-down filters
+    filters: List[DrillDownFilter] = Field(..., description="Drill-down filter conditions to apply")
+
+    # Join specification (for cross-connector)
+    join_specification: Optional[JoinSpecification] = Field(None, description="Join specification for re-joining")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "xc_abc123",
+                "filters": [
+                    {"dimension": "SEGMENT_NAME", "value": "Champions", "operator": "="}
+                ],
+                "join_specification": {
+                    "type": "INNER",
+                    "condition": "customers.id = orders.customer_id"
+                }
+            }
+        }
+
+
+class DrillDownResponse(BaseModel):
+    """Response model for drill-down query execution."""
+    success: bool
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    row_count: int = 0
+    filters_applied: List[DrillDownFilter] = Field(default_factory=list)
+    modified_queries: Dict[str, str] = Field(default_factory=dict, description="Connector ID -> modified SQL")
+    session_id: Optional[str] = None
+    execution_time_seconds: Optional[float] = None
+    error: Optional[str] = None
+
+
 class OptimizeRequest(BaseModel):
     sql: str = Field(..., description="SQL query to optimize")
 
